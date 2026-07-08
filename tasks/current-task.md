@@ -1,105 +1,87 @@
-# Task 5.2 — GitHub Actions CI
+Task 6.1 — ref.* Table Migrations
+Goal
+Create the four reference-layer tables (ref.normalized_charges, ref.charge_aliases, ref.normalized_judges, ref.judge_aliases) via new Kysely migrations. Sprint 1's migration 2.3 created the eight schemas only; this task adds the first real tables.
+Context
 
-## Goal
+Migration runner, naming convention, and local Postgres (17.10, port 5433) already exist from tasks 2.1–2.3. Follow the documented naming convention exactly.
+These tables back the Sprint 2 seeded public API: charge/judge search (7.2/7.3) and result endpoints (8.x) will FK into them.
+Privacy rule: ref.* holds normalized public entities only. No defendant-related columns, no docket numbers, no source-document references.
 
-Add a baseline CI workflow that runs on every pull request and on pushes to `main`, covering both the Node/TypeScript monorepo and the Python pipeline. CI must fail on lint, format, typecheck, test, taxonomy validation, or migration errors. Also fix the deferred sequential `pnpm dev` issue from task 4.1.
+Standing decision for this task
 
-## Context
+Primary keys are UUIDs generated with gen_random_uuid() (Postgres built-in; no extension).
+slug is the unique, public, URL-stable lookup key on both normalized_charges and normalized_judges.
 
-- Monorepo: pnpm workspaces, Node 22 LTS, TypeScript strict, ESLint 9 flat config + Prettier, Vitest.
-- Workspaces: `apps/api` (Fastify), `apps/web` (Next.js), `packages/taxonomy`, `packages/shared`, `services/pipeline` (Python, uv-managed).
-- Taxonomy `generated/` artifacts are gitignored — a fresh clone must run the root generate step before typecheck/test can pass. CI is the first true fresh-clone consumer; use the existing root generate mechanism established in 3.1/3.2.
-- Python pipeline uses uv (`uv.lock` committed), ruff for lint + format, pytest. Harness tests use synthetic PDFs generated at test time — CI needs no fixture files.
-- Local Postgres is pinned to `postgres:17.10` (standing decision: CI must use a 17.x service container). Local host port 5433 is a host-conflict convention only; inside the CI runner use the default 5432.
-- Kysely migration runner exists with a root migration script (from 2.2/2.3); use the existing script name.
+Scope
+One migration file (or two, one for charges and one for judges, if that fits the established convention better — agent's call, justify in the plan) creating:
+ref.normalized_charges
 
-Before writing any code, respond with an implementation plan per CLAUDE.md.
+id uuid PK default gen_random_uuid()
+slug text, unique, not null
+display_name text, not null
+statute_code text, nullable
+grade text, nullable
+is_active boolean, not null, default true
+created_at / updated_at timestamptz, not null, default now()
 
-## Scope
+ref.charge_aliases
 
-### 1. Workflow file
+id uuid PK default gen_random_uuid()
+normalized_charge_id uuid, not null, FK → ref.normalized_charges(id), ON DELETE CASCADE
+alias_text text, not null
+created_at timestamptz, not null, default now()
+unique constraint on (normalized_charge_id, alias_text)
 
-`.github/workflows/ci.yml`:
+ref.normalized_judges
 
-- Triggers: `pull_request` (all branches) and `push` to `main`.
-- Concurrency group keyed on workflow + ref, `cancel-in-progress: true`, so superseded pushes don't waste runner minutes.
-- Pin all GitHub Actions to major version tags (e.g. `actions/checkout@v4`). Document the chosen versions in the plan.
-- No repository secrets may be required or referenced. Postgres service credentials are throwaway dummy values defined inline in the workflow — that is acceptable and not a secrets violation.
+id uuid PK default gen_random_uuid()
+slug text, unique, not null
+display_name text, not null
+is_active boolean, not null, default true
+created_at / updated_at timestamptz, not null, default now()
 
-### 2. Node job
+ref.judge_aliases
 
-Runs on `ubuntu-latest` with a `postgres:17.10` service container (dummy user/password/db, health check via `pg_isready` options, exposed on 5432).
+id uuid PK default gen_random_uuid()
+normalized_judge_id uuid, not null, FK → ref.normalized_judges(id), ON DELETE CASCADE
+alias_text text, not null
+created_at timestamptz, not null, default now()
+unique constraint on (normalized_judge_id, alias_text)
 
-Steps, in order:
+Indexes
 
-1. Checkout.
-2. Set up pnpm — derive the version from the repo's `packageManager` field (corepack or `pnpm/action-setup`), not a hardcoded duplicate.
-3. Set up Node 22 with pnpm store caching.
-4. `pnpm install --frozen-lockfile`.
-5. Root taxonomy generate step (existing mechanism).
-6. Lint (`pnpm lint`).
-7. Format check (`pnpm format:check`).
-8. Typecheck (`pnpm typecheck`).
-9. Taxonomy validation (existing validation script).
-10. Tests (`pnpm test`).
-11. Apply migrations against the service container (existing migration script, `DATABASE_URL` pointing at the service). This proves migrations apply cleanly on a fresh database.
+Unique indexes come from the constraints above.
+Add non-unique indexes on charge_aliases.alias_text and judge_aliases.alias_text (search endpoints will query these in 7.2/7.3). Plain b-tree is sufficient for this sprint; trigram/FTS is out of scope.
 
-If the repo's existing root scripts differ in name from the above, use the existing names — do not rename root scripts in this task.
+Kysely types
 
-### 3. Python job
+Update the Kysely Database interface (wherever 2.2 established it) with typed definitions for all four tables, following the existing pattern for schema-qualified tables.
 
-Runs in parallel with the Node job, working directory `services/pipeline`:
+Acceptance criteria
 
-1. Checkout.
-2. Set up uv (official `astral-sh/setup-uv` action) with caching, Python version from `.python-version`.
-3. `uv sync` with frozen/locked resolution.
-4. `uv run ruff check .`
-5. `uv run ruff format --check .`
-6. `uv run pytest`
+Migrations follow the established naming convention and run via the existing runner.
+up applies cleanly against local Postgres; down rolls back cleanly (tables dropped in FK-safe order).
+Unique constraints on both slugs; FKs enforced; alias uniqueness per parent enforced.
+Alias alias_text columns are indexed.
+Kysely Database types updated and typecheck passes.
+No defendant-related columns, docket numbers, or source-document references anywhere in ref.*.
+Worklog entry appended to tasks/worklog.md.
 
-### 4. Fix sequential `pnpm dev` (deferred from 4.1)
+Out of scope
 
-Update the root `dev` script so workspace dev servers run in parallel (e.g. `pnpm -r --parallel dev` or equivalent). Verify locally that `pnpm dev` starts both the API and web dev servers concurrently and that Ctrl+C cleanly stops both.
+analytics.* tables (task 6.2)
+Seed data (tasks 6.3/6.4)
+Trigram/full-text search indexes
+ref.outcome_categories / ref.sentencing_categories (deferred to Sprint 7 per standing decision)
+Any API endpoint work
+Any changes to existing migrations
 
-### 5. Documentation
+Files the agent may touch
 
-- Add a CI status badge to the root README.
-- Add a short `docs/ci.md` (or a section in an existing tooling doc — agent's choice, state it in the plan): what CI runs, in what order, why the taxonomy generate step precedes typecheck, and the Postgres service container convention (17.x pin, 5432 in CI vs 5433 locally).
+New migration file(s) in the established migrations directory
+The Kysely database types file from task 2.2
+tasks/worklog.md (append only)
+Migration docs, only if the convention doc needs a one-line addition
 
-### 6. Worklog
-
-Append `tasks/worklog.md` entry on completion (after human confirmation, per standing workflow).
-
-## Acceptance criteria
-
-- CI workflow triggers on pull requests and on pushes to `main`.
-- Node job: install (frozen lockfile), taxonomy generate, lint, format:check, typecheck, taxonomy validation, tests, and migration apply against a `postgres:17.10` service container — all pass on a green run.
-- Python job: uv sync (locked), ruff check, ruff format check, and pytest — all pass on a green run.
-- CI fails when any of the above fail (demonstrate reasoning in the plan; no need to push a deliberately broken commit).
-- Jobs run in parallel; superseded runs on the same ref are cancelled.
-- No secrets referenced or required; no fixture PDFs, extracted text, or docket data needed or touched by CI.
-- pnpm version in CI comes from the repo's `packageManager` field (single source of truth).
-- `pnpm dev` runs API and web dev servers in parallel.
-- README has a CI badge; CI documentation exists.
-- Worklog entry appended after confirmation.
-
-## Out of scope
-
-- Deployment or release workflows of any kind
-- Docker image builds
-- Coverage reporting/upload
-- Dependabot/Renovate configuration
-- Branch protection rules (GitHub settings — human task)
-- E2E/Playwright tests
-- Running the extraction harness against real fixtures (that is 5.3, human-run, and real fixtures never enter CI)
-- Renaming or restructuring existing root scripts
-- Caching Next.js build output
-
-## Files the agent may touch
-
-- `.github/workflows/**` (new)
-- Root `package.json` (only: the `dev` script fix)
-- Root `README.md` (badge only)
-- `docs/**` (CI documentation)
-- `tasks/worklog.md` (append, after confirmation)
-- Nothing else
+Process reminder
+Return an implementation plan before writing any code. The plan should state: migration file name(s), one-vs-two migration decision with reasoning, and where the Kysely type updates land.

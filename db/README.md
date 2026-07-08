@@ -56,6 +56,8 @@ Example: `20260708030321_create_core_schemas.ts`
   been applied anywhere.
 - The description is lowercase `snake_case`.
 - Each migration exports `up` and `down` functions taking `Kysely<unknown>`.
+- Constraints and indexes use Postgres-conventional names: `*_key` for unique
+  constraints, `*_idx` for indexes, `*_fkey` for foreign keys.
 
 ## Bookkeeping tables
 
