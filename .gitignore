@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 .next/
+packages/taxonomy/generated/
 __pycache__/
 .pytest_cache/
 

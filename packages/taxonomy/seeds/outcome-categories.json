@@ -1,0 +1,65 @@
+[
+  {
+    "code": "dismissed",
+    "displayName": "Dismissed",
+    "definition": "The court dismissed the charge, ending the case on that charge without a conviction.",
+    "sortOrder": 1,
+    "public": true
+  },
+  {
+    "code": "withdrawn",
+    "displayName": "Withdrawn",
+    "definition": "The prosecution withdrew the charge before a verdict or plea, ending the case on that charge.",
+    "sortOrder": 2,
+    "public": true
+  },
+  {
+    "code": "guilty_plea",
+    "displayName": "Guilty plea",
+    "definition": "The defendant entered a plea of guilty or no contest, resulting in a conviction on the charge.",
+    "sortOrder": 3,
+    "public": true
+  },
+  {
+    "code": "guilty_verdict",
+    "displayName": "Guilty verdict",
+    "definition": "A judge or jury found the defendant guilty after a trial, resulting in a conviction on the charge.",
+    "sortOrder": 4,
+    "public": true
+  },
+  {
+    "code": "acquittal",
+    "displayName": "Acquittal",
+    "definition": "A judge or jury found the defendant not guilty after a trial.",
+    "sortOrder": 5,
+    "public": true
+  },
+  {
+    "code": "ard",
+    "displayName": "ARD",
+    "definition": "The charge was handled through Accelerated Rehabilitative Disposition, a Pennsylvania pretrial program that can end in dismissal when its requirements are completed.",
+    "sortOrder": 6,
+    "public": true
+  },
+  {
+    "code": "diversion",
+    "displayName": "Diversion",
+    "definition": "The charge was handled through a diversion program other than ARD, in which the defendant completes program requirements instead of proceeding to trial or sentencing.",
+    "sortOrder": 7,
+    "public": true
+  },
+  {
+    "code": "other",
+    "displayName": "Other",
+    "definition": "The recorded disposition does not fit any of the defined outcome categories.",
+    "sortOrder": 8,
+    "public": true
+  },
+  {
+    "code": "unknown",
+    "displayName": "Unknown",
+    "definition": "The disposition could not be determined from the available court records.",
+    "sortOrder": 9,
+    "public": false
+  }
+]

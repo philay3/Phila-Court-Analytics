@@ -1,0 +1,65 @@
+[
+  {
+    "code": "probation",
+    "displayName": "Probation",
+    "definition": "The sentence includes a period of supervision in the community under conditions set by the court.",
+    "sortOrder": 1,
+    "public": true
+  },
+  {
+    "code": "incarceration",
+    "displayName": "Incarceration",
+    "definition": "The sentence includes confinement in a jail or prison.",
+    "sortOrder": 2,
+    "public": true
+  },
+  {
+    "code": "fine",
+    "displayName": "Fine",
+    "definition": "The sentence includes a monetary fine payable to the court.",
+    "sortOrder": 3,
+    "public": true
+  },
+  {
+    "code": "restitution",
+    "displayName": "Restitution",
+    "definition": "The sentence includes payment intended to compensate for losses caused by the offense.",
+    "sortOrder": 4,
+    "public": true
+  },
+  {
+    "code": "community_service",
+    "displayName": "Community service",
+    "definition": "The sentence includes a required amount of unpaid work performed in the community.",
+    "sortOrder": 5,
+    "public": true
+  },
+  {
+    "code": "no_further_penalty",
+    "displayName": "No further penalty",
+    "definition": "The court recorded a determination of guilt without imposing any additional penalty.",
+    "sortOrder": 6,
+    "public": true
+  },
+  {
+    "code": "costs_fees",
+    "displayName": "Costs and fees",
+    "definition": "The sentence includes payment of court costs or administrative fees.",
+    "sortOrder": 7,
+    "public": true
+  },
+  {
+    "code": "other",
+    "displayName": "Other",
+    "definition": "The recorded sentencing component does not fit any of the defined sentencing categories.",
+    "sortOrder": 8,
+    "public": true
+  },
+  {
+    "code": "unknown",
+    "displayName": "Unknown",
+    "definition": "The sentencing information could not be determined from the available court records.",
+    "sortOrder": 9,
+    "public": false
+  }
+]

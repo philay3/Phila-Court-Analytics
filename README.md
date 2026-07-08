@@ -43,6 +43,20 @@ pnpm test
 | `scripts/`           | Repo maintenance and development scripts         |
 | `tests/`             | Cross-package integration and end-to-end tests   |
 
+## Taxonomy
+
+`packages/taxonomy/` (`@pca/taxonomy`) is the single source of truth for outcome
+categories, sentencing categories, and thin-data configuration. Seed data lives
+in JSON under `packages/taxonomy/seeds/`; generated artifacts are gitignored and
+rebuilt on demand:
+
+```sh
+pnpm taxonomy:validate   # check seed invariants
+pnpm taxonomy:generate   # emit generated/taxonomy.json and generated/index.ts
+```
+
+See [packages/taxonomy/README.md](packages/taxonomy/README.md) for details.
+
 ## Privacy rules
 
 This project handles public court records with strict privacy discipline:

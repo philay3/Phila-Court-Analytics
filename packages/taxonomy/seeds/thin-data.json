@@ -1,0 +1,10 @@
+{
+  "provisional": true,
+  "comment": "Provisional thresholds. Final values will be set after parser output and real data volumes are reviewed.",
+  "outcomeDistribution": {
+    "minSampleSize": 30
+  },
+  "sentencingDistribution": {
+    "minSampleSize": 30
+  }
+}

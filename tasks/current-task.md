@@ -1,88 +1,115 @@
-# Task 2.3 — Initial Eight-Schema Migration
+# Task 3.1 — Create Taxonomy Package
 
 ## Goal
 
-Replace the sentinel migration with the project's first real migration: a single
-migration that creates the eight PostgreSQL schemas that form the namespace
-skeleton of the architecture (`raw`, `parsed`, `ref`, `fact`, `analytics`,
-`review`, `audit`, `auth`). Reset local migration history so it starts clean
-with this migration.
+Create `packages/taxonomy` (`@pca/taxonomy`): the single source of truth for
+outcome categories, sentencing categories, and thin-data configuration. Seed
+data lives in JSON, a validation script enforces invariants, and a generate
+script emits TypeScript and JSON artifacts for downstream consumers.
 
 ## Context
 
-- The migration system lives in the `@pca/db` workspace (`db/`), built in 2.2:
-  Kysely `Migrator` + `FileMigrationProvider`, commands `latest`/`up`/`down`/
-  `status`, root scripts `db:migrate:*`, env via `tsx --env-file-if-exists`.
-- Migration naming convention (documented in `db/README.md`):
-  `YYYYMMDDHHMMSS_snake_case_description.ts`.
-- The sentinel migration (`20260707223956_migration_system_sentinel.ts`) exists
-  only to prove the runner works end-to-end. It is already commented as
-  removable. Nothing production-like exists in any environment; the local
-  database is disposable.
-- These eight schemas mirror the data model layers in `architecture.md`. This
-  task creates the namespaces only — tables come in later tasks (FDN-002.3+).
-- Local Postgres from 2.1 (`postgres:17.10`, host port 5433, `pnpm db:up`) must
-  be running for verification.
+- Monorepo, TS base tooling, ESLint/Prettier, and Vitest are already set up.
+- TypeScript is installed at the root only; use the root binary.
+- Package naming convention is `@pca/*`.
+- This package has NO database dependency. Do not touch db/ or migrations.
+- `packages/shared` (task 3.2, not this task) will later import the generated
+  TypeScript artifact.
+
+## Reminder: return an implementation plan BEFORE writing any code.
 
 ## Scope
 
-1. **Delete the sentinel migration file.** Do not write a new migration to drop
-   the sentinel table — local history is reset instead (see verification).
-   Update any reference to the sentinel in `db/README.md`.
-2. **Create one new migration** named per convention, e.g.
-   `YYYYMMDDHHMMSS_create_core_schemas.ts` (generate a real current timestamp):
-   - `up`: creates all eight schemas: `raw`, `parsed`, `ref`, `fact`,
-     `analytics`, `review`, `audit`, `auth`.
-   - `down`: drops all eight schemas using plain `DROP SCHEMA` — **never
-     `CASCADE`**. This is deliberate: if tables ever exist, `down` must fail
-     loudly rather than destroy data. Drop order is irrelevant while empty.
-   - Kysely's schema builder (`db.schema.createSchema(...)`) or raw `sql`
-     template are both acceptable; pick one and use it consistently.
-   - No `IF NOT EXISTS` / `IF EXISTS` guards — history is clean and migrations
-     should fail on unexpected state.
-3. **Document** in `db/README.md`: a short note that this migration is the
-   schema-namespace baseline and that tables arrive in later migrations.
-4. **Worklog**: append an entry to `tasks/worklog.md` after completion.
+### 1. Package scaffold
 
-## Acceptance Criteria
+- `packages/taxonomy/` with `package.json` (`@pca/taxonomy`), tsconfig
+  extending the root base config, and a README describing the package's role
+  and how to regenerate artifacts.
 
-- Sentinel migration file is deleted; no migration in the directory references
-  `migration_sentinel`.
-- Exactly one migration exists, correctly named, creating the eight schemas in
-  `up` and dropping them (no CASCADE) in `down`.
-- After `pnpm db:reset` + `db:up` (fresh database), the full cycle verifies:
-  1. `migrate:status` shows exactly one pending migration
-  2. `migrate:latest` applies it
-  3. all eight schemas exist — verify via
-     `SELECT schema_name FROM information_schema.schemata` (psql or a query
-     through the runner's connection)
-  4. `migrate:down` removes all eight schemas
-  5. `migrate:latest` reapplies cleanly
-- The old `public.migration_sentinel` table does not exist (guaranteed by the
-  volume reset; confirm anyway).
-- Root `pnpm lint`, `typecheck`, and `format:check` pass.
-- No credentials, hosts, or ports hardcoded; connection still comes from
-  `DATABASE_URL` only.
-- Worklog entry appended.
+### 2. Seed files (JSON, source of truth)
+
+- `seeds/outcome-categories.json` with exactly these categories:
+  dismissed, withdrawn, guilty_plea, guilty_verdict, acquittal, ard,
+  diversion, other, unknown.
+- `seeds/sentencing-categories.json` with exactly these categories:
+  probation, incarceration, fine, restitution, community_service,
+  no_further_penalty, costs_fees, other, unknown.
+- Every category record has:
+  - `code` — stable snake_case identifier (never to be renamed)
+  - `displayName` — plain-English public label
+  - `definition` — plain-English public definition, one or two sentences
+  - `sortOrder` — integer, unique within its file
+  - `public` — boolean; `unknown` is `false` in both files, all others `true`
+- Definitions must be neutral and descriptive. No prediction, odds, legal
+  advice, or ranking language.
+- `seeds/thin-data.json`: structure for thin-data policy with PROVISIONAL
+  values, e.g. `minSampleSize` for outcome and sentencing distributions
+  plus a `provisional: true` flag and a comment field noting thresholds are
+  finalized after parser/data review. Keep it minimal.
+- `seeds/version.json`: `{ "taxonomyVersion": "1.0.0" }`.
+
+### 3. Validation script (`pnpm --filter @pca/taxonomy validate`)
+
+Validates all seed files and exits non-zero on any failure:
+
+- required fields present and correctly typed
+- codes are snake_case, unique within each file
+- sortOrder unique within each file
+- displayName and definition non-empty
+- exactly the expected category code sets (guards accidental deletion)
+- definitions contain none of these banned terms (case-insensitive):
+  "predict", "odds", "likely", "win rate", "best judge", "worst judge",
+  "score", "guarantee"
+- taxonomyVersion is valid semver
+
+### 4. Generate script (`pnpm --filter @pca/taxonomy generate`)
+
+- Emits `generated/taxonomy.json` (all categories + thin-data config +
+  taxonomyVersion in one document) and `generated/index.ts` (typed constant
+  exports, including a `TaxonomyCategory` type and the version string).
+- `generated/` is gitignored; generation is deterministic (stable ordering)
+  so repeated runs produce identical output.
+- Package main/exports point at the generated TS entry.
+
+### 5. Tests (Vitest)
+
+- validation passes on the real seeds
+- validation fails on: duplicate code, missing field, banned term,
+  unexpected/missing category code
+- generate output includes all categories and the version
+
+### 6. Root wiring
+
+- Root scripts: `taxonomy:validate` and `taxonomy:generate` (or fold into
+  existing lint/test conventions — state choice in the plan).
+- Root README: one short section on the taxonomy package.
 
 ## Out of Scope
 
-- **Any tables, in any schema** — FDN-002.3 (initial reference and aggregate
-  tables) is a separate task. Do not create "just one table while you're in
-  here."
-- Database roles, grants, or least-privilege setup.
-- Postgres extensions.
-- Connecting the API (`@pca/api`) to the database.
-- Seed data of any kind.
-- Changes to Docker Compose or `.env.example`.
+- Seeding the database (`ref.*` tables) — later task
+- packages/shared / API / web integration — task 3.2+
+- Finalizing thin-data threshold values
+- Charge or judge normalization data
+- CI changes (task 5.2 will wire taxonomy validation into CI)
+- Turborepo, publishing, changesets
 
-## Files You May Touch
+## Files the agent may touch
 
-- `db/migrations/` (delete sentinel, add new migration)
-- `db/README.md`
-- `tasks/worklog.md`
+- `packages/taxonomy/**` (new)
+- root `package.json` (scripts only)
+- root `README.md` (one section)
+- `.gitignore` (only if needed for `generated/`)
+- `tasks/worklog.md` (append entry when done)
 
-## Process Reminder
+## Acceptance Criteria
 
-Return an implementation plan before writing any code. The plan is reviewed
-and approved in the planning chat first.
+1. `packages/taxonomy` exists as `@pca/taxonomy`, extending root tsconfig.
+2. Outcome, sentencing, thin-data, and version seed files exist with the
+   exact category sets and fields listed above.
+3. `unknown` is `public: false` in both category files; all others `true`.
+4. Validation script exists, passes on current seeds, and fails correctly
+   on invalid input (covered by tests).
+5. Generate script emits deterministic TypeScript and JSON artifacts
+   containing all categories, thin-data config, and taxonomyVersion.
+6. Vitest tests pass; lint and typecheck pass across the repo.
+7. No secrets, PDFs, extracted text, or defendant-identifying data committed.
