@@ -60,11 +60,15 @@ jobs:
       - name: Validate taxonomy
         run: pnpm taxonomy:validate
 
-      - name: Test
-        run: pnpm test
-
+      # Migrations run before tests: the db package's seed idempotency test
+      # needs the migrated schema and DATABASE_URL to execute (not skip).
       - name: Apply migrations
         run: pnpm db:migrate:latest
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/pca_ci
+
+      - name: Test
+        run: pnpm test
         env:
           DATABASE_URL: postgresql://ci:ci@localhost:5432/pca_ci
 

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { FileMigrationProvider, Migrator, type MigrationResultSet } from 'kysely/migration';
 
 import { createDb } from './connection.js';
+import { describeError } from './errors.js';
 
 const COMMANDS = ['latest', 'up', 'down', 'status'] as const;
 type Command = (typeof COMMANDS)[number];
@@ -13,19 +14,6 @@ const migrationFolder = path.join(path.dirname(fileURLToPath(import.meta.url)), 
 
 function isCommand(value: string | undefined): value is Command {
   return COMMANDS.includes(value as Command);
-}
-
-// pg reports "Postgres unreachable" as an AggregateError (one ECONNREFUSED per
-// resolved address) whose own message is empty — unwrap it or the runner would
-// print a blank error.
-function describeError(error: unknown): string {
-  if (error instanceof AggregateError && error.errors.length > 0) {
-    return [...new Set(error.errors.map(describeError))].join('; ');
-  }
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return String(error);
 }
 
 function reportResultSet(command: Command, { error, results }: MigrationResultSet): void {

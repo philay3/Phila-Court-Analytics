@@ -4,5 +4,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "migrations"]
+  "include": ["src", "migrations", "seeds", "vitest.config.ts"]
 }

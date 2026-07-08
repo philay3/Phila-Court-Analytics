@@ -1,154 +1,123 @@
-# Task 6.2 — `analytics.*` Table Migrations
+# Task 6.3 — Seed Runner + Reference Seeds
 
 ## Goal
 
-Create the five analytics-layer tables via one new Kysely migration:
-`analytics.aggregate_runs`, `analytics.charge_outcome_aggregates`,
-`analytics.charge_sentencing_aggregates`, `analytics.judge_outcome_aggregates`,
-`analytics.judge_sentencing_aggregates`. These back the Sprint 2 public
-result endpoints (8.1/8.2) and the seeded aggregate run (6.4).
+Create the database seed infrastructure and seed the reference layer:
+normalized charges with aliases and obviously-fake normalized judges with
+aliases. This is the first task that inserts rows. Aggregate seeds are the
+NEXT task (6.4) and are out of scope here.
 
 ## Context
 
-- Migration runner, naming convention, and local Postgres (17.10, port 5433)
-  exist from 2.1–2.3. Migration 6.1 created the `ref.*` tables, the shared
-  `set_updated_at()` trigger function, and documented the naming convention
-  in db/README.md (*_key unique constraints, *_idx indexes, *_fkey FKs).
-- One migration file for all five tables (standing decision: FK-related
-  tables shipping together go in one file).
-- Privacy rule: `analytics.*` holds public aggregate data only. No defendant
-  columns, no docket numbers, no source-document references, no parsed/fact
-  record references.
+- Migrations 6.1/6.2 created all ref.* and analytics.* tables. Schemas-only
+  migration 2.3 preceded them.
+- Standing decision: seeds are TypeScript, live in db/seeds/, run through
+  Kysely, idempotent via ON CONFLICT upserts, root script `db:seed`.
+- Standing decision: reference seeds use standard ON CONFLICT upserts
+  (aggregate seeds in 6.4 will use delete-and-reinsert instead — not your
+  concern in this task).
+- Standing decision: seeded judges must have obviously fake names. Fabricated
+  statistics must never be attachable to a real Philadelphia judge. Charges
+  use real statute names (statutes are not people).
+- ref.* tables use UUID PKs (gen_random_uuid()), slug as the public lookup
+  key, trigger-maintained updated_at.
 
-## Standing decisions applied in this task
+## Scope
 
-- UUID primary keys via gen_random_uuid() on all five tables.
-- `analytics.aggregate_runs` gets created_at + updated_at with the existing
-  set_updated_at() trigger attached (first reuse — do NOT recreate the
-  function).
-- Aggregate rows are immutable: the four aggregate tables get created_at
-  only, no updated_at, no trigger.
-- Publication model: a run is "active published" iff
-  published_at IS NOT NULL AND invalidated_at IS NULL. At most one active
-  published run may exist, enforced by a unique partial index.
-- taxonomy_version and category_code are plain text — no FK to taxonomy
-  tables (taxonomy is package-only through Sprint 2; DB taxonomy tables are
-  Sprint 7).
+### 1. Alias uniqueness (verify or migrate)
 
-## Table definitions
+Seeds upsert aliases keyed on (normalized_charge_id, alias_text) and
+(normalized_judge_id, alias_text). Check whether migration 6.1 created unique
+constraints on those pairs.
 
-### analytics.aggregate_runs
+- If they exist: state so in your implementation plan and proceed.
+- If not: add ONE new migration (following the established naming convention
+  and *_key naming) that adds both unique constraints. Do not modify the 6.1
+  migration file.
 
-- id uuid PK default gen_random_uuid()
-- status text NOT NULL, CHECK status IN ('in_progress','completed','failed')
-- started_at timestamptz NOT NULL
-- completed_at timestamptz NULL
-- published_at timestamptz NULL
-- invalidated_at timestamptz NULL
-- invalidated_reason text NULL
-- parser_version text NULL (placeholder; real values arrive Sprint 4/5)
-- taxonomy_version text NOT NULL
-- data_range_start date NOT NULL
-- data_range_end date NOT NULL
-- created_at timestamptz NOT NULL default now()
-- updated_at timestamptz NOT NULL default now() + set_updated_at() trigger
+### 2. Seed infrastructure
 
-CHECK constraints:
-- data_range_start <= data_range_end
-- status = 'completed' OR completed_at IS NULL... specifically:
-  (status <> 'completed') OR (completed_at IS NOT NULL) — completed runs
-  must have a completion time
-- published_at IS NULL OR status = 'completed' — only completed runs can
-  be published
-- invalidated_at IS NULL OR published_at IS NOT NULL — only published runs
-  can be invalidated
-- (invalidated_at IS NULL) = (invalidated_reason IS NULL) — reason required
-  with invalidation, forbidden without
+- db/seeds/ directory, TypeScript, executed through Kysely using the existing
+  db package connection/config conventions.
+- A single entrypoint that runs all reference seeds in order
+  (charges → charge aliases → judges → judge aliases).
+- Root script `db:seed` wired in the root package.json.
+- Seeds are idempotent: running `db:seed` twice produces identical database
+  state — no duplicate rows, no errors, no spurious updated_at churn beyond
+  what an upsert implies.
+- Seed run must NOT touch analytics.* tables.
+- Structured console output: which seed ran, how many rows upserted. No
+  raw SQL dumps.
 
-Unique partial index (at most one active published run):
-- ON ((true)) WHERE published_at IS NOT NULL AND invalidated_at IS NULL
-- name per convention: aggregate_runs_active_published_idx
+### 3. Reference seed data
 
-### Common shape for the four aggregate tables
+Charges (5, real Pennsylvania statutes), each with at least one alias:
 
-- id uuid PK default gen_random_uuid()
-- aggregate_run_id uuid NOT NULL, FK -> analytics.aggregate_runs(id)
-- charge_id uuid NOT NULL, FK -> ref.normalized_charges(id)
-- judge_id uuid NOT NULL, FK -> ref.normalized_judges(id) — judge tables only
-- category_code text NOT NULL
-- count integer NOT NULL, CHECK count >= 0
-- percentage numeric(5,2) NOT NULL, CHECK percentage BETWEEN 0 AND 100
-- sample size column (see below), integer NOT NULL, CHECK > 0
-- date_range_start date NOT NULL
-- date_range_end date NOT NULL, CHECK date_range_start <= date_range_end
-- is_thin_data boolean NOT NULL
-- taxonomy_version text NOT NULL
-- created_at timestamptz NOT NULL default now()
-- NO updated_at (immutable rows)
+| slug | display name | statute | alias(es) |
+|---|---|---|---|
+| retail-theft | Retail Theft | 18 § 3929 | "shoplifting" |
+| simple-assault | Simple Assault | 18 § 2701 | "assault (simple)" |
+| dui-general-impairment | DUI: General Impairment | 75 § 3802(a)(1) | "driving under the influence", "drunk driving" |
+| possession-controlled-substance | Possession of a Controlled Substance | 35 § 780-113(a)(16) | "drug possession" |
+| criminal-trespass | Criminal Trespass | 18 § 3503 | "trespassing" |
 
-Sample size naming:
-- outcome tables: sample_size
-- sentencing tables: sentencing_sample_size (kept distinct by name so
-  outcome and sentencing sample sizes can never be silently conflated when
-  building API payloads)
+Judges (3, obviously fake — names that no real person plausibly holds),
+each with at least one alias:
 
-Unique constraints (also the ON CONFLICT keys for 6.4 seeding):
-- charge tables: (aggregate_run_id, charge_id, category_code)
-- judge tables: (aggregate_run_id, charge_id, judge_id, category_code)
+| slug | display name | alias(es) |
+|---|---|---|
+| judge-testina-placeholder | Judge Testina Placeholder | "T. Placeholder" |
+| judge-samuel-seeddata | Judge Samuel Seeddata | "S. Seeddata" |
+| judge-fakename-example | Judge Fakename Example | "F. Example" |
 
-Secondary indexes (FKs are not auto-indexed in Postgres):
-- charge_id on all four tables
-- judge_id on the two judge tables
+- All records active.
+- Grade may be left null (grades vary by offense circumstances; do not
+  invent them).
 
-FK behavior: default NO ACTION everywhere. No CASCADE — deleting a ref row
-must never silently delete published aggregates; ref rows deactivate via
-their active flag instead.
+### 4. Tests
 
-## Migration mechanics
+- A test (Vitest, in the db package or wherever db tests live per repo
+  convention) that runs the seed twice against the local database and
+  asserts: row counts unchanged after second run, no errors, aliases
+  resolve to their parent records.
+- If existing test setup can't hit the local DB, say so in your plan and
+  propose the minimal correct approach — do not silently skip the test.
 
-- One migration file, established naming convention.
-- Down migration drops the four aggregate tables first, then aggregate_runs
-  (FK-safe order), plain dropTable, no CASCADE. Do NOT drop the
-  set_updated_at() function — it is owned by migration 6.1.
-- Update db/src/types.ts: add all five tables to the Database interface with
-  schema-qualified keys ('analytics.aggregate_runs', etc.), Generated<> for
-  defaulted columns (id, created_at, updated_at).
+## Acceptance Criteria
 
-## Verification requirements
+1. Alias unique constraints on (parent_id, alias_text) exist for both alias
+   tables (pre-existing or via one new migration).
+2. db/seeds/ exists with a TypeScript entrypoint run via Kysely.
+3. Root `db:seed` script works from repo root.
+4. Exactly 5 charges, 3 judges seeded, each with ≥1 alias, matching the
+   tables above.
+5. Judges are obviously fake per the table; no real-sounding names.
+6. Running `db:seed` twice: no duplicates, no errors, identical state.
+7. analytics.* untouched by the seed run.
+8. Idempotency test exists and passes.
+9. No defendant-identifying data, no raw docket data, no secrets.
+10. Worklog entry appended to tasks/worklog.md.
 
-- Migration applies, rolls back, and reapplies cleanly against local
-  Postgres (fresh db:reset cycle).
-- Violating-insert checks run inside a transaction that is rolled back
-  (6.1 precedent — no insert-then-delete), covering at minimum:
-  - FK violation on aggregate_run_id, charge_id, judge_id
-  - status CHECK violation
-  - publishing a non-completed run (published_at CHECK)
-  - invalidation without reason (paired CHECK)
-  - second active published run rejected by the partial unique index
-  - duplicate (run, charge, category) rejected by unique constraint
-  - percentage out of range
-- Trigger check: UPDATE on aggregate_runs advances updated_at.
-- lint, typecheck, format:check, tests pass.
+## Out of Scope
 
-## Out of scope
-
-- Seed data of any kind (6.3 reference seeds, 6.4 aggregate seeds).
+- Aggregate seeds of any kind (task 6.4).
+- analytics.* rows, aggregate runs, published-run logic.
+- ref.outcome_categories / ref.sentencing_categories tables (deferred to
+  Sprint 7 per standing decision).
 - Any API endpoint work.
-- ref.outcome_categories / ref.sentencing_categories tables (Sprint 7).
-- A CHECK enforcing data_range_start >= 2025-01-01 — the MVP window is a
-  data policy enforced in 6.4 seeds and Sprint 7 aggregate validation, not
-  a schema invariant.
-- sum(count) = sample_size consistency — cross-row invariant; enforced in
-  6.4 seed assertions and Sprint 7 aggregate validation.
+- Modifying existing 6.1/6.2 migration files.
 
-## Files the agent may touch
+## Files You May Touch
 
-- db/migrations/ (one new migration file)
-- db/src/types.ts
-- db/README.md (only if a naming-convention note needs extending)
-- tasks/worklog.md (append entry on completion)
+- db/seeds/** (new)
+- db/migrations/** (one new file ONLY if alias unique constraints are missing)
+- db/src/** (only if seed code needs a small shared helper; justify in plan)
+- db/package.json, root package.json (scripts)
+- db test files per repo convention
+- tasks/worklog.md
 
 ## Process
 
-Return an implementation plan before writing any code. Flag any point where
-you'd deviate from this spec.
+Return an implementation plan BEFORE writing code. The plan must state
+whether the alias unique constraints already exist in 6.1, and where the
+idempotency test will live and how it connects to the local DB.

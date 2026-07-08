@@ -22,6 +22,7 @@
     "db:migrate:up": "pnpm --filter @pca/db run migrate:up",
     "db:migrate:down": "pnpm --filter @pca/db run migrate:down",
     "db:migrate:status": "pnpm --filter @pca/db run migrate:status",
+    "db:seed": "pnpm --filter @pca/db run seed",
     "taxonomy:validate": "pnpm --filter @pca/taxonomy run validate",
     "taxonomy:generate": "pnpm --filter @pca/taxonomy run generate"
   },
