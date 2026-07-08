@@ -7,9 +7,8 @@ const healthResponseSchema = Type.Object({
 });
 
 export const healthRoutes: FastifyPluginAsyncTypebox = async (app) => {
-  app.get(
-    '/health',
-    { schema: { response: { 200: healthResponseSchema } } },
-    async () => ({ status: 'ok' as const, uptime: process.uptime() }),
-  );
+  app.get('/health', { schema: { response: { 200: healthResponseSchema } } }, async () => ({
+    status: 'ok' as const,
+    uptime: process.uptime(),
+  }));
 };
