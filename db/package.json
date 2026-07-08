@@ -11,12 +11,13 @@
     "migrate:up": "tsx --env-file-if-exists=../.env src/migrate.ts up",
     "migrate:down": "tsx --env-file-if-exists=../.env src/migrate.ts down",
     "migrate:status": "tsx --env-file-if-exists=../.env src/migrate.ts status",
-    "seed": "tsx --env-file-if-exists=../.env seeds/run.ts",
+    "seed": "pnpm --filter @pca/taxonomy run generate && tsx --env-file-if-exists=../.env seeds/run.ts",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@pca/taxonomy": "workspace:*",
     "kysely": "^0.29.3",
     "pg": "^8.22.0"
   },

@@ -143,7 +143,7 @@ async function seedJudgeAliases(db: Kysely<Database>): Promise<SeedResult> {
   return { seed: 'ref.judge_aliases', upserted: Number(result.numInsertedOrUpdatedRows ?? 0n) };
 }
 
-async function selectIdBySlug(
+export async function selectIdBySlug(
   db: Kysely<Database>,
   table: 'ref.normalized_charges' | 'ref.normalized_judges',
   slugs: string[],
@@ -156,7 +156,7 @@ async function selectIdBySlug(
   return new Map(rows.map((row) => [row.slug, row.id]));
 }
 
-function requireId(idBySlug: Map<string, string>, slug: string): string {
+export function requireId(idBySlug: Map<string, string>, slug: string): string {
   const id = idBySlug.get(slug);
   if (!id) {
     throw new Error(`seed integrity error: no row found for slug "${slug}"`);

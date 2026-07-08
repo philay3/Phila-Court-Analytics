@@ -1,13 +1,24 @@
 import { createDb } from '../src/connection.js';
 import { describeError } from '../src/errors.js';
+import { seedAggregates } from './aggregates.js';
 import { seedReference } from './reference.js';
 
 async function main(): Promise<void> {
   const db = createDb();
   try {
-    const results = await seedReference(db);
-    for (const { seed, upserted } of results) {
+    // Reference seeds first: aggregate seeds resolve charge/judge ids by slug.
+    const referenceResults = await seedReference(db);
+    for (const { seed, upserted } of referenceResults) {
       console.log(`seeded ${seed}: ${upserted} row(s) upserted`);
+    }
+    const aggregateResults = await seedAggregates(db);
+    for (const { run, runId, runRowChanged, tables } of aggregateResults) {
+      console.log(
+        `aggregate run "${run}" (${runId}): run row ${runRowChanged ? 'upserted' : 'unchanged'}`,
+      );
+      for (const { table, deleted, inserted } of tables) {
+        console.log(`  ${table}: ${deleted} row(s) deleted, ${inserted} row(s) inserted`);
+      }
     }
   } finally {
     await db.destroy();
