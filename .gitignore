@@ -1,1 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+__pycache__/
+.pytest_cache/
+
+# Coverage
+coverage/
+.coverage
+htmlcov/
+
+# Environment files (never commit real values)
+.env
+.env.*
+!.env.example
+
+# Privacy-critical: raw dockets and extracted text must never enter the repo
+*.pdf
+fixtures/
+extracted-text/
+*.local.*
+
+# OS junk
 .DS_Store
