@@ -1,82 +1,97 @@
-# Task 2.1 — Local Docker Compose + PostgreSQL
+# Task 2.2 — Kysely + Migration Runner
 
 ## Goal
 
-Add a local PostgreSQL development environment via Docker Compose, with documented environment variables and local setup instructions. After this task, a developer can run one command and have a healthy, persistent local Postgres instance ready for the migration work in Task 2.2.
+Install Kysely and the pg driver, stand up a dedicated `@pca/db` workspace package
+that owns database connection config and migrations, and prove the migration
+runner works end-to-end (up, down, status) against the local Postgres from 2.1
+using one trivial sentinel migration.
 
 ## Context
 
-- Monorepo (1.1), TS base tooling (1.2), and the Fastify API shell (1.3) are complete.
-- The API does NOT connect to the database in this task. Kysely, migrations, and schema creation are Tasks 2.2 and 2.3.
-- Backlog reference: FDN-002.1 (Add Local Docker Compose).
-- Standing stack: PostgreSQL, Kysely (later), Node 22, pnpm workspaces.
-- Privacy posture: `.env.*` is already gitignored from 1.1. Only `.env.example` is committed, containing local-dev defaults and no real secrets.
+- Local Postgres runs via Docker Compose (task 2.1): image `postgres:17.10`,
+  host port 5433, started with the root `db:up` script. It must be running for
+  verification.
+- `DATABASE_URL` is already documented in `.env.example` from 2.1. The runner
+  must read the connection string from `DATABASE_URL` — never hardcode
+  credentials.
+- The architecture's monorepo layout includes a top-level `db/` directory.
+  This task turns it into workspace package `@pca/db`.
+- TypeScript is installed at the root only; workspaces use the root binary.
+  Strict mode, extending `tsconfig.base.json`.
+- The eight domain schemas (raw, parsed, ref, fact, analytics, review, audit,
+  auth) are task 2.3, NOT this task.
 
 ## Scope
 
-1. **`docker-compose.yml` at repo root** containing a single `postgres` service:
-   - official `postgres` image pinned to a specific version tag (propose the pin in your plan — see open questions)
-   - named volume for data persistence (survives `docker compose down`, cleared only by `down -v`)
-   - healthcheck using `pg_isready`
-   - port mapping to the host (propose default vs non-default host port in your plan)
-   - database name, user, and password sourced from environment variables with sensible local defaults
-2. **`.env.example` at repo root** (create or extend if one exists) with all DB variables:
-   - discrete vars (host, port, db, user, password) AND a composed `DATABASE_URL`, so both styles are available to later tasks
-   - placeholder/local-dev values only — nothing secret
-3. **Root convenience scripts** in `package.json`:
-   - `db:up` (detached), `db:down`, `db:logs` (or equivalent — propose names)
-4. **Local setup documentation**: either a `docs/local-setup.md` section or README update covering:
-   - prerequisite: Docker Desktop installed and running
-   - copy `.env.example` → `.env`
-   - start/stop/reset commands
-   - how to verify the DB is healthy (e.g. `docker compose ps` showing healthy, or a `psql`/`pg_isready` one-liner)
-5. **Object storage emulator**: NOT included. Add one sentence to the setup docs noting it is deferred until the pipeline needs it (per backlog FDN-002.1 "included or documented" — we choose documented).
+1. **Workspace package `@pca/db`** at `db/`:
+   - `package.json` (name `@pca/db`, private), `tsconfig.json` extending the
+     base config, included in `pnpm-workspace.yaml` if the glob doesn't
+     already cover it.
+   - Dependencies: `kysely`, `pg`. Dev dependencies: `tsx`, `@types/pg`.
+2. **Connection module** (`db/src/connection.ts` or similar):
+   - Creates a Kysely instance from `DATABASE_URL` via the pg Pool.
+   - Fails fast with a clear error message if `DATABASE_URL` is unset.
+   - No credentials, hosts, or ports hardcoded anywhere.
+3. **Migration runner** (`db/src/migrate.ts` or similar) using Kysely's
+   `Migrator` with `FileMigrationProvider`:
+   - Commands: `migrate:latest` (apply all pending), `migrate:up` (one step),
+     `migrate:down` (one step), `migrate:status` (list migrations with
+     executed/pending state).
+   - Exposed as package scripts in `@pca/db` and mirrored as root scripts
+     (`db:migrate:latest`, `db:migrate:up`, `db:migrate:down`,
+     `db:migrate:status`).
+   - Runner exits nonzero on migration failure and prints which migration
+     failed.
+4. **Migrations directory**: `db/migrations/`.
+   - Naming convention: `YYYYMMDDHHMMSS_snake_case_description.ts`
+     (lexicographic order = execution order). Document this.
+5. **Sentinel migration**: one migration
+   (`..._migration_system_sentinel.ts`) that creates a trivial table
+   `public.migration_sentinel` (single `id` column is fine) in `up` and drops
+   it in `down`. Its only purpose is proving the runner round-trips. Note in
+   a comment that 2.3 may remove or supersede it.
+6. **Documentation**: `db/README.md` covering: what `@pca/db` is, the naming
+   convention, how to run each migration command, and the requirement that
+   Postgres (`pnpm db:up`) is running first.
+7. **Lint/typecheck integration**: `@pca/db` participates in root `lint` and
+   `typecheck` scripts like the other workspaces.
 
-## Acceptance criteria
+## Out of Scope
 
-- [ ] `docker compose up -d` (or the `db:up` script) starts PostgreSQL locally
-- [ ] Postgres image is pinned to a specific version (no `latest`)
-- [ ] Container reports healthy via its healthcheck
-- [ ] Data persists across `docker compose down` + `up` (named volume)
-- [ ] `.env.example` exists at root with all DB variables and a `DATABASE_URL`, local placeholder values only
-- [ ] `.env` is gitignored (verify existing pattern covers it; do not weaken it)
-- [ ] Root scripts `db:up` / `db:down` / `db:logs` (or agreed names) work
-- [ ] Local setup docs cover prerequisites, first-run steps, start/stop/reset, and health verification
-- [ ] Object storage emulator deferral is documented in one sentence
-- [ ] `pnpm lint`, `pnpm typecheck`, and `pnpm test` still pass (nothing should break, but verify)
-- [ ] No secrets, no production values, no credentials beyond local-dev placeholders committed
+- The eight domain schemas and any real tables (task 2.3).
+- Using Kysely from `apps/api` (no API changes at all in this task).
+- Database type generation / codegen.
+- Seed data of any kind.
+- CI integration (task 5.2).
+- Changes to Docker Compose or the Postgres setup from 2.1.
 
-## Out of scope
+## Acceptance Criteria
 
-- Kysely installation or configuration (Task 2.2)
-- Migration runner or any migrations (Tasks 2.2 / 2.3)
-- Creating any schemas or tables (Task 2.3)
-- Connecting the Fastify API to the database (later task)
-- Object storage emulator (documented deferral only)
-- CI changes (Phase 5)
-- Multiple compose profiles, prod compose files, or container orchestration beyond local dev
+- [ ] `@pca/db` exists as a workspace package; `pnpm install` succeeds from root.
+- [ ] Root `typecheck` and `lint` pass and include the new package.
+- [ ] With Postgres running: `pnpm db:migrate:latest` applies the sentinel
+      migration; `migration_sentinel` table exists.
+- [ ] `pnpm db:migrate:status` correctly shows executed vs pending state
+      before and after applying.
+- [ ] `pnpm db:migrate:down` drops the sentinel table; re-running
+      `db:migrate:latest` reapplies it cleanly (full round-trip).
+- [ ] Runner fails with a clear message (nonzero exit) when `DATABASE_URL`
+      is unset or Postgres is down — no stack-trace-only failures.
+- [ ] Migration naming convention documented in `db/README.md`.
+- [ ] No credentials, `.env` files, or secrets committed. `.env.example`
+      updated only if something new is genuinely required (expected: nothing).
 
-## Files the agent may touch
+## Files the Agent May Touch
 
-- `docker-compose.yml` (new, repo root)
-- `.env.example` (new or extended, repo root)
-- `package.json` (root — scripts only)
-- `docs/local-setup.md` (new) or `README.md` (setup section) — state which in your plan
-- `.gitignore` (only if a required ignore pattern is missing — call it out)
-- `tasks/worklog.md` (append entry on completion)
+- `db/**` (new package: source, migrations, README, configs)
+- Root `package.json` (new `db:migrate:*` scripts only)
+- `pnpm-workspace.yaml` (only if the existing glob doesn't cover `db/`)
+- `pnpm-lock.yaml`
+- ESLint config only if needed to include `db/` in linting
 
-## Notes / open questions for the agent's plan
+## Process Reminder
 
-- **Postgres version pin**: propose a specific tag (e.g. `postgres:17.x` vs `16.x`) and justify. We want a current major that Kysely and the analytics workload are happy with; no `latest`, no unversioned major-only tag unless you argue for it.
-- **Host port**: propose 5432 vs a non-default port (e.g. 5433) to avoid collisions with any host-installed Postgres. State the tradeoff.
-- **Env var naming**: propose the exact variable names (e.g. `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL`) and how compose consumes them (`env_file` vs `environment` with `${VAR:-default}` interpolation). Keep it compatible with what Kysely will need in 2.2.
-- **Volume naming**: propose the named volume convention.
-- Remember the standing rule: return your implementation plan before writing any code.
-
----
-
-## Status
-
-- Handed off: [date]
-- Plan approved: pending
-- Completed: pending
+Respond with an implementation plan BEFORE writing any code. The plan will be
+reviewed and approved separately. Append a worklog entry to `tasks/worklog.md`
+when the task is complete.

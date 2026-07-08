@@ -51,3 +51,12 @@ You are the implementation agent for this project. Planning and task sequencing 
 ## Reference docs
 
 Planning docs live in `docs/`. Consult them for context, but `docs/current-task.md` defines what you build. If the docs and the task conflict, ask.
+
+## Documentation rules
+
+- `docs/` is reserved for the human-maintained planning documents (roadmap,
+  PRD, architecture, specs). Never create, edit, or move files in `docs/`.
+- Documentation you generate (setup notes, tooling notes, decision records)
+  goes in `agent-docs/`.
+- Package-level READMEs (e.g. `db/README.md`, `apps/api/README.md`) are fine
+  and belong with their package — they are not affected by this rule.

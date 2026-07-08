@@ -16,7 +16,11 @@
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",
-    "db:reset": "docker compose down -v"
+    "db:reset": "docker compose down -v",
+    "db:migrate:latest": "pnpm --filter @pca/db run migrate:latest",
+    "db:migrate:up": "pnpm --filter @pca/db run migrate:up",
+    "db:migrate:down": "pnpm --filter @pca/db run migrate:down",
+    "db:migrate:status": "pnpm --filter @pca/db run migrate:status"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
