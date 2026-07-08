@@ -5,3 +5,9 @@ packages:
   - 'db'
 allowBuilds:
   esbuild: true
+  # sharp is Next.js's optional native image-optimizer; the shell has no
+  # images, so skip its build script. Revisit when images arrive (Sprint 3).
+  sharp: false
+  # unrs-resolver ships prebuilt platform binaries via optionalDependencies;
+  # its postinstall is only a fallback check, so no build script needed.
+  unrs-resolver: false
