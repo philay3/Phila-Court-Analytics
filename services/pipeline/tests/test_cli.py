@@ -5,9 +5,13 @@ import pytest
 from pipeline import cli
 
 SUBCOMMAND_NAMES = [name for name, _ in cli.SUBCOMMANDS]
+# evaluate-extractors is implemented (Task 5.1) and covered by its own tests.
+PLACEHOLDER_NAMES = [
+    name for name in SUBCOMMAND_NAMES if name in cli.PLACEHOLDER_COMMANDS
+]
 
 
-@pytest.mark.parametrize("command", SUBCOMMAND_NAMES)
+@pytest.mark.parametrize("command", PLACEHOLDER_NAMES)
 def test_subcommand_exits_zero_and_logs_json(command, capsys):
     assert cli.main([command]) == 0
     err = capsys.readouterr().err
