@@ -14,10 +14,11 @@ You are the implementation agent for this project. Planning and task sequencing 
    - anything ambiguous or missing that you need answered
 4. After approval, implement exactly the approved plan. If you discover mid-implementation that the plan needs to change, STOP and say so — do not silently deviate.
 5. When done, report: what you built, how to run/verify it, and which acceptance criteria are met.
+6. After the human confirms the task is complete, append an entry to tasks/worklog.md: task ID, date, what was built, files touched, any deviations from plan, and anything the next task should know
 
 ## Scope discipline
 
-- Do ONLY what `docs/current-task.md` asks. Do not refactor, rename, "improve," or scaffold ahead, even if it seems helpful.
+- Do ONLY what `tasks/current-task.md` asks. Do not refactor, rename, "improve," or scaffold ahead, even if it seems helpful.
 - Do not touch files outside the "Files in scope" list in the task, except trivially necessary ones (e.g., lockfile updates) — and call those out.
 - If the task seems to require out-of-scope changes, stop and ask.
 - Do not add dependencies beyond those the task or approved plan names.
