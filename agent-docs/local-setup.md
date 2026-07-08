@@ -33,12 +33,12 @@ until the pipeline needs one (backlog FDN-002.1, "documented" option).
 
 ## Start / stop / reset
 
-| Command         | Effect                                                      |
-| --------------- | ----------------------------------------------------------- |
-| `pnpm db:up`    | Start PostgreSQL in the background                          |
-| `pnpm db:down`  | Stop and remove the container (data is kept)                |
-| `pnpm db:logs`  | Follow the PostgreSQL logs                                  |
-| `pnpm db:reset` | Stop and **delete all data** (removes the named volume)     |
+| Command         | Effect                                                  |
+| --------------- | ------------------------------------------------------- |
+| `pnpm db:up`    | Start PostgreSQL in the background                      |
+| `pnpm db:down`  | Stop and remove the container (data is kept)            |
+| `pnpm db:logs`  | Follow the PostgreSQL logs                              |
+| `pnpm db:reset` | Stop and **delete all data** (removes the named volume) |
 
 Data lives in the named Docker volume `pca_postgres-data`, so it survives
 `pnpm db:down` / `pnpm db:up` cycles. Only `pnpm db:reset` clears it.

@@ -19,9 +19,9 @@ to it:
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
   },
-  "include": ["src"]
+  "include": ["src"],
 }
 ```
 
@@ -52,9 +52,9 @@ everywhere; `.prettierignore` excludes build output, the lockfile, and planning 
 
 ## Root scripts
 
-| Script | What it does |
-| --- | --- |
-| `pnpm lint` | `eslint .` over the whole repo |
-| `pnpm format` | `prettier --write .` |
-| `pnpm format:check` | `prettier --check .` |
-| `pnpm typecheck` | `tsc -p tsconfig.json` (root config; workspaces get their own) |
+| Script              | What it does                                                   |
+| ------------------- | -------------------------------------------------------------- |
+| `pnpm lint`         | `eslint .` over the whole repo                                 |
+| `pnpm format`       | `prettier --write .`                                           |
+| `pnpm format:check` | `prettier --check .`                                           |
+| `pnpm typecheck`    | `tsc -p tsconfig.json` (root config; workspaces get their own) |
