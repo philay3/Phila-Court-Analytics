@@ -1,81 +1,77 @@
-# Current Task: 1.2 — TypeScript Base Tooling
-
-> Reminder: respond with an implementation plan first. Do not write code until the plan is approved. See CLAUDE.md.
+# Task 2.1 — Local Docker Compose + PostgreSQL
 
 ## Goal
 
-Shared TypeScript, lint, and format configuration exists at the repo root, with strict mode enabled, root scripts wired up, and a documented pattern for workspaces to extend — without scaffolding any app or package code.
+Add a local PostgreSQL development environment via Docker Compose, with documented environment variables and local setup instructions. After this task, a developer can run one command and have a healthy, persistent local Postgres instance ready for the migration work in Task 2.2.
 
 ## Context
 
-Backlog item FDN-001.2. Task 1.1 created the pnpm-workspace skeleton with placeholder folders only; no workspace has a package.json yet. This task creates the base configs that every later workspace (API, web, shared, taxonomy) will extend. The extension itself happens in those later tasks — here we only prove the tooling runs cleanly at the root.
-
-## Standing decisions that apply
-
-- TypeScript strict mode (locked per sprint-1-plan.md)
-- Node 22 LTS
-- Lint/format: ESLint 9 flat config + typescript-eslint + Prettier (new decision, this task)
-- Plain pnpm workspaces; no Turborepo
+- Monorepo (1.1), TS base tooling (1.2), and the Fastify API shell (1.3) are complete.
+- The API does NOT connect to the database in this task. Kysely, migrations, and schema creation are Tasks 2.2 and 2.3.
+- Backlog reference: FDN-002.1 (Add Local Docker Compose).
+- Standing stack: PostgreSQL, Kysely (later), Node 22, pnpm workspaces.
+- Privacy posture: `.env.*` is already gitignored from 1.1. Only `.env.example` is committed, containing local-dev defaults and no real secrets.
 
 ## Scope
 
-1. **`tsconfig.base.json`** at repo root:
-   - `strict: true` plus the usual hardening flags: `noUncheckedIndexedAccess`, `noImplicitOverride`, `forceConsistentCasingInFileNames`, `esModuleInterop`, `skipLibCheck`, `isolatedModules`
-   - `target` / `lib` appropriate for Node 22 (ES2023)
-   - `module`/`moduleResolution` suitable for a modern ESM monorepo (agent should state its choice and reasoning in the plan — e.g. `NodeNext` — knowing Next.js will use its own bundler settings later)
-   - No `paths` aliases yet (deferred until shared packages exist)
-2. **ESLint** flat config (`eslint.config.js` or `.mjs`) at root:
-   - typescript-eslint recommended rules
-   - Prettier compatibility (eslint-config-prettier)
-   - ignores: `node_modules`, build output dirs, `docs/`, `tasks/`
-3. **Prettier**: `.prettierrc` (agent proposes sensible defaults in plan) + `.prettierignore`
-4. **Root package.json updates**:
-   - devDependencies: typescript, eslint, typescript-eslint, prettier, eslint-config-prettier
-   - scripts: `lint` (eslint .), `format` (prettier --write), `format:check` (prettier --check), `typecheck` (should exit cleanly today even with no TS source files — agent to state how, e.g. a root tsconfig.json that extends the base with an empty/placeholder include)
-5. **Docs**: short section in root README (or `docs/tooling.md`) explaining how a new workspace extends `tsconfig.base.json` and inherits lint/format — the pattern tasks 1.3+ will follow.
-6. **Verification** the agent must run and report:
-   - `pnpm lint` exits 0
-   - `pnpm format:check` exits 0
-   - `pnpm typecheck` exits 0
+1. **`docker-compose.yml` at repo root** containing a single `postgres` service:
+   - official `postgres` image pinned to a specific version tag (propose the pin in your plan — see open questions)
+   - named volume for data persistence (survives `docker compose down`, cleared only by `down -v`)
+   - healthcheck using `pg_isready`
+   - port mapping to the host (propose default vs non-default host port in your plan)
+   - database name, user, and password sourced from environment variables with sensible local defaults
+2. **`.env.example` at repo root** (create or extend if one exists) with all DB variables:
+   - discrete vars (host, port, db, user, password) AND a composed `DATABASE_URL`, so both styles are available to later tasks
+   - placeholder/local-dev values only — nothing secret
+3. **Root convenience scripts** in `package.json`:
+   - `db:up` (detached), `db:down`, `db:logs` (or equivalent — propose names)
+4. **Local setup documentation**: either a `docs/local-setup.md` section or README update covering:
+   - prerequisite: Docker Desktop installed and running
+   - copy `.env.example` → `.env`
+   - start/stop/reset commands
+   - how to verify the DB is healthy (e.g. `docker compose ps` showing healthy, or a `psql`/`pg_isready` one-liner)
+5. **Object storage emulator**: NOT included. Add one sentence to the setup docs noting it is deferred until the pipeline needs it (per backlog FDN-002.1 "included or documented" — we choose documented).
 
 ## Acceptance criteria
 
-- [ ] `tsconfig.base.json` exists with strict mode and the flags above
-- [ ] ESLint 9 flat config exists and runs cleanly at root
-- [ ] Prettier config + ignore file exist; format check passes
-- [ ] Root scripts `lint`, `format`, `format:check`, `typecheck` all exit 0
-- [ ] Extension pattern documented for future workspaces
-- [ ] All new dependencies are devDependencies at the root
-- [ ] `pnpm-lock.yaml` updated and committed
-- [ ] No app/package code, no workspace package.jsons, no CI changes
-- [ ] Worklog entry appended to `tasks/worklog.md`
+- [ ] `docker compose up -d` (or the `db:up` script) starts PostgreSQL locally
+- [ ] Postgres image is pinned to a specific version (no `latest`)
+- [ ] Container reports healthy via its healthcheck
+- [ ] Data persists across `docker compose down` + `up` (named volume)
+- [ ] `.env.example` exists at root with all DB variables and a `DATABASE_URL`, local placeholder values only
+- [ ] `.env` is gitignored (verify existing pattern covers it; do not weaken it)
+- [ ] Root scripts `db:up` / `db:down` / `db:logs` (or agreed names) work
+- [ ] Local setup docs cover prerequisites, first-run steps, start/stop/reset, and health verification
+- [ ] Object storage emulator deferral is documented in one sentence
+- [ ] `pnpm lint`, `pnpm typecheck`, and `pnpm test` still pass (nothing should break, but verify)
+- [ ] No secrets, no production values, no credentials beyond local-dev placeholders committed
 
 ## Out of scope
 
-- Any workspace-level package.json or tsconfig (that's 1.3 onward)
-- Fastify, Next.js, or any application dependencies
-- CI workflow (Phase 5.2)
-- Path aliases / project references (revisit when packages/shared exists)
-- lint-staged / husky / git hooks (decide later if wanted; do not add now)
-- Editor config beyond a simple `.editorconfig` (optional; agent may propose one line-item in plan)
+- Kysely installation or configuration (Task 2.2)
+- Migration runner or any migrations (Tasks 2.2 / 2.3)
+- Creating any schemas or tables (Task 2.3)
+- Connecting the Fastify API to the database (later task)
+- Object storage emulator (documented deferral only)
+- CI changes (Phase 5)
+- Multiple compose profiles, prod compose files, or container orchestration beyond local dev
 
-## Files in scope
+## Files the agent may touch
 
-- `tsconfig.base.json` (new)
-- `tsconfig.json` (new, root, only if needed for typecheck to run)
-- `eslint.config.js` / `.mjs` (new)
-- `.prettierrc`, `.prettierignore` (new)
-- `.editorconfig` (optional, new)
-- `package.json`, `pnpm-lock.yaml` (root, modified)
-- `README.md` or `docs/tooling.md` (modified/new, docs only)
-
-Nothing else.
+- `docker-compose.yml` (new, repo root)
+- `.env.example` (new or extended, repo root)
+- `package.json` (root — scripts only)
+- `docs/local-setup.md` (new) or `README.md` (setup section) — state which in your plan
+- `.gitignore` (only if a required ignore pattern is missing — call it out)
+- `tasks/worklog.md` (append entry on completion)
 
 ## Notes / open questions for the agent's plan
 
-- State the chosen `module`/`moduleResolution` and why.
-- State how `typecheck` exits cleanly with no source files yet.
-- If any ESLint rule set choice is opinionated (e.g. stylistic rules), flag it rather than silently adding.
+- **Postgres version pin**: propose a specific tag (e.g. `postgres:17.x` vs `16.x`) and justify. We want a current major that Kysely and the analytics workload are happy with; no `latest`, no unversioned major-only tag unless you argue for it.
+- **Host port**: propose 5432 vs a non-default port (e.g. 5433) to avoid collisions with any host-installed Postgres. State the tradeoff.
+- **Env var naming**: propose the exact variable names (e.g. `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL`) and how compose consumes them (`env_file` vs `environment` with `${VAR:-default}` interpolation). Keep it compatible with what Kysely will need in 2.2.
+- **Volume naming**: propose the named volume convention.
+- Remember the standing rule: return your implementation plan before writing any code.
 
 ---
 
