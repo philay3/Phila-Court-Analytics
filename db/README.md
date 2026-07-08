@@ -11,6 +11,11 @@ and the `pg` driver.
   `status`).
 - `migrations/` — migration files, one per change.
 
+The first migration (`20260708030321_create_core_schemas.ts`) is the
+schema-namespace baseline: it creates the eight core PostgreSQL schemas
+(`raw`, `parsed`, `ref`, `fact`, `analytics`, `review`, `audit`, `auth`).
+Tables arrive in later migrations.
+
 ## Prerequisites
 
 - **Postgres must be running first**: `pnpm db:up` from the repo root (see
@@ -43,7 +48,7 @@ The runner exits nonzero on failure and prints which migration failed.
 YYYYMMDDHHMMSS_snake_case_description.ts
 ```
 
-Example: `20260707223956_migration_system_sentinel.ts`
+Example: `20260708030321_create_core_schemas.ts`
 
 - The prefix is a UTC timestamp (second precision) taken when the migration
   is created. Lexicographic order = execution order — Kysely runs files

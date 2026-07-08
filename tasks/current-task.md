@@ -1,97 +1,88 @@
-# Task 2.2 — Kysely + Migration Runner
+# Task 2.3 — Initial Eight-Schema Migration
 
 ## Goal
 
-Install Kysely and the pg driver, stand up a dedicated `@pca/db` workspace package
-that owns database connection config and migrations, and prove the migration
-runner works end-to-end (up, down, status) against the local Postgres from 2.1
-using one trivial sentinel migration.
+Replace the sentinel migration with the project's first real migration: a single
+migration that creates the eight PostgreSQL schemas that form the namespace
+skeleton of the architecture (`raw`, `parsed`, `ref`, `fact`, `analytics`,
+`review`, `audit`, `auth`). Reset local migration history so it starts clean
+with this migration.
 
 ## Context
 
-- Local Postgres runs via Docker Compose (task 2.1): image `postgres:17.10`,
-  host port 5433, started with the root `db:up` script. It must be running for
-  verification.
-- `DATABASE_URL` is already documented in `.env.example` from 2.1. The runner
-  must read the connection string from `DATABASE_URL` — never hardcode
-  credentials.
-- The architecture's monorepo layout includes a top-level `db/` directory.
-  This task turns it into workspace package `@pca/db`.
-- TypeScript is installed at the root only; workspaces use the root binary.
-  Strict mode, extending `tsconfig.base.json`.
-- The eight domain schemas (raw, parsed, ref, fact, analytics, review, audit,
-  auth) are task 2.3, NOT this task.
+- The migration system lives in the `@pca/db` workspace (`db/`), built in 2.2:
+  Kysely `Migrator` + `FileMigrationProvider`, commands `latest`/`up`/`down`/
+  `status`, root scripts `db:migrate:*`, env via `tsx --env-file-if-exists`.
+- Migration naming convention (documented in `db/README.md`):
+  `YYYYMMDDHHMMSS_snake_case_description.ts`.
+- The sentinel migration (`20260707223956_migration_system_sentinel.ts`) exists
+  only to prove the runner works end-to-end. It is already commented as
+  removable. Nothing production-like exists in any environment; the local
+  database is disposable.
+- These eight schemas mirror the data model layers in `architecture.md`. This
+  task creates the namespaces only — tables come in later tasks (FDN-002.3+).
+- Local Postgres from 2.1 (`postgres:17.10`, host port 5433, `pnpm db:up`) must
+  be running for verification.
 
 ## Scope
 
-1. **Workspace package `@pca/db`** at `db/`:
-   - `package.json` (name `@pca/db`, private), `tsconfig.json` extending the
-     base config, included in `pnpm-workspace.yaml` if the glob doesn't
-     already cover it.
-   - Dependencies: `kysely`, `pg`. Dev dependencies: `tsx`, `@types/pg`.
-2. **Connection module** (`db/src/connection.ts` or similar):
-   - Creates a Kysely instance from `DATABASE_URL` via the pg Pool.
-   - Fails fast with a clear error message if `DATABASE_URL` is unset.
-   - No credentials, hosts, or ports hardcoded anywhere.
-3. **Migration runner** (`db/src/migrate.ts` or similar) using Kysely's
-   `Migrator` with `FileMigrationProvider`:
-   - Commands: `migrate:latest` (apply all pending), `migrate:up` (one step),
-     `migrate:down` (one step), `migrate:status` (list migrations with
-     executed/pending state).
-   - Exposed as package scripts in `@pca/db` and mirrored as root scripts
-     (`db:migrate:latest`, `db:migrate:up`, `db:migrate:down`,
-     `db:migrate:status`).
-   - Runner exits nonzero on migration failure and prints which migration
-     failed.
-4. **Migrations directory**: `db/migrations/`.
-   - Naming convention: `YYYYMMDDHHMMSS_snake_case_description.ts`
-     (lexicographic order = execution order). Document this.
-5. **Sentinel migration**: one migration
-   (`..._migration_system_sentinel.ts`) that creates a trivial table
-   `public.migration_sentinel` (single `id` column is fine) in `up` and drops
-   it in `down`. Its only purpose is proving the runner round-trips. Note in
-   a comment that 2.3 may remove or supersede it.
-6. **Documentation**: `db/README.md` covering: what `@pca/db` is, the naming
-   convention, how to run each migration command, and the requirement that
-   Postgres (`pnpm db:up`) is running first.
-7. **Lint/typecheck integration**: `@pca/db` participates in root `lint` and
-   `typecheck` scripts like the other workspaces.
-
-## Out of Scope
-
-- The eight domain schemas and any real tables (task 2.3).
-- Using Kysely from `apps/api` (no API changes at all in this task).
-- Database type generation / codegen.
-- Seed data of any kind.
-- CI integration (task 5.2).
-- Changes to Docker Compose or the Postgres setup from 2.1.
+1. **Delete the sentinel migration file.** Do not write a new migration to drop
+   the sentinel table — local history is reset instead (see verification).
+   Update any reference to the sentinel in `db/README.md`.
+2. **Create one new migration** named per convention, e.g.
+   `YYYYMMDDHHMMSS_create_core_schemas.ts` (generate a real current timestamp):
+   - `up`: creates all eight schemas: `raw`, `parsed`, `ref`, `fact`,
+     `analytics`, `review`, `audit`, `auth`.
+   - `down`: drops all eight schemas using plain `DROP SCHEMA` — **never
+     `CASCADE`**. This is deliberate: if tables ever exist, `down` must fail
+     loudly rather than destroy data. Drop order is irrelevant while empty.
+   - Kysely's schema builder (`db.schema.createSchema(...)`) or raw `sql`
+     template are both acceptable; pick one and use it consistently.
+   - No `IF NOT EXISTS` / `IF EXISTS` guards — history is clean and migrations
+     should fail on unexpected state.
+3. **Document** in `db/README.md`: a short note that this migration is the
+   schema-namespace baseline and that tables arrive in later migrations.
+4. **Worklog**: append an entry to `tasks/worklog.md` after completion.
 
 ## Acceptance Criteria
 
-- [ ] `@pca/db` exists as a workspace package; `pnpm install` succeeds from root.
-- [ ] Root `typecheck` and `lint` pass and include the new package.
-- [ ] With Postgres running: `pnpm db:migrate:latest` applies the sentinel
-      migration; `migration_sentinel` table exists.
-- [ ] `pnpm db:migrate:status` correctly shows executed vs pending state
-      before and after applying.
-- [ ] `pnpm db:migrate:down` drops the sentinel table; re-running
-      `db:migrate:latest` reapplies it cleanly (full round-trip).
-- [ ] Runner fails with a clear message (nonzero exit) when `DATABASE_URL`
-      is unset or Postgres is down — no stack-trace-only failures.
-- [ ] Migration naming convention documented in `db/README.md`.
-- [ ] No credentials, `.env` files, or secrets committed. `.env.example`
-      updated only if something new is genuinely required (expected: nothing).
+- Sentinel migration file is deleted; no migration in the directory references
+  `migration_sentinel`.
+- Exactly one migration exists, correctly named, creating the eight schemas in
+  `up` and dropping them (no CASCADE) in `down`.
+- After `pnpm db:reset` + `db:up` (fresh database), the full cycle verifies:
+  1. `migrate:status` shows exactly one pending migration
+  2. `migrate:latest` applies it
+  3. all eight schemas exist — verify via
+     `SELECT schema_name FROM information_schema.schemata` (psql or a query
+     through the runner's connection)
+  4. `migrate:down` removes all eight schemas
+  5. `migrate:latest` reapplies cleanly
+- The old `public.migration_sentinel` table does not exist (guaranteed by the
+  volume reset; confirm anyway).
+- Root `pnpm lint`, `typecheck`, and `format:check` pass.
+- No credentials, hosts, or ports hardcoded; connection still comes from
+  `DATABASE_URL` only.
+- Worklog entry appended.
 
-## Files the Agent May Touch
+## Out of Scope
 
-- `db/**` (new package: source, migrations, README, configs)
-- Root `package.json` (new `db:migrate:*` scripts only)
-- `pnpm-workspace.yaml` (only if the existing glob doesn't cover `db/`)
-- `pnpm-lock.yaml`
-- ESLint config only if needed to include `db/` in linting
+- **Any tables, in any schema** — FDN-002.3 (initial reference and aggregate
+  tables) is a separate task. Do not create "just one table while you're in
+  here."
+- Database roles, grants, or least-privilege setup.
+- Postgres extensions.
+- Connecting the API (`@pca/api`) to the database.
+- Seed data of any kind.
+- Changes to Docker Compose or `.env.example`.
+
+## Files You May Touch
+
+- `db/migrations/` (delete sentinel, add new migration)
+- `db/README.md`
+- `tasks/worklog.md`
 
 ## Process Reminder
 
-Respond with an implementation plan BEFORE writing any code. The plan will be
-reviewed and approved separately. Append a worklog entry to `tasks/worklog.md`
-when the task is complete.
+Return an implementation plan before writing any code. The plan is reviewed
+and approved in the planning chat first.
