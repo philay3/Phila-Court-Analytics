@@ -1,20 +1,27 @@
-# Task 3.1 — Create Taxonomy Package
+# Task 3.2 — Create Shared API Types Package
 
 ## Goal
 
-Create `packages/taxonomy` (`@pca/taxonomy`): the single source of truth for
-outcome categories, sentencing categories, and thin-data configuration. Seed
-data lives in JSON, a validation script enforces invariants, and a generate
-script emits TypeScript and JSON artifacts for downstream consumers.
+Create `packages/shared` (`@pca/shared`): the single source of truth for
+public API contracts. Public response shapes are defined as TypeBox schemas
+with derived static types, so `@pca/api` gets runtime JSON Schema validation
+and `@pca/web` gets compile-time types from one definition. Category codes
+are derived from `@pca/taxonomy` generated artifacts — never re-declared.
 
 ## Context
 
-- Monorepo, TS base tooling, ESLint/Prettier, and Vitest are already set up.
-- TypeScript is installed at the root only; use the root binary.
-- Package naming convention is `@pca/*`.
-- This package has NO database dependency. Do not touch db/ or migrations.
-- `packages/shared` (task 3.2, not this task) will later import the generated
-  TypeScript artifact.
+- Monorepo, TS base tooling, ESLint/Prettier, Vitest are set up. TypeScript
+  lives at the root only; use the root binary.
+- `@pca/taxonomy` exists (task 3.1). Its `generate` script emits TypeScript
+  and JSON artifacts into its `generated/` directory, including outcome
+  categories, sentencing categories, and the taxonomy version string.
+  ESLint already ignores `**/generated/`.
+- TypeBox is the locked validation library (already used in `@pca/api` for
+  the /health schema). This package makes it the contract layer.
+- This package has NO database dependency and NO Fastify dependency. It is
+  pure schemas + types.
+- `@pca/api` and `@pca/web` will import from this package starting in
+  Sprint 2. Do NOT modify apps/api or apps/web in this task.
 
 ## Reminder: return an implementation plan BEFORE writing any code.
 
@@ -22,94 +29,139 @@ script emits TypeScript and JSON artifacts for downstream consumers.
 
 ### 1. Package scaffold
 
-- `packages/taxonomy/` with `package.json` (`@pca/taxonomy`), tsconfig
-  extending the root base config, and a README describing the package's role
-  and how to regenerate artifacts.
+- `packages/shared/` with `package.json` (`@pca/shared`), tsconfig extending
+  the root base config, README describing the package's role and the rule
+  that public contracts live here and nowhere else.
+- Dependencies: `@sinclair/typebox`, and workspace dependency
+  `@pca/taxonomy` (`workspace:*`).
 
-### 2. Seed files (JSON, source of truth)
+### 2. Common building blocks (`src/public/common.ts` or similar)
 
-- `seeds/outcome-categories.json` with exactly these categories:
-  dismissed, withdrawn, guilty_plea, guilty_verdict, acquittal, ard,
-  diversion, other, unknown.
-- `seeds/sentencing-categories.json` with exactly these categories:
-  probation, incarceration, fine, restitution, community_service,
-  no_further_penalty, costs_fees, other, unknown.
-- Every category record has:
-  - `code` — stable snake_case identifier (never to be renamed)
-  - `displayName` — plain-English public label
-  - `definition` — plain-English public definition, one or two sentences
-  - `sortOrder` — integer, unique within its file
-  - `public` — boolean; `unknown` is `false` in both files, all others `true`
-- Definitions must be neutral and descriptive. No prediction, odds, legal
-  advice, or ranking language.
-- `seeds/thin-data.json`: structure for thin-data policy with PROVISIONAL
-  values, e.g. `minSampleSize` for outcome and sentencing distributions
-  plus a `provisional: true` flag and a comment field noting thresholds are
-  finalized after parser/data review. Keep it minimal.
-- `seeds/version.json`: `{ "taxonomyVersion": "1.0.0" }`.
+TypeBox schemas + derived static types for:
 
-### 3. Validation script (`pnpm --filter @pca/taxonomy validate`)
+- `SampleSize` — integer, minimum 0.
+- `DateRange` — object with `start` and `end`, ISO date strings
+  (`format: 'date'`), `additionalProperties: false`.
+- `TaxonomyVersion` — string (semver-shaped; a pattern check is acceptable,
+  exact semver grammar is not required).
+- `ThinDataStatus` — boolean.
+- `DistributionEntry` — object: `categoryCode` (from taxonomy codes — see
+  rule below), `displayName` (string), `count` (integer ≥ 0), `percentage`
+  (number 0–100). `additionalProperties: false`. Counts and percentages are
+  ALWAYS returned together, never one without the other.
+- `Distribution` — object wrapping: `entries` (array of DistributionEntry),
+  `sampleSize`, `dateRange`, `thinData`. Each distribution carries its OWN
+  sample size, date range, and thin-data status, because sentencing sample
+  size differs from outcome sample size.
 
-Validates all seed files and exits non-zero on any failure:
+### 3. Category code derivation rule
 
-- required fields present and correctly typed
-- codes are snake_case, unique within each file
-- sortOrder unique within each file
-- displayName and definition non-empty
-- exactly the expected category code sets (guards accidental deletion)
-- definitions contain none of these banned terms (case-insensitive):
-  "predict", "odds", "likely", "win rate", "best judge", "worst judge",
-  "score", "guarantee"
-- taxonomyVersion is valid semver
+- Outcome category codes and sentencing category codes used in schemas MUST
+  be derived from the `@pca/taxonomy` generated TypeScript artifact (e.g.
+  build a `Type.Union` of `Type.Literal`s from the exported code list, or
+  equivalent).
+- Hand-maintained duplicate lists of category codes are FORBIDDEN in this
+  package. If the generated artifact does not export what you need, stop and
+  report — do not work around it by copying values.
 
-### 4. Generate script (`pnpm --filter @pca/taxonomy generate`)
+### 4. Public search contracts (`src/public/search.ts`)
 
-- Emits `generated/taxonomy.json` (all categories + thin-data config +
-  taxonomyVersion in one document) and `generated/index.ts` (typed constant
-  exports, including a `TaxonomyCategory` type and the version string).
-- `generated/` is gitignored; generation is deterministic (stable ordering)
-  so repeated runs produce identical output.
-- Package main/exports point at the generated TS entry.
+- `ChargeSuggestion` — `chargeId`, `displayName`, `slug`. Nothing else.
+- `ChargeSearchResponse` — array of suggestions (+ any envelope fields you
+  propose in the plan).
+- `JudgeSuggestion` — `judgeId`, `displayName`, `slug`.
+- `JudgeSearchResponse` — same pattern.
+- All objects `additionalProperties: false`.
 
-### 5. Tests (Vitest)
+### 5. Public result contracts (`src/public/results.ts`)
 
-- validation passes on the real seeds
-- validation fails on: duplicate code, missing field, banned term,
-  unexpected/missing category code
-- generate output includes all categories and the version
+- `ChargeOnlyResult` — includes: charge display name, geography label
+  (string, e.g. "Philadelphia-wide"), outcome `Distribution`, optional
+  sentencing `Distribution`, `taxonomyVersion`, `lastRefreshed`
+  (ISO date-time string).
+- `JudgeSpecificResult` — includes: charge display name, judge display
+  name, judge-specific outcome `Distribution`, optional judge-specific
+  sentencing `Distribution`, baseline outcome `Distribution`, optional
+  baseline sentencing `Distribution`, `taxonomyVersion`, `lastRefreshed`.
+- All objects `additionalProperties: false`.
 
-### 6. Root wiring
+### 6. Privacy boundary (hard rule)
 
-- Root scripts: `taxonomy:validate` and `taxonomy:generate` (or fold into
-  existing lint/test conventions — state choice in the plan).
-- Root README: one short section on the taxonomy package.
+The following fields must not exist anywhere in public schemas, under any
+name: defendant names, docket numbers, source document IDs, storage keys or
+paths, raw or extracted text, parser internals (confidence scores, review
+flags, parser versions), and internal record IDs from raw/parsed/fact/
+review/audit layers. If an acceptance criterion seems to require one of
+these, stop and report.
+
+### 7. Exports
+
+- Package exports schemas (values) AND static types (via `Static<typeof X>`)
+  from a clean index. Consumers should be able to
+  `import { ChargeOnlyResult, chargeOnlyResultSchema } from '@pca/shared'`
+  (exact naming convention: propose in the plan, keep it consistent).
+
+### 8. Root generate script (build ordering)
+
+- Add root script `"generate": "pnpm -r run generate"`.
+- Update root `typecheck` and `test` scripts to run `pnpm run generate`
+  first, so a fresh clone can run root scripts in any order and always
+  typecheck against fresh taxonomy artifacts.
+- `@pca/shared` itself needs no generate step; the recursive script simply
+  finds `@pca/taxonomy`'s.
+
+### 9. Tests (Vitest)
+
+- Validation round-trip tests: valid sample payloads pass schema validation
+  (use TypeBox's Value module or a JSON Schema validator — propose in plan).
+- Rejection tests: unknown extra property on each top-level response schema
+  is REJECTED (this is the additionalProperties test — one per top-level
+  schema minimum).
+- A test asserting category codes in the schema match the taxonomy generated
+  artifact exactly (guards against drift if derivation is ever refactored).
+- Percentage bounds and negative-count rejection tests.
 
 ## Out of Scope
 
-- Seeding the database (`ref.*` tables) — later task
-- packages/shared / API / web integration — task 3.2+
-- Finalizing thin-data threshold values
-- Charge or judge normalization data
-- CI changes (task 5.2 will wire taxonomy validation into CI)
-- Turborepo, publishing, changesets
+- Modifying `apps/api` or `apps/web` in any way (they adopt this package in
+  Sprint 2).
+- Definitions / methodology / data-coverage response schemas (Sprint 2).
+- Judge-specific-unavailable structured response (PUB-003.3, Sprint 2).
+- Admin API contracts of any kind.
+- Error response schema (already lives in `@pca/api` from task 1.3; it will
+  be lifted into shared later, not now).
+- Any database, Kysely, or Fastify code.
+- Seeded data of any kind.
 
 ## Files the agent may touch
 
-- `packages/taxonomy/**` (new)
-- root `package.json` (scripts only)
-- root `README.md` (one section)
-- `.gitignore` (only if needed for `generated/`)
-- `tasks/worklog.md` (append entry when done)
+- `packages/shared/**` (new)
+- Root `package.json` (scripts: add `generate`, modify `typecheck`, `test`)
+- `tasks/worklog.md` (append entry on completion)
+- `agent-docs/**` if documenting anything
+
+Do NOT touch: `docs/` (human-only), `apps/**`, `db/**`,
+`services/**`, `packages/taxonomy/**` (read its generated artifact, don't
+modify it — if it lacks an export you need, STOP and report).
 
 ## Acceptance Criteria
 
-1. `packages/taxonomy` exists as `@pca/taxonomy`, extending root tsconfig.
-2. Outcome, sentencing, thin-data, and version seed files exist with the
-   exact category sets and fields listed above.
-3. `unknown` is `public: false` in both category files; all others `true`.
-4. Validation script exists, passes on current seeds, and fails correctly
-   on invalid input (covered by tests).
-5. Generate script emits deterministic TypeScript and JSON artifacts
-   containing all categories, thin-data config, and taxonomyVersion.
-6. Vitest tests pass; lint and typecheck pass across the repo.
-7. No secrets, PDFs, extracted text, or defendant-identifying data committed.
+1. `packages/shared` exists as `@pca/shared` with workspace dep on
+   `@pca/taxonomy`.
+2. Public search and result schemas exist as TypeBox schemas with derived
+   static types, exported from the package index.
+3. Result types require sample size, date range, thin-data status, taxonomy
+   version, and counts + percentages together — enforced by schema, not
+   convention.
+4. Outcome and sentencing distributions each carry independent sample size,
+   date range, and thin-data status.
+5. Category codes are derived from `@pca/taxonomy` generated artifacts with
+   zero hand-duplicated code lists; a test guards this.
+6. Every public object schema sets `additionalProperties: false`, with
+   rejection tests proving it.
+7. No forbidden field (privacy boundary list) appears in any public schema.
+8. Root `generate` script exists; root `typecheck` and `test` run generation
+   first; fresh-clone ordering documented in the package or root README.
+9. `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm format:check` all pass
+   from the root.
+10. Worklog entry appended.

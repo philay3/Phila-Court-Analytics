@@ -57,6 +57,20 @@ pnpm taxonomy:generate   # emit generated/taxonomy.json and generated/index.ts
 
 See [packages/taxonomy/README.md](packages/taxonomy/README.md) for details.
 
+## Generated artifacts
+
+Some packages emit generated artifacts that other packages import (currently
+`@pca/taxonomy`, whose artifacts `@pca/shared` builds its schemas from). Artifacts are
+gitignored and rebuilt on demand:
+
+```sh
+pnpm generate   # runs every package's generate script
+```
+
+Root `typecheck` and `test` run `pnpm generate` first, so on a fresh clone the root
+scripts work in any order after `pnpm install`. When running package-scoped commands
+(e.g. `pnpm --filter @pca/shared test`), run `pnpm generate` at the root first.
+
 ## Privacy rules
 
 This project handles public court records with strict privacy discipline:

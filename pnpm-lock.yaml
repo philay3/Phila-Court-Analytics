@@ -68,6 +68,19 @@ importers:
         specifier: ^4.23.0
         version: 4.23.0
 
+  packages/shared:
+    dependencies:
+      '@pca/taxonomy':
+        specifier: workspace:*
+        version: link:../taxonomy
+      '@sinclair/typebox':
+        specifier: ^0.34.0
+        version: 0.34.49
+    devDependencies:
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.0)(tsx@4.23.0)
+
   packages/taxonomy:
     devDependencies:
       '@types/node':

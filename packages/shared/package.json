@@ -1,0 +1,25 @@
+{
+  "name": "@pca/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@pca/taxonomy": "workspace:*",
+    "@sinclair/typebox": "^0.34.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
+  }
+}
