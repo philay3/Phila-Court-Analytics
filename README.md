@@ -1,5 +1,7 @@
 # Philadelphia Court Outcomes Analytics
 
+[![CI](https://github.com/philay3/Phila-Court-Analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/philay3/Phila-Court-Analytics/actions/workflows/ci.yml)
+
 Aggregate analytics on Philadelphia court case outcomes, built from public docket records.
 
 ## Prerequisites

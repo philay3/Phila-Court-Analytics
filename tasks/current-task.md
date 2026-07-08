@@ -1,167 +1,105 @@
-# Task 3.2 — Create Shared API Types Package
+# Task 5.2 — GitHub Actions CI
 
 ## Goal
 
-Create `packages/shared` (`@pca/shared`): the single source of truth for
-public API contracts. Public response shapes are defined as TypeBox schemas
-with derived static types, so `@pca/api` gets runtime JSON Schema validation
-and `@pca/web` gets compile-time types from one definition. Category codes
-are derived from `@pca/taxonomy` generated artifacts — never re-declared.
+Add a baseline CI workflow that runs on every pull request and on pushes to `main`, covering both the Node/TypeScript monorepo and the Python pipeline. CI must fail on lint, format, typecheck, test, taxonomy validation, or migration errors. Also fix the deferred sequential `pnpm dev` issue from task 4.1.
 
 ## Context
 
-- Monorepo, TS base tooling, ESLint/Prettier, Vitest are set up. TypeScript
-  lives at the root only; use the root binary.
-- `@pca/taxonomy` exists (task 3.1). Its `generate` script emits TypeScript
-  and JSON artifacts into its `generated/` directory, including outcome
-  categories, sentencing categories, and the taxonomy version string.
-  ESLint already ignores `**/generated/`.
-- TypeBox is the locked validation library (already used in `@pca/api` for
-  the /health schema). This package makes it the contract layer.
-- This package has NO database dependency and NO Fastify dependency. It is
-  pure schemas + types.
-- `@pca/api` and `@pca/web` will import from this package starting in
-  Sprint 2. Do NOT modify apps/api or apps/web in this task.
+- Monorepo: pnpm workspaces, Node 22 LTS, TypeScript strict, ESLint 9 flat config + Prettier, Vitest.
+- Workspaces: `apps/api` (Fastify), `apps/web` (Next.js), `packages/taxonomy`, `packages/shared`, `services/pipeline` (Python, uv-managed).
+- Taxonomy `generated/` artifacts are gitignored — a fresh clone must run the root generate step before typecheck/test can pass. CI is the first true fresh-clone consumer; use the existing root generate mechanism established in 3.1/3.2.
+- Python pipeline uses uv (`uv.lock` committed), ruff for lint + format, pytest. Harness tests use synthetic PDFs generated at test time — CI needs no fixture files.
+- Local Postgres is pinned to `postgres:17.10` (standing decision: CI must use a 17.x service container). Local host port 5433 is a host-conflict convention only; inside the CI runner use the default 5432.
+- Kysely migration runner exists with a root migration script (from 2.2/2.3); use the existing script name.
 
-## Reminder: return an implementation plan BEFORE writing any code.
+Before writing any code, respond with an implementation plan per CLAUDE.md.
 
 ## Scope
 
-### 1. Package scaffold
+### 1. Workflow file
 
-- `packages/shared/` with `package.json` (`@pca/shared`), tsconfig extending
-  the root base config, README describing the package's role and the rule
-  that public contracts live here and nowhere else.
-- Dependencies: `@sinclair/typebox`, and workspace dependency
-  `@pca/taxonomy` (`workspace:*`).
+`.github/workflows/ci.yml`:
 
-### 2. Common building blocks (`src/public/common.ts` or similar)
+- Triggers: `pull_request` (all branches) and `push` to `main`.
+- Concurrency group keyed on workflow + ref, `cancel-in-progress: true`, so superseded pushes don't waste runner minutes.
+- Pin all GitHub Actions to major version tags (e.g. `actions/checkout@v4`). Document the chosen versions in the plan.
+- No repository secrets may be required or referenced. Postgres service credentials are throwaway dummy values defined inline in the workflow — that is acceptable and not a secrets violation.
 
-TypeBox schemas + derived static types for:
+### 2. Node job
 
-- `SampleSize` — integer, minimum 0.
-- `DateRange` — object with `start` and `end`, ISO date strings
-  (`format: 'date'`), `additionalProperties: false`.
-- `TaxonomyVersion` — string (semver-shaped; a pattern check is acceptable,
-  exact semver grammar is not required).
-- `ThinDataStatus` — boolean.
-- `DistributionEntry` — object: `categoryCode` (from taxonomy codes — see
-  rule below), `displayName` (string), `count` (integer ≥ 0), `percentage`
-  (number 0–100). `additionalProperties: false`. Counts and percentages are
-  ALWAYS returned together, never one without the other.
-- `Distribution` — object wrapping: `entries` (array of DistributionEntry),
-  `sampleSize`, `dateRange`, `thinData`. Each distribution carries its OWN
-  sample size, date range, and thin-data status, because sentencing sample
-  size differs from outcome sample size.
+Runs on `ubuntu-latest` with a `postgres:17.10` service container (dummy user/password/db, health check via `pg_isready` options, exposed on 5432).
 
-### 3. Category code derivation rule
+Steps, in order:
 
-- Outcome category codes and sentencing category codes used in schemas MUST
-  be derived from the `@pca/taxonomy` generated TypeScript artifact (e.g.
-  build a `Type.Union` of `Type.Literal`s from the exported code list, or
-  equivalent).
-- Hand-maintained duplicate lists of category codes are FORBIDDEN in this
-  package. If the generated artifact does not export what you need, stop and
-  report — do not work around it by copying values.
+1. Checkout.
+2. Set up pnpm — derive the version from the repo's `packageManager` field (corepack or `pnpm/action-setup`), not a hardcoded duplicate.
+3. Set up Node 22 with pnpm store caching.
+4. `pnpm install --frozen-lockfile`.
+5. Root taxonomy generate step (existing mechanism).
+6. Lint (`pnpm lint`).
+7. Format check (`pnpm format:check`).
+8. Typecheck (`pnpm typecheck`).
+9. Taxonomy validation (existing validation script).
+10. Tests (`pnpm test`).
+11. Apply migrations against the service container (existing migration script, `DATABASE_URL` pointing at the service). This proves migrations apply cleanly on a fresh database.
 
-### 4. Public search contracts (`src/public/search.ts`)
+If the repo's existing root scripts differ in name from the above, use the existing names — do not rename root scripts in this task.
 
-- `ChargeSuggestion` — `chargeId`, `displayName`, `slug`. Nothing else.
-- `ChargeSearchResponse` — array of suggestions (+ any envelope fields you
-  propose in the plan).
-- `JudgeSuggestion` — `judgeId`, `displayName`, `slug`.
-- `JudgeSearchResponse` — same pattern.
-- All objects `additionalProperties: false`.
+### 3. Python job
 
-### 5. Public result contracts (`src/public/results.ts`)
+Runs in parallel with the Node job, working directory `services/pipeline`:
 
-- `ChargeOnlyResult` — includes: charge display name, geography label
-  (string, e.g. "Philadelphia-wide"), outcome `Distribution`, optional
-  sentencing `Distribution`, `taxonomyVersion`, `lastRefreshed`
-  (ISO date-time string).
-- `JudgeSpecificResult` — includes: charge display name, judge display
-  name, judge-specific outcome `Distribution`, optional judge-specific
-  sentencing `Distribution`, baseline outcome `Distribution`, optional
-  baseline sentencing `Distribution`, `taxonomyVersion`, `lastRefreshed`.
-- All objects `additionalProperties: false`.
+1. Checkout.
+2. Set up uv (official `astral-sh/setup-uv` action) with caching, Python version from `.python-version`.
+3. `uv sync` with frozen/locked resolution.
+4. `uv run ruff check .`
+5. `uv run ruff format --check .`
+6. `uv run pytest`
 
-### 6. Privacy boundary (hard rule)
+### 4. Fix sequential `pnpm dev` (deferred from 4.1)
 
-The following fields must not exist anywhere in public schemas, under any
-name: defendant names, docket numbers, source document IDs, storage keys or
-paths, raw or extracted text, parser internals (confidence scores, review
-flags, parser versions), and internal record IDs from raw/parsed/fact/
-review/audit layers. If an acceptance criterion seems to require one of
-these, stop and report.
+Update the root `dev` script so workspace dev servers run in parallel (e.g. `pnpm -r --parallel dev` or equivalent). Verify locally that `pnpm dev` starts both the API and web dev servers concurrently and that Ctrl+C cleanly stops both.
 
-### 7. Exports
+### 5. Documentation
 
-- Package exports schemas (values) AND static types (via `Static<typeof X>`)
-  from a clean index. Consumers should be able to
-  `import { ChargeOnlyResult, chargeOnlyResultSchema } from '@pca/shared'`
-  (exact naming convention: propose in the plan, keep it consistent).
+- Add a CI status badge to the root README.
+- Add a short `docs/ci.md` (or a section in an existing tooling doc — agent's choice, state it in the plan): what CI runs, in what order, why the taxonomy generate step precedes typecheck, and the Postgres service container convention (17.x pin, 5432 in CI vs 5433 locally).
 
-### 8. Root generate script (build ordering)
+### 6. Worklog
 
-- Add root script `"generate": "pnpm -r run generate"`.
-- Update root `typecheck` and `test` scripts to run `pnpm run generate`
-  first, so a fresh clone can run root scripts in any order and always
-  typecheck against fresh taxonomy artifacts.
-- `@pca/shared` itself needs no generate step; the recursive script simply
-  finds `@pca/taxonomy`'s.
+Append `tasks/worklog.md` entry on completion (after human confirmation, per standing workflow).
 
-### 9. Tests (Vitest)
+## Acceptance criteria
 
-- Validation round-trip tests: valid sample payloads pass schema validation
-  (use TypeBox's Value module or a JSON Schema validator — propose in plan).
-- Rejection tests: unknown extra property on each top-level response schema
-  is REJECTED (this is the additionalProperties test — one per top-level
-  schema minimum).
-- A test asserting category codes in the schema match the taxonomy generated
-  artifact exactly (guards against drift if derivation is ever refactored).
-- Percentage bounds and negative-count rejection tests.
+- CI workflow triggers on pull requests and on pushes to `main`.
+- Node job: install (frozen lockfile), taxonomy generate, lint, format:check, typecheck, taxonomy validation, tests, and migration apply against a `postgres:17.10` service container — all pass on a green run.
+- Python job: uv sync (locked), ruff check, ruff format check, and pytest — all pass on a green run.
+- CI fails when any of the above fail (demonstrate reasoning in the plan; no need to push a deliberately broken commit).
+- Jobs run in parallel; superseded runs on the same ref are cancelled.
+- No secrets referenced or required; no fixture PDFs, extracted text, or docket data needed or touched by CI.
+- pnpm version in CI comes from the repo's `packageManager` field (single source of truth).
+- `pnpm dev` runs API and web dev servers in parallel.
+- README has a CI badge; CI documentation exists.
+- Worklog entry appended after confirmation.
 
-## Out of Scope
+## Out of scope
 
-- Modifying `apps/api` or `apps/web` in any way (they adopt this package in
-  Sprint 2).
-- Definitions / methodology / data-coverage response schemas (Sprint 2).
-- Judge-specific-unavailable structured response (PUB-003.3, Sprint 2).
-- Admin API contracts of any kind.
-- Error response schema (already lives in `@pca/api` from task 1.3; it will
-  be lifted into shared later, not now).
-- Any database, Kysely, or Fastify code.
-- Seeded data of any kind.
+- Deployment or release workflows of any kind
+- Docker image builds
+- Coverage reporting/upload
+- Dependabot/Renovate configuration
+- Branch protection rules (GitHub settings — human task)
+- E2E/Playwright tests
+- Running the extraction harness against real fixtures (that is 5.3, human-run, and real fixtures never enter CI)
+- Renaming or restructuring existing root scripts
+- Caching Next.js build output
 
 ## Files the agent may touch
 
-- `packages/shared/**` (new)
-- Root `package.json` (scripts: add `generate`, modify `typecheck`, `test`)
-- `tasks/worklog.md` (append entry on completion)
-- `agent-docs/**` if documenting anything
-
-Do NOT touch: `docs/` (human-only), `apps/**`, `db/**`,
-`services/**`, `packages/taxonomy/**` (read its generated artifact, don't
-modify it — if it lacks an export you need, STOP and report).
-
-## Acceptance Criteria
-
-1. `packages/shared` exists as `@pca/shared` with workspace dep on
-   `@pca/taxonomy`.
-2. Public search and result schemas exist as TypeBox schemas with derived
-   static types, exported from the package index.
-3. Result types require sample size, date range, thin-data status, taxonomy
-   version, and counts + percentages together — enforced by schema, not
-   convention.
-4. Outcome and sentencing distributions each carry independent sample size,
-   date range, and thin-data status.
-5. Category codes are derived from `@pca/taxonomy` generated artifacts with
-   zero hand-duplicated code lists; a test guards this.
-6. Every public object schema sets `additionalProperties: false`, with
-   rejection tests proving it.
-7. No forbidden field (privacy boundary list) appears in any public schema.
-8. Root `generate` script exists; root `typecheck` and `test` run generation
-   first; fresh-clone ordering documented in the package or root README.
-9. `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm format:check` all pass
-   from the root.
-10. Worklog entry appended.
+- `.github/workflows/**` (new)
+- Root `package.json` (only: the `dev` script fix)
+- Root `README.md` (badge only)
+- `docs/**` (CI documentation)
+- `tasks/worklog.md` (append, after confirmation)
+- Nothing else

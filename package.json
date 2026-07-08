@@ -6,7 +6,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm -r run dev",
+    "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
     "lint": "eslint .",
     "format": "prettier --write .",

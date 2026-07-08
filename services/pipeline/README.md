@@ -95,7 +95,7 @@ A file that fails to open is recorded and skipped; it never aborts the run.
   repo — enforced by the git-working-tree guard above.
 - Logs never contain extracted text, fixture filenames, or per-file paths —
   only hashes, counts, durations, and error types. Logging the fixtures
-  *directory* path once at startup is the only path that appears.
+  _directory_ path once at startup is the only path that appears.
 
 ## Tests
 

@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: Node (lint, typecheck, test, migrations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.10
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: pca_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d pca_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # No version input: pnpm/action-setup reads the root packageManager field,
+      # keeping package.json as the single source of truth for the pnpm version.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Taxonomy generated/ artifacts are gitignored; a fresh clone must
+      # regenerate them before typecheck/test can pass.
+      - name: Generate taxonomy artifacts
+        run: pnpm generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Validate taxonomy
+        run: pnpm taxonomy:validate
+
+      - name: Test
+        run: pnpm test
+
+      - name: Apply migrations
+        run: pnpm db:migrate:latest
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/pca_ci
+
+  python:
+    name: Python (ruff, pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/pipeline
+    steps:
+      - uses: actions/checkout@v4
+
+      # uv resolves the Python version from services/pipeline/.python-version.
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: services/pipeline/uv.lock
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Pytest
+        run: uv run pytest
