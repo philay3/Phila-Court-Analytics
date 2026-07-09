@@ -1,167 +1,124 @@
-# Task 9.2 — Methodology + Data Coverage Endpoints
+# Task 10.1 — Public Forbidden-Field Test Suite
 
 ## Goal
 
-Implement the final two Sprint 2 public endpoints:
-
-- GET /api/v1/public/methodology
-- GET /api/v1/public/data-coverage
-
-Methodology serves structured static copy explaining what the product
-is and is not. Data coverage reports what data the published aggregates
-actually represent, derived from the active published aggregate run.
+Add a required test suite in `apps/api` that scans EVERY public endpoint
+response for forbidden fields and forbidden value patterns, with endpoint
+coverage enforced by route-table discovery rather than a manually maintained
+list. This suite is a permanent privacy gate: it must be structurally
+impossible to add a public endpoint that escapes it.
 
 ## Context
 
-- 9.1 established the static-content pattern: content module in
-  apps/api, schema in @pca/shared, poison-proxy test proving
-  DB-independence. Methodology follows it exactly.
-- 8.1/8.2 established published-run resolution: a run is active
-  published iff published_at IS NOT NULL AND invalidated_at IS NULL,
-  and at most one exists. Data coverage reuses the existing run
-  resolution — do not write a second resolver.
-- Phase 8 standing decision: "data slice absent" is an HTTP-200
-  tagged-union response, not an error. Data coverage with no published
-  run follows this pattern.
-- Errors, if any, go through the central handler via catalog-coded
-  throws. No per-endpoint error shaping.
+- All Sprint 2 public endpoints exist: charges/search, judges/search,
+  results/charge/{chargeIdOrSlug}, results/charge/.../judge/{judgeIdOrSlug},
+  definitions, methodology, data-coverage.
+- The public API is aggregate-only. Forbidden content includes: defendant
+  names, docket numbers, raw docket numbers, source document IDs, source
+  URLs, storage keys, raw text, extracted text, parsed docket IDs, parsed
+  charge IDs, charge outcome fact IDs, charge sentence fact IDs, review
+  status, admin corrections, parser confidence.
+- `@pca/shared` is the single source of truth for public API contracts.
+  Forbidden-field constants belong there (this is deliberate: it avoids a
+  later migration and lets future consumers — e.g. web E2E tests — import
+  the same list).
+- DB-backed suites seed via Vitest globalSetup only (standing decision).
+  Never self-seed.
+- The central error handler shapes all error responses; error and
+  200-unavailable arms must be scanned, not just success arms.
 
-## Endpoint 1: GET /api/v1/public/methodology
+## Pinned design (do not re-litigate; raise concerns in your plan if any
+are unworkable)
 
-Static, DB-independent, versioned only by deploy.
+1. **Discovery**: collect routes via an `onRoute` hook on the test app
+   instance (buildApp), filter to method GET + URL prefix `/api/v1/public`.
+   Non-public routes (`/health`, admin namespace) are excluded by the
+   prefix filter.
+2. **Probe registry**: a typed map from Fastify route pattern (the exact
+   `url` as registered, e.g. `/api/v1/public/results/charge/:chargeIdOrSlug`)
+   to an array of concrete probe requests (path + query) built against
+   seeded data. The suite fails with an explicit message naming the route
+   if any discovered route has zero probes. It must also fail if a
+   registry entry references a route that no longer exists (stale probe
+   detection — both directions are checked).
+3. **Arm coverage**: probes per route must include, where the route
+   supports them: success, thin-data case, 200-unavailable arm
+   (sentencing-unavailable for 8.1, judge-unavailable for 8.2), and at
+   least one 404 (CHARGE_NOT_FOUND or JUDGE_NOT_FOUND). Every probe
+   response body is scanned regardless of status code.
+4. **Constants in `@pca/shared`**: new module `src/public/forbidden-fields.ts`
+   exporting:
+   - `FORBIDDEN_FIELD_STEMS: readonly string[]` — normalized stems:
+     `defendant`, `docket`, `sourcedocument`, `sourceurl`, `storagekey`,
+     `rawtext`, `extractedtext`, `parseddocket`, `parsedcharge`, `factid`,
+     `reviewstatus`, `admincorrection`, `confidence`
+   - `FORBIDDEN_VALUE_PATTERNS: readonly RegExp[]` — at minimum a UJS
+     docket-number pattern (e.g. `CP-51-CR-0001234-2025` and `MC-` variants).
+     Propose the exact regex(es) in your plan.
+   Exported from the package entry point alongside existing public
+   contract exports.
+5. **Checker semantics**:
+   - Deep-recursive walk of the parsed JSON body (objects + arrays).
+   - Key check: normalize each key (lowercase, strip `_`, `-`) and fail if
+     the normalized key CONTAINS any forbidden stem.
+   - Value check: every string value tested against every forbidden value
+     pattern.
+   - On failure, the error must identify the route, probe, JSON path to
+     the offending key/value, and which stem/pattern matched.
+6. **Checker self-tests (required)**: unit tests that feed the checker
+   poisoned objects — at least one per forbidden stem, one per value
+   pattern, one deeply nested (≥3 levels, inside an array), and one
+   camelCase + one snake_case variant of the same stem — and assert each
+   is caught. Also one clean fixture (a realistic charge-only result
+   payload) asserting no false positive.
+7. **Seeding**: reuse the existing globalSetup-seeded data for probe
+   targets (seeded slugs/IDs). Do not insert or delete rows in this suite.
 
-Response is STRUCTURED — keyed sections, not one text blob — so the
-Sprint 3 frontend can render sections independently and copy tests can
-target fields. Required sections (each a { heading, body } object or
-similar shape of the agent's design, consistent across sections):
+## Scope
 
-- dataSource: public docket sheets from the Pennsylvania UJS portal,
-  Philadelphia criminal court scope
-- dataRange: coverage begins 2025-01-01, anchored to
-  disposition/sentencing event dates, not filing dates; earlier-filed
-  cases included if the qualifying event is on/after that date
-- whatResultsMean: historical aggregate distributions
-- notPrediction: explicit not-a-prediction statement
-- notLegalAdvice: explicit not-legal-advice statement
-- sampleSize: what sample size means and why it is shown on every
-  figure
-- thinData: what thin data means and how it is surfaced
-- chargeLevelAnalytics: outcomes and sentences are attributed at the
-  charge level, not the docket level
-- sentencing: sentencing distributions use a separate sentencing
-  sample size and may be unavailable for some charges
-- limitations: plain-English summary of known limitations
-
-All copy is plain-English, neutral, and must not contain any
-forbidden term (odds, likely sentence, predict/prediction outside the
-guarded disclaimer phrasing, best judge, worst judge, judge score,
-win rate, guaranteed result), and must not mention parser confidence,
-extraction, review workflow, or any internal system detail.
-
-## Endpoint 2: GET /api/v1/public/data-coverage
-
-Reads the active published aggregate run. Response has two arms as a
-tagged union:
-
-Common fields (always present, both arms):
-- jurisdiction: Philadelphia
-- courtScope: criminal court (MVP scope statement)
-- plannedDataStart: "2025-01-01"
-- knownLimitations: high-level, public-safe list
-
-Available arm (active published run exists):
-- coverage.available: true
-- coverage.dataStart / coverage.dataEnd: from the run's data range
-- coverage.lastRefreshed: from the run's published_at
-- coverage.taxonomyVersion
-- coverage.aggregateRunId (public-safe reference, consistent with how
-  8.1/8.2 expose the run reference)
-- coverage.counts: high-level counts derived from the active run's
-  aggregate tables — number of charges with charge-only outcome
-  aggregates, number of charges with sentencing aggregates, number of
-  charge/judge pairs with judge-specific aggregates. Counts only;
-  no names, no lists, no row-level data.
-
-Unavailable arm (no active published run):
-- coverage.available: false
-- a safe public message (no internal reason, no run states, no parser
-  or review mention)
-- no run-derived fields
-
-MUST NOT return (either arm): source document lists or IDs, docket
-numbers, defendant data, raw or extracted text, storage keys, parser
-version, parser confidence, review status, internal run states,
-invalidation reasons.
-
-## Schemas
-
-- Both response schemas live in @pca/shared under the established
-  public schema conventions (additionalProperties: false), exported
-  alongside the existing public schemas.
-- Follow the tagged-union modeling precedent from the 8.x unavailable
-  arms.
-
-## Acceptance criteria
-
-1. Both endpoints exist under /api/v1/public and validate against
-   their @pca/shared schemas.
-2. Methodology contains all ten required sections with non-empty copy;
-   a test asserts section presence.
-3. Methodology is DB-independent: poison-proxy test (9.1 pattern)
-   proves the endpoint succeeds with the DB unreachable.
-4. Data coverage resolves the active published run via the existing
-   run-resolution logic (no duplicate resolver).
-5. Data coverage available arm returns correct dataStart (2025-01-01
-   for the seeded run), dataEnd, lastRefreshed, taxonomyVersion, run
-   reference, and counts consistent with the seeded data from 6.4.
-6. Data coverage with no active published run returns HTTP 200 with
-   coverage.available: false, the safe message, and all common fields.
-   Test this by invalidating/absenting the run within a transaction or
-   isolated test setup — do not mutate the shared seeded state used by
-   other suites (respect the globalSetup seeding contract from 8.2).
-7. Counts queries touch only analytics.* (and ref.* if needed for
-   joins) — verified by the @pca/db Pick-narrowed repository interface.
-8. Per-endpoint forbidden-term tests: methodology copy and data
-   coverage messages pass the word-boundary forbidden-term regexes
-   (9.1 pattern). Full cross-cutting suite remains 10.2's job.
-9. Per-endpoint forbidden-field assertions: responses contain none of
-   the MUST NOT fields above.
-10. All gates green: lint, format:check, typecheck, tests. Worklog
-    entry appended on completion.
-
-## Conditional item — CI format:check
-
-If the answer to the 9.1 follow-up question is that the GitHub Actions
-workflow does NOT run format:check: add a format:check step to the CI
-job in this task (two-line change), note it in the worklog. If CI
-already runs it, do nothing here.
+- `packages/shared`: add `forbidden-fields.ts` module + its unit tests;
+  export from entry point.
+- `apps/api`: new test file(s) for the suite (e.g.
+  `test/public-forbidden-fields.test.ts`), plus a small test helper for
+  route discovery and the deep-walk checker (checker may live in a test
+  helper within apps/api; only the CONSTANTS live in @pca/shared).
+- Update `tasks/worklog.md` on completion.
 
 ## Out of scope
 
-- Any change to the static /methodology page in apps/web (Sprint 3
-  refactors it to consume this endpoint)
-- Moving copy-guard constants to @pca/shared (task 10.2)
-- Cross-cutting forbidden-field and copy-safety suites (10.1/10.2)
-- Rate limiting
-- DB taxonomy tables
-- Any admin or non-public endpoint
+- Copy-safety constant migration and copy-term scanning (Task 10.2 —
+  this suite checks structure and identifiers, not prose terms).
+- Admin endpoints (none are public; prefix filter excludes them).
+- Any change to endpoint implementations, schemas, or seeds. If the suite
+  finds a real leak, STOP and report it — do not fix endpoint code inside
+  this task.
+- Rate limiting, web app tests, CI workflow changes (the suite runs inside
+  the existing `apps/api` Vitest run, which CI already executes).
 
-## Files the agent may touch
+## Acceptance criteria
 
-- packages/shared/src/public/** (new methodology/data-coverage schemas
-  + exports)
-- apps/api/src/** (routes, content module, repositories for coverage
-  counts)
-- apps/api test files
-- .github/workflows/** (ONLY if the conditional CI item applies)
-- tasks/worklog.md
+1. Suite discovers public GET routes via onRoute hook; a route-count
+   assertion documents the currently expected number (7) with a comment
+   explaining it exists to make silent discovery breakage visible.
+2. Unmapped-route failure proven by a deliberate-failure probe: a test
+   registers a throwaway public route on a local app instance and asserts
+   the suite's coverage check reports it as unprobed.
+3. Stale-probe detection proven symmetrically (registry entry for a
+   nonexistent route fails with a clear message).
+4. All seven routes have probes covering the arms listed in pinned
+   decision 3; every probe body passes the checker.
+5. Checker self-tests pass: every stem, every value pattern, nested case,
+   case-variant cases, and the clean-fixture no-false-positive case.
+6. `FORBIDDEN_FIELD_STEMS` and `FORBIDDEN_VALUE_PATTERNS` exported from
+   `@pca/shared`; suite imports them — no inline literals in apps/api.
+7. No endpoint/schema/seed code modified.
+8. All existing gates stay green: shared, api, db, taxonomy, web tests;
+   lint, typecheck, format:check.
+9. Worklog entry appended (deviations, findings, forward notes).
 
-## Plan-first rule
+## Process
 
-Respond with an implementation plan before writing any code. The plan
-must state: (a) the response shape for both endpoints including the
-tagged-union modeling for coverage, (b) where methodology copy lives
-and how the poison-proxy test is wired, (c) how the no-published-run
-test isolates itself from the shared seeded state, (d) whether CI
-currently runs format:check and therefore whether the conditional item
-applies.
+Submit an implementation plan BEFORE writing code. The plan must include:
+the exact route-discovery mechanism, the probe registry shape, the
+proposed docket-number regex(es), where the checker helper lives, and the
+list of probes per route.
