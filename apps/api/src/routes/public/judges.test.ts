@@ -2,7 +2,7 @@ import { Kysely, PostgresDialect } from 'kysely';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PUBLIC_ERROR_CODES } from '@pca/shared';
-import { seedReference, type Database } from '@pca/db';
+import type { Database } from '@pca/db';
 import { buildApp } from '../../app.js';
 
 const SEARCH_URL = '/api/v1/public/judges/search';
@@ -116,9 +116,7 @@ describe.skipIf(!hasDb)('GET /judges/search against the seeded database', () => 
         pool: new pg.Pool({ connectionString: process.env.DATABASE_URL }),
       }),
     });
-    // Idempotent reference seeding (single source of truth in @pca/db): makes
-    // the suite self-sufficient in CI, where migrations run but db:seed does not.
-    await seedReference(setupDb);
+    // Reference seeding happens once per run in vitest.global-setup.ts.
     await deleteTempRows();
     const inserted = await setupDb
       .insertInto('ref.normalized_judges')

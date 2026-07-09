@@ -4,9 +4,14 @@ import { publicOutcomeCategories, publicSentencingCategories } from '../public/c
 import {
   CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
   type ChargeOnlyResultResponse,
+  type ChargeSentencingAvailable,
 } from '../public/charge-result.js';
 import type { OutcomeDistribution, SentencingDistribution } from '../public/common.js';
-import type { JudgeSpecificResult } from '../public/results.js';
+import {
+  JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE,
+  type JudgeSpecificResultSuccess,
+  type JudgeSpecificResultUnavailable,
+} from '../public/judge-result.js';
 import type { ChargeSearchResponse, JudgeSearchResponse } from '../public/search.js';
 
 // Fixtures are typed against the Static types and built from taxonomy artifacts, so a
@@ -87,16 +92,44 @@ export function validChargeOnlyResultSentencingUnavailable(): ChargeOnlyResultRe
   };
 }
 
-export function validJudgeSpecificResult(): JudgeSpecificResult {
+export function validJudgeSpecificResultSuccess(): JudgeSpecificResultSuccess {
+  const base = validChargeOnlyResult();
+  // Cast: validChargeOnlyResult always builds the available sentencing arm;
+  // the return type just widens it to the union.
+  const baseSentencing = base.sentencing as ChargeSentencingAvailable;
   return {
-    chargeDisplayName: 'Example charge',
-    judgeDisplayName: 'Example judge',
-    judgeOutcomes: validOutcomeDistribution(),
-    judgeSentencing: validSentencingDistribution(),
-    baselineOutcomes: validOutcomeDistribution(),
-    baselineSentencing: validSentencingDistribution(),
+    resultType: 'judge_specific',
+    charge: base.charge,
+    judge: {
+      id: 'c4d5e6f7-1a2b-4c3d-8e9f-0a1b2c3d4e5f',
+      slug: 'example-judge',
+      displayName: 'Example judge',
+    },
+    geography: 'philadelphia',
+    dateRange: base.dateRange,
+    lastRefreshed: base.lastRefreshed,
     taxonomyVersion: TAXONOMY_VERSION,
-    lastRefreshed: '2026-07-01T04:30:00Z',
+    aggregateRunId: base.aggregateRunId,
+    // Four independent sample sizes: the judge-scoped blocks reuse the base
+    // fixture's shapes with distinct ns.
+    judgeSpecific: {
+      outcomes: { ...base.outcomes, sampleSize: 14 },
+      sentencing: { ...baseSentencing, sampleSize: 9 },
+    },
+    baseline: { outcomes: base.outcomes, sentencing: base.sentencing },
+    links: base.links,
+  };
+}
+
+export function validJudgeSpecificResultUnavailable(): JudgeSpecificResultUnavailable {
+  const success = validJudgeSpecificResultSuccess();
+  return {
+    resultType: 'judge_specific_unavailable',
+    code: 'JUDGE_SPECIFIC_RESULT_UNAVAILABLE',
+    message: JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE,
+    charge: success.charge,
+    judge: success.judge,
+    fallback: { chargeOnlyResultPath: '/api/v1/public/results/charge/example-charge' },
   };
 }
 

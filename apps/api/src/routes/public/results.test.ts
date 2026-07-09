@@ -2,15 +2,15 @@ import { Kysely, PostgresDialect } from 'kysely';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHARGE_SENTENCING_UNAVAILABLE_MESSAGE, PUBLIC_ERROR_CODES } from '@pca/shared';
-import { seedAggregates, seedReference, type Database } from '@pca/db';
+import type { Database } from '@pca/db';
 import { buildApp } from '../../app.js';
 
 const resultUrl = (chargeIdOrSlug: string) => `/api/v1/public/results/charge/${chargeIdOrSlug}`;
 
 // Requires the local database: `pnpm db:up`, migrations applied
 // (`pnpm db:migrate:latest`), and DATABASE_URL (root .env is auto-loaded via
-// vitest.config.ts). The suite self-seeds reference AND aggregate data, so it
-// is self-sufficient in CI, where migrations run but db:seed does not.
+// vitest.config.ts). Reference and aggregate seeding happens once for the
+// whole run in vitest.global-setup.ts.
 const hasDb = Boolean(process.env.DATABASE_URL);
 if (!hasDb) {
   console.warn(
@@ -126,10 +126,6 @@ describe.skipIf(!hasDb)('GET /results/charge/:chargeIdOrSlug against the seeded 
         pool: new pg.Pool({ connectionString: process.env.DATABASE_URL }),
       }),
     });
-    // Idempotent seeding (single source of truth in @pca/db): reference rows
-    // first, then the aggregate runs that reference them.
-    await seedReference(setupDb);
-    await seedAggregates(setupDb);
     await deleteTempRows();
     await setupDb
       .insertInto('ref.normalized_charges')

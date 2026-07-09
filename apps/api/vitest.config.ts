@@ -12,4 +12,10 @@ try {
   // No root .env — DATABASE_URL may still come from the environment (e.g. CI).
 }
 
-export default defineConfig({});
+export default defineConfig({
+  test: {
+    // Seeds reference + aggregate data once per run (when DATABASE_URL is
+    // set) so DB-backed suites never self-seed — see vitest.global-setup.ts.
+    globalSetup: './vitest.global-setup.ts',
+  },
+});
