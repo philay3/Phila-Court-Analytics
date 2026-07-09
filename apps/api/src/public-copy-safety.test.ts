@@ -4,8 +4,10 @@ import {
   CHARGE_RESULT_UNAVAILABLE_MESSAGE,
   CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
   DATA_COVERAGE_UNAVAILABLE_MESSAGE,
+  FETCH_FAILURE_MESSAGE,
   JUDGE_NOT_FOUND_MESSAGE,
   JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE,
+  PUBLIC_ERROR_MESSAGES,
   scanPublicCopy,
   type CopySafetyViolation,
 } from '@pca/shared';
@@ -74,6 +76,16 @@ const PINNED_PUBLIC_MESSAGES = {
   DATA_COVERAGE_UNAVAILABLE_MESSAGE,
   JUDGE_NOT_FOUND_MESSAGE,
   JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE,
+  // Task 11.2 web-facing public copy. The nine per-code messages (some of
+  // which alias the pinned literals above) and the transport-failure message
+  // are all user-facing, so the 10.2 gate scans them at their definition too.
+  FETCH_FAILURE_MESSAGE,
+  ...Object.fromEntries(
+    Object.entries(PUBLIC_ERROR_MESSAGES).map(([code, message]) => [
+      `PUBLIC_ERROR_MESSAGES.${code}`,
+      message,
+    ]),
+  ),
 } as const;
 
 describe('static public copy sources', () => {

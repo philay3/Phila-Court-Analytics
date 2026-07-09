@@ -289,3 +289,99 @@
     /`next build` resolve dist, so web work needs `build:packages` first.
   - Adding a new package export subpath means extending its exports map with the
     same `{types, pca-source, default}` triple.
+
+## Task 11.2 — Rewrites Proxy + Public API Client + Error Message Constants
+
+- **Date:** 2026-07-09
+- **What was built:** `apps/web`'s data layer. **(1) Rewrites proxy**
+  (`apps/web/next.config.ts`): `async rewrites()` maps `/api/v1/public/:path*` →
+  `${API_BASE_URL}/api/v1/public/:path*`, keeping browser calls same-origin (no
+  CORS). `API_BASE_URL` is read server-side only (no `NEXT_PUBLIC_` prefix, so it
+  never enters a client bundle). The `?? 'http://localhost:3001'` fallback is a
+  LOCAL-DEV DEFAULT ONLY, commented as such in both `next.config.ts` and
+  `apps/web/.env.example`; CI `next build` relies on it, and production wiring
+  that removes the reliance is Sprint 9 scope. **(2) Message constants**
+  (`packages/shared/src/public/error-messages.ts`, barrel-exported from
+  `src/index.ts` — no new export subpath): `PUBLIC_ERROR_MESSAGES:
+  Record<PublicErrorCode, string>` covering exactly the nine catalog codes, plus
+  `FETCH_FAILURE_MESSAGE`. Five codes reference the already-pinned 8.1/8.2
+  literals **by identity** (`CHARGE_NOT_FOUND`→`CHARGE_NOT_FOUND_MESSAGE`,
+  `JUDGE_NOT_FOUND`→`JUDGE_NOT_FOUND_MESSAGE`,
+  `CHARGE_RESULT_UNAVAILABLE`→`CHARGE_RESULT_UNAVAILABLE_MESSAGE`,
+  `JUDGE_SPECIFIC_RESULT_UNAVAILABLE`→`JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE` (the
+  pinned 8.2 literal, never re-typed),
+  `SENTENCING_RESULT_UNAVAILABLE`→`CHARGE_SENTENCING_UNAVAILABLE_MESSAGE`); four
+  are authored here. The `Record<PublicErrorCode, string>` annotation makes a
+  tenth code without a message a compile error; a shared test also pins key-set
+  equality at runtime. **Exact final strings** — INVALID_REQUEST: "That request
+  wasn't valid. Please check your input and try again." · NOT_FOUND: "We couldn't
+  find that page or resource." · CHARGE_NOT_FOUND: "No charge matches the
+  requested identifier." · JUDGE_NOT_FOUND: "No judge matches the requested
+  identifier." · CHARGE_RESULT_UNAVAILABLE: "Results are not available for this
+  charge yet." · JUDGE_SPECIFIC_RESULT_UNAVAILABLE: "No judge-specific aggregate
+  is available for this charge and judge yet. Philadelphia-wide historical data
+  for this charge is still available." · SENTENCING_RESULT_UNAVAILABLE:
+  "Historical sentencing data is not available for this charge yet." ·
+  RATE_LIMITED: "You've made too many requests. Please wait a moment and try
+  again." · INTERNAL_ERROR: "Something went wrong on our end. Please try again
+  later." · FETCH_FAILURE_MESSAGE: "We couldn't reach the server. Please check
+  your connection and try again." **(3) Typed client**
+  (`apps/web/app/lib/public-api-client.ts`): seven functions — `searchCharges`,
+  `searchJudges`, `getChargeResult`, `getJudgeSpecificResult`, `getDefinitions`,
+  `getMethodology`, `getDataCoverage` — each returning the pinned tagged union
+  `{ ok: true; data: T } | { ok: false; error: PublicApiFailure }`, never throwing
+  for API errors or transport failures. `PublicApiFailure` is
+  `{ kind: 'api_error', …five flat fields incl. requestId }` for a well-formed
+  error envelope (validated via `isPublicErrorCode` + field-type checks) or
+  `{ kind: 'fetch_failed' }` for network failure, non-JSON body, or malformed
+  error payload. Success bodies are trusted against the `@pca/shared` response
+  types (no runtime revalidation); the 200 unavailable arms return as `ok:true`
+  data. Base URL: pure `resolvePublicApiUrl(path, { isServer, apiBaseUrl })` —
+  server prefixes the absolute base (throws on missing, caught → fetch_failed);
+  browser returns the relative path for the rewrite. Context detected via
+  `typeof window === 'undefined'`. **(4)** Deleted `apps/web/app/import-proof/`
+  (the 11.1 packaging proof; no separate test existed). Packaging stays exercised
+  via the client's `@pca/shared` value import + `next build`.
+- **Copy-safety coverage:** `FETCH_FAILURE_MESSAGE` and all nine
+  `PUBLIC_ERROR_MESSAGES` values were added to the 10.2 suite's scanned
+  `PINNED_PUBLIC_MESSAGES` set (`apps/api/src/public-copy-safety.test.ts`), so
+  every web-facing string is scanned at definition. The shared
+  `error-messages.test.ts` also asserts every value (incl. the fetch-failure
+  message) scans clean, plus by-identity references and key-set equality.
+- **How to verify:** `pnpm run build:packages` (required after the `@pca/shared`
+  edit and before web work), then `pnpm -r run test`, `pnpm run lint`,
+  `pnpm run format:check`, `pnpm run typecheck`, `pnpm --filter @pca/web run build`.
+- **Acceptance criteria:** all met. Rewrite + `.env.example` + no-`NEXT_PUBLIC_`
+  grep test (matches actual `process.env.NEXT_PUBLIC_` refs, not prose; scans
+  shippable non-test `app/` files) ✓; seven typed functions, no throw on error or
+  network failure ✓; api_error preserves all five flat fields incl. requestId ✓;
+  three distinct fetch_failed tests (network / non-JSON / malformed) ✓; key-set
+  equality test ✓; JUDGE_SPECIFIC identity-by-import test ✓; new constants scanned
+  by the 10.2 suite + shared scan-clean test ✓; no forbidden/prediction/legal
+  vocabulary ✓; both base-URL branches unit-tested (incl. server-missing-base
+  throw) ✓; import-proof deleted + `next build` green ✓; all gates green — web 16,
+  shared 167, api 194, taxonomy 14, db 6; lint/format:check/typecheck 0 errors;
+  `next build` compiles 7 routes, no import-proof route. No CI change required.
+- **Files touched:** `packages/shared/src/public/error-messages.ts` +
+  `error-messages.test.ts` (new), `packages/shared/src/index.ts`;
+  `apps/web/app/lib/public-api-client.ts` + `public-api-client.test.ts` (new),
+  `apps/web/next.config.ts`, `apps/web/.env.example` (new),
+  `apps/web/app/import-proof/page.tsx` (deleted);
+  `apps/api/src/public-copy-safety.test.ts` (extended scan set); `tasks/worklog.md`.
+  No new dependencies, no export-subpath/`package.json` change, no endpoint/schema
+  change.
+- **Deviations from plan:** none. Ambiguity resolved at approval (reference the
+  five existing pinned literals, author four fresh + fetch-failure). Two
+  approved-fix follow-throughs baked in: FETCH_FAILURE_MESSAGE included in the
+  scanned set + its own scan-clean assertion; local-dev-default comments in both
+  `next.config.ts` and `.env.example`.
+- **Notes for next task (Phases 12–14):** the client returns structured failures
+  only — mapping a `PublicApiFailure` to user copy via `PUBLIC_ERROR_MESSAGES`
+  (api_error → `PUBLIC_ERROR_MESSAGES[error.code]`, fetch_failed →
+  `FETCH_FAILURE_MESSAGE`) is the consuming component's job, deliberately not
+  wired here. The API's own `message` still rides along on api_error for support
+  use; `requestId` too. Any new public route needs a client function AND, if it
+  adds a new error code, the `Record<PublicErrorCode, string>` completeness check
+  will fail until a message is added. The web copy-guard scans ALL `.ts`/`.tsx`
+  under `app/` including test files, so avoid forbidden vocabulary (`guarantee`,
+  `predict`, `odds`, …) even in test comments/fixtures.

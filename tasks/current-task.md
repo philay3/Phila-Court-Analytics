@@ -1,118 +1,126 @@
-# Task 11.1 — Workspace Package Build + Runtime Fix
+# Task 11.2 — Rewrites Proxy + Public API Client + Error Message Constants
 
 ## Goal
 
-Make the workspace packages (`@pca/shared`, `@pca/taxonomy`, `@pca/db`)
-consumable by plain Node.js at runtime and by Next.js `app/` code at build
-time. Concretely: `pnpm --filter @pca/api start` must serve requests under
-plain node against built output, and `apps/web` must be able to import
-`@pca/shared` in `app/` code and pass `next build`.
+Give apps/web its data layer: a Next.js rewrites proxy so browser calls stay
+same-origin, a typed client module covering all seven public endpoints, and
+user-facing error-message constants in @pca/shared for all nine public error
+codes. Delete the 11.1 import-proof page.
 
 ## Context
 
-Recon (pre-sprint, read-only) confirmed the root cause: all three workspace
-packages ship raw TypeScript source whose `.js`-extension internal imports
-resolve only under tooling (tsx, tsc, bundlers). Plain node dies on the
-first re-export. This broke the `start` script silently through all of
-Sprint 2 (dev flows use tsx watch, so nothing noticed) and blocks Sprint 3
-frontend work, which needs `@pca/shared` imports in `app/` code.
+- Sprint 3, Phase 11 (frontend foundation). 11.1 landed per-package dist
+  builds with conditional exports (`pca-source` source condition). next dev /
+  next build resolve @pca/* to dist — run `pnpm run build:packages` before
+  web work and after any @pca/shared edits in this task.
+- The public API (Sprint 2) serves /api/v1/public/* on port 3001 (web on
+  3000). Error responses use the flat shape
+  `{ statusCode, code, error, message, requestId }` with the nine-code
+  catalog in @pca/shared.
+- The judge-unavailable message is a pinned literal in @pca/shared (8.2).
+- Copy-safety terms/phrases/scanner live solely in @pca/shared; the 10.2
+  suite scans shared public copy.
 
-This task fixes the packaging/runtime story. It is the gate for Phase 11:
-tasks 11.2 (API client) and 11.3 (Tailwind foundation) both depend on it,
-and the Sprint 3 E2E CI job (15.2) will boot the API via the fixed `start`
-path on every run.
+## Pinned design decisions (do not re-litigate; plan must conform)
 
-## Standing decisions that bind this task
-
-- `transpilePackages`-only is REJECTED as the mechanism. It would paper
-  over the web import while leaving `start` broken, and Sprint 9 production
-  requires a plain-node or bundled runtime regardless. Do not propose it.
-- The expected mechanism shape is per-package `dist` builds + `exports`
-  maps, but you propose the actual mechanism in your implementation plan
-  for review. If you believe a different mechanism is superior, argue it
-  in the plan — do not implement it unilaterally.
-- TypeScript is installed at root only; workspaces use the root binary.
-- `registerFormats()` from `@pca/shared` must remain `buildApp`'s first
-  statement; nothing about the build change may alter that behavior.
-- No behavior change to any package's public API surface.
-
-## Required plan coverage
-
-Your implementation plan (submitted BEFORE writing any code) must cover,
-explicitly and per-package:
-
-1. `@pca/shared` — build output, exports map, how tests/consumers resolve it
-2. `@pca/taxonomy` — the generated-artifacts interplay: how `generated/`
-   (gitignored, produced by `pnpm generate`) composes with the package
-   build; fresh-clone ordering
-3. `@pca/db` — build output plus any Kysely type-generation interplay
-4. Root script ordering: how a fresh clone guarantees `generate` and any
-   new package builds run before typecheck/test/build of consumers
-5. CI changes: which jobs gain build steps, in what order
-6. What happens to `dev` workflows (tsx watch for the API, `next dev` for
-   web) — these must be UNCHANGED
-7. How `apps/web` importing `@pca/shared` in `app/` code is proven: in
-   this task via a trivial page, or explicitly deferred to 11.2's client
-   module — state which
-8. Watch-out inventory: declaration maps, `.js`-extension import handling
-   in emitted output, Vitest resolution of built vs source, and any
-   `pnpm` `allowBuilds` implications
+1. Client functions return a tagged union:
+   `{ ok: true, data: T } | { ok: false, error: PublicApiFailure }`.
+   They never throw for expected outcomes.
+2. `PublicApiFailure` is a discriminated union:
+   - `{ kind: 'api_error', statusCode, code, error, message, requestId }`
+     — any well-formed API error response
+   - `{ kind: 'fetch_failed' }` — network failure, non-JSON body, or
+     malformed error payload
+   The nine-code public catalog is NOT extended. Transport failures are a
+   client-side kind, not a fake API code.
+3. @pca/shared exports `PUBLIC_ERROR_MESSAGES: Record<PublicErrorCode,
+   string>` (all nine codes) plus a fetch-failure message constant. The
+   JUDGE_SPECIFIC_RESULT_UNAVAILABLE entry references the existing pinned
+   literal — the string is not re-typed anywhere.
+4. Base URL: server-side fetches use env var `API_BASE_URL` (server-only,
+   no NEXT_PUBLIC_ prefix); browser fetches use the relative
+   /api/v1/public/* path via the rewrite. One client module handles both.
+   No API URL in any client-delivered bundle.
+5. The client trusts @pca/shared response types. No runtime revalidation of
+   API responses in the web app.
+6. If a new @pca/shared export subpath is needed, it extends the
+   `pca-source` conditional-exports triple exactly as in 11.1.
 
 ## Scope
 
-- Build configuration for the three packages (tsconfigs, package.json
-  `exports`/`main`/`types`, build scripts)
-- Root orchestration scripts and any ordering guarantees
-- CI workflow updates for new build steps
-- A minimal proof that `next build` succeeds with a `@pca/shared` import
-  from `app/` code (if proven here rather than 11.2)
-- Removal of any now-dead resolution workarounds made obsolete by the fix
+1. **Rewrites proxy**: `next.config.ts` rewrites `/api/v1/public/:path*` to
+   the API using `API_BASE_URL`. Document the var in `apps/web/.env.example`
+   (create if absent) with the local default `http://localhost:3001`.
+2. **Message constants** in @pca/shared: `PUBLIC_ERROR_MESSAGES` covering
+   all nine codes (INVALID_REQUEST, CHARGE_NOT_FOUND, JUDGE_NOT_FOUND,
+   CHARGE_RESULT_UNAVAILABLE, JUDGE_SPECIFIC_RESULT_UNAVAILABLE,
+   SENTENCING_RESULT_UNAVAILABLE, RATE_LIMITED, INTERNAL_ERROR, NOT_FOUND)
+   plus the fetch-failure message. Plain-English, user-facing, no internal
+   detail.
+3. **Typed client** under `apps/web/app/lib/` with functions for: charge
+   search, judge search, charge-only result, judge-specific result,
+   definitions, methodology, data coverage. Uses @pca/shared response types
+   and the tagged-union failure shape. No admin functions.
+4. **Delete the 11.1 import-proof page** and its test if one exists.
 
 ## Acceptance criteria
 
-1. `pnpm --filter @pca/api build` followed by `pnpm --filter @pca/api start`
-   serves requests under plain node — the recon repro is dead. Include the
-   verification transcript in your report.
-2. A trivial `app/` page (or the 11.2 client, stated explicitly in the
-   plan) importing `@pca/shared` passes `next build`.
-3. Fresh-clone ordering works: from a clean checkout, root scripts
-   guarantee `generate` and package builds run before typecheck/test/build
-   of consumers. Verify by simulating (e.g., wiping `dist/` and
-   `generated/`) and running the root pipeline.
-4. `dev` workflows (tsx watch, next dev) are unchanged and verified working.
-5. CI is updated for any new build steps; all gates green (lint, format,
-   typecheck, tests, taxonomy validation, forbidden-field suite, copy
-   safety suite, pytest).
-6. No behavior change to any package's public API surface; all existing
-   test suites pass without modification to test assertions (test *setup*
-   may change if resolution requires it — call it out if so).
-7. Worklog entry appended: mechanism chosen, deviations, findings, and any
-   forward-looking notes for 11.2/11.3.
+- [ ] `next.config.ts` rewrite maps `/api/v1/public/:path*` to
+      `${API_BASE_URL}/api/v1/public/:path*`; var documented in
+      `apps/web/.env.example`; no NEXT_PUBLIC_ API URL anywhere; a grep/test
+      asserts no API base URL string appears under `.next/static` output or,
+      minimally, that no NEXT_PUBLIC_ API var is referenced in app/ code
+- [ ] Client module exports typed functions for all seven endpoints; each
+      returns the pinned tagged union; no function throws on an API error
+      response or network failure (proven by tests)
+- [ ] Well-formed API errors surface as `kind: 'api_error'` with all five
+      flat-shape fields preserved (requestId retained for support use)
+- [ ] Network failure, non-JSON response, and malformed error body each
+      surface as `kind: 'fetch_failed'` (three distinct tests)
+- [ ] `PUBLIC_ERROR_MESSAGES` covers exactly the nine catalog codes —
+      a test asserts key set equality with the catalog so adding a tenth
+      code later fails loudly until a message is added
+- [ ] JUDGE_SPECIFIC_RESULT_UNAVAILABLE message is the pinned 8.2 literal
+      by reference (test asserts identity via import, not a re-typed string)
+- [ ] All new message constants pass `scanPublicCopy`, and the 10.2
+      copy-safety suite demonstrably covers the file they live in (if the
+      suite enumerates files/exports, extend it in this task)
+- [ ] Messages contain no parser/extraction/review internals, odds,
+      prediction, likely-sentence, ranking, or legal-advice language
+- [ ] Server-side and browser-side base-URL resolution both proven by unit
+      tests (env-var path and relative path)
+- [ ] Import-proof page from 11.1 deleted; `next build` still green
+- [ ] All gates green: lint, format:check, typecheck, tests (all packages),
+      `next build`, CI config updated if any new step is required
 
 ## Out of scope
 
-- Any frontend feature work (11.2+)
-- Tailwind installation (11.3)
-- `transpilePackages` as the mechanism (rejected; see standing decisions)
-- Turborepo or any build-orchestration tooling adoption
-- Changes to package public APIs, error shapes, or endpoint behavior
-- Touching `services/pipeline` (Python is unaffected)
-- Bundling the API app itself (plain tsc build + node is sufficient)
+- Any page or component consuming the client (Phases 12–14)
+- Tailwind/styling work (11.3), formatting utilities (11.4)
+- CORS plugin on the API (rewrites make it unnecessary — standing decision)
+- Client-side data libraries (SWR/React Query) — rejected, standing decision
+- Runtime revalidation of API responses
+- Rate-limiting implementation (RATE_LIMITED message only)
+- Retry logic, caching policy tuning, request deduplication
 
-## Files you may touch
+## Files the agent may touch
 
-- `packages/shared/**`, `packages/taxonomy/**`, `packages/db/**`
-  (build config, package.json, tsconfig — not source logic except import
-  specifiers if the mechanism requires it)
-- `apps/api/package.json`, `apps/api/tsconfig.json` (build/start scripts,
-  resolution config)
-- `apps/web/next.config.ts`, one trivial proof page under `apps/web/app/`
-  if proving the import here
-- Root `package.json` scripts, root tsconfig if needed
-- `.github/workflows/**` (CI build steps)
-- `tasks/worklog.md`
+- `apps/web/next.config.ts`
+- `apps/web/.env.example`
+- `apps/web/app/lib/**` (new client module + tests)
+- `apps/web/app/**` (only to delete the import-proof page/test)
+- `packages/shared/src/public/**` (message constants + tests)
+- `packages/shared/package.json` (only if a new export subpath is required)
+- 10.2 copy-safety suite files (only if coverage must be extended to the
+  new constants file)
+- Root/CI config only if a new build step is genuinely required (state why)
 
 ## Process
 
-Submit your implementation plan first and stop. Do not write code until
-the plan is approved.
+Respond with an implementation plan BEFORE writing code. The plan must state:
+(a) whether a new @pca/shared export subpath is added or existing entries
+suffice, (b) how the client detects server vs browser context, (c) how the
+no-API-URL-in-client-bundle criterion will be verified, (d) exact message
+text for all nine codes plus the fetch-failure message, for copy review.
+After implementation, append a worklog entry to tasks/worklog.md and report
+back with results against each acceptance criterion.
