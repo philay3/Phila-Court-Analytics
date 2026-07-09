@@ -14,9 +14,9 @@ import {
 
 describe('judgeSpecificResultResponseSchema (top-level union)', () => {
   it('accepts both arms', () => {
-    expect(
-      Value.Check(judgeSpecificResultResponseSchema, validJudgeSpecificResultSuccess()),
-    ).toBe(true);
+    expect(Value.Check(judgeSpecificResultResponseSchema, validJudgeSpecificResultSuccess())).toBe(
+      true,
+    );
     expect(
       Value.Check(judgeSpecificResultResponseSchema, validJudgeSpecificResultUnavailable()),
     ).toBe(true);
@@ -57,9 +57,7 @@ describe('judgeSpecificResultSuccessSchema', () => {
     ] as const) {
       const result: Record<string, unknown> = { ...validJudgeSpecificResultSuccess() };
       delete result[field];
-      expect(Value.Check(judgeSpecificResultSuccessSchema, result), `missing ${field}`).toBe(
-        false,
-      );
+      expect(Value.Check(judgeSpecificResultSuccessSchema, result), `missing ${field}`).toBe(false);
     }
   });
 

@@ -1,5 +1,5 @@
-import { OUTCOME_CATEGORIES, SENTENCING_CATEGORIES } from '@pca/taxonomy';
-import { PUBLIC_ERROR_CODES } from '@pca/shared';
+import { OUTCOME_CATEGORIES, SENTENCING_CATEGORIES, type TaxonomyCategory } from '@pca/taxonomy';
+import { PUBLIC_ERROR_CODES, type DefinitionEntry } from '@pca/shared';
 import { publicError } from './public-error.js';
 
 export interface CategoryPresentation {
@@ -7,28 +7,59 @@ export interface CategoryPresentation {
   sortOrder: number;
 }
 
-function publicCategoryMap(
-  categories: readonly {
-    code: string;
-    displayName: string;
-    sortOrder: number;
-    public: boolean;
-  }[],
+// The single public filter for taxonomy categories: everything this module
+// exposes (presentation maps, definition entries) derives from these arrays,
+// sorted by sortOrder ascending.
+function publicCategories(categories: readonly TaxonomyCategory[]): TaxonomyCategory[] {
+  return categories
+    .filter((category) => category.public)
+    .toSorted((a, b) => a.sortOrder - b.sortOrder);
+}
+
+const PUBLIC_CATEGORIES = {
+  outcome: publicCategories(OUTCOME_CATEGORIES),
+  sentencing: publicCategories(SENTENCING_CATEGORIES),
+} as const;
+
+function presentationMap(
+  categories: readonly TaxonomyCategory[],
 ): Map<string, CategoryPresentation> {
   return new Map(
-    categories
-      .filter((category) => category.public)
-      .map((category) => [
-        category.code,
-        { displayName: category.displayName, sortOrder: category.sortOrder },
-      ]),
+    categories.map((category) => [
+      category.code,
+      { displayName: category.displayName, sortOrder: category.sortOrder },
+    ]),
   );
 }
 
 const PRESENTATION = {
-  outcome: publicCategoryMap(OUTCOME_CATEGORIES),
-  sentencing: publicCategoryMap(SENTENCING_CATEGORIES),
+  outcome: presentationMap(PUBLIC_CATEGORIES.outcome),
+  sentencing: presentationMap(PUBLIC_CATEGORIES.sentencing),
 } as const;
+
+function definitionEntries(categories: readonly TaxonomyCategory[]): DefinitionEntry[] {
+  return categories.map(({ code, displayName, definition, sortOrder }) => ({
+    code,
+    displayName,
+    definition,
+    sortOrder,
+  }));
+}
+
+/**
+ * Public-only definition entries for GET /public/definitions, computed once at
+ * module load (the response is static per deploy). The internal `public` flag
+ * is stripped here; the response schema rejects it as defense in depth.
+ * Mutable arrays because Fastify's reply type for the response schema expects
+ * them; nothing mutates these in practice.
+ */
+export const PUBLIC_DEFINITIONS: {
+  outcomes: DefinitionEntry[];
+  sentencing: DefinitionEntry[];
+} = {
+  outcomes: definitionEntries(PUBLIC_CATEGORIES.outcome),
+  sentencing: definitionEntries(PUBLIC_CATEGORIES.sentencing),
+};
 
 export type CategoryKind = keyof typeof PRESENTATION;
 

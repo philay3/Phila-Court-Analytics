@@ -101,8 +101,18 @@ function stubHappyPath() {
     outcomeRow({ category_code: 'guilty_plea', count: 5, percentage: '62.50', sample_size: 8 }),
   ]);
   vi.mocked(getJudgeSentencingRows).mockResolvedValue([
-    sentencingRow({ category_code: 'probation', count: 3, percentage: '60.00', sentencing_sample_size: 5 }),
-    sentencingRow({ category_code: 'fine', count: 2, percentage: '40.00', sentencing_sample_size: 5 }),
+    sentencingRow({
+      category_code: 'probation',
+      count: 3,
+      percentage: '60.00',
+      sentencing_sample_size: 5,
+    }),
+    sentencingRow({
+      category_code: 'fine',
+      count: 2,
+      percentage: '40.00',
+      sentencing_sample_size: 5,
+    }),
   ]);
 }
 

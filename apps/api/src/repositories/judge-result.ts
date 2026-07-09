@@ -1,9 +1,6 @@
 import type { Kysely } from 'kysely';
 import type { PublicApiDatabase } from '../db.js';
-import type {
-  ChargeOutcomeAggregateRow,
-  ChargeSentencingAggregateRow,
-} from './charge-result.js';
+import type { ChargeOutcomeAggregateRow, ChargeSentencingAggregateRow } from './charge-result.js';
 
 export interface JudgeRow {
   id: string;

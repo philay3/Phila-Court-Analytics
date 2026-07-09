@@ -141,9 +141,16 @@ describe.skipIf(!hasDb)(
         .execute();
     }
 
-    async function idBySlug(table: 'ref.normalized_charges' | 'ref.normalized_judges', slug: string) {
+    async function idBySlug(
+      table: 'ref.normalized_charges' | 'ref.normalized_judges',
+      slug: string,
+    ) {
       return (
-        await setupDb.selectFrom(table).select('id').where('slug', '=', slug).executeTakeFirstOrThrow()
+        await setupDb
+          .selectFrom(table)
+          .select('id')
+          .where('slug', '=', slug)
+          .executeTakeFirstOrThrow()
       ).id;
     }
 
@@ -154,7 +161,10 @@ describe.skipIf(!hasDb)(
         }),
       });
       await deleteTempRows();
-      await setupDb.insertInto('ref.normalized_judges').values([...TEMP_JUDGES]).execute();
+      await setupDb
+        .insertInto('ref.normalized_judges')
+        .values([...TEMP_JUDGES])
+        .execute();
 
       retailTheftId = await idBySlug('ref.normalized_charges', 'retail-theft');
       simpleAssaultId = await idBySlug('ref.normalized_charges', 'simple-assault');
