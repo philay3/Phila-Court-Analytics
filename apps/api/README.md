@@ -1,8 +1,9 @@
 # @pca/api
 
-Fastify API shell for Philadelphia Court Outcomes Analytics. This is a shell only — no
-database and no real endpoints yet. It provides `GET /health`, request-ID handling, a
-central error handler, and the empty `/api/v1/public` and `/api/v1/admin` namespaces.
+Fastify API for Philadelphia Court Outcomes Analytics. It serves the public,
+aggregate-only endpoints under `/api/v1/public` (backed by PostgreSQL via Kysely),
+plus `GET /health`, request-ID handling, and a central error handler. The
+`/api/v1/admin` namespace is still empty.
 
 ## Run
 
@@ -18,13 +19,21 @@ pnpm --filter @pca/api start   # run built output
 
 ## Configuration
 
-No configuration is required. Environment variables (all optional):
+Environment variables:
 
-| Variable    | Default     | Purpose        |
-| ----------- | ----------- | -------------- |
-| `PORT`      | `3001`      | Listen port    |
-| `HOST`      | `127.0.0.1` | Listen host    |
-| `LOG_LEVEL` | `info`      | Pino log level |
+| Variable       | Default     | Purpose                                        |
+| -------------- | ----------- | ---------------------------------------------- |
+| `DATABASE_URL` | —           | PostgreSQL connection string (required for DB) |
+| `PORT`         | `3001`      | Listen port                                    |
+| `HOST`         | `127.0.0.1` | Listen host                                    |
+| `LOG_LEVEL`    | `info`      | Pino log level                                 |
+
+The `dev` and `start` scripts auto-load the repo-root `.env` via
+`--env-file-if-exists=../../.env`, so `cp .env.example .env` at the repo root is
+enough — no shell exports needed. Variables already set in the shell take
+precedence over the `.env` file, and both scripts still run if no `.env` exists.
+The server starts without `DATABASE_URL`; the missing configuration surfaces as
+a logged 500 on the first request that touches the database.
 
 ## Error shape
 
