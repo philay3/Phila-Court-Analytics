@@ -618,3 +618,92 @@
   `JudgeSearchInput`; keep the `id` and `aria-describedby` wiring; the region
   wrappers and labels are the stable layout — do not restructure them. Add
   testing-library/jsdom in 12.2.
+
+## Task 12.2 — Charge Autocomplete
+
+- **Date:** 2026-07-09
+- **What was built:** The disabled `#charge-search` placeholder is replaced by a
+  functional, accessible, debounced WAI-ARIA charge combobox, and charge-only
+  form submission now routes to `/charges/[chargeSlug]`. This task also stands
+  up the web component-render test setup (jsdom + testing-library).
+  - **`apps/web/app/components/ChargeSearchInput.tsx`** (new client component):
+    `role="combobox"` input with `aria-expanded`/`aria-controls`/
+    `aria-activedescendant`/`aria-autocomplete="list"`, a `role="listbox"` of
+    `role="option"` suggestions, and a polite `role="status"` region for
+    loading/no-result/error. Debounce 250 ms; no request below
+    `SEARCH_Q_MIN_LENGTH` (imported from `@pca/shared` — no inline literal);
+    `limit` omitted so the API default applies (no numeric literal). Suggestions
+    show display name, `statuteCode` where present, and `matched: <alias>` where
+    served — public-safe fields only. Keyboard: ArrowDown/Up move the active
+    option (wrapping), Enter commits the active option when the list is open
+    (and does nothing when open with **no** active option — required fix 1),
+    Escape closes then a second Escape clears, Tab closes, editing after a
+    commit clears the committed state. Combobox/listbox/option ids derive from
+    `useId()` so the 12.3 judge combobox cannot collide (required fix 3).
+  - **Stale-response protection:** a monotonic `seqRef` tags each dispatch;
+    a resolved response applies only if its sequence is still the latest.
+    Chosen over AbortController because `searchCharges` takes no `AbortSignal`
+    and the client lives in the out-of-scope `app/lib` module. The ref is also
+    bumped on commit / clear / drop-below-minimum so a late response can never
+    reopen the list or repopulate cleared state.
+  - **`apps/web/app/components/SearchForm.tsx`** (now a `'use client'`
+    component): owns `committedCharge` + submit-hint state, renders
+    `<ChargeSearchInput>` in the charge region, and holds one `handleSubmit`
+    used by BOTH the Enter path (list closed) and a visible, enabled submit
+    button (required fix 2). Committed charge → `router.push('/charges/<slug>')`;
+    no committed charge → no navigation, inline hint shown. The judge region is
+    the byte-for-byte disabled placeholder from 12.1 with its `MOUNT: task 12.3`
+    point preserved. `page.tsx` was not touched (a server page rendering a
+    client child needs no change).
+  - **Copy:** new `apps/web/app/components/charge-search-copy.ts`
+    (`CHARGE_SEARCH_COPY`) holds only the new strings (loading, no-result,
+    submit hint, listbox instructions, `matched:` prefix, submit button label);
+    the charge label/placeholder/help stay sourced from `HOME_COPY` (no
+    duplication). No-result copy points at spelling/common names and does not
+    assert nonexistence. API-error rendering uses `PUBLIC_ERROR_MESSAGES` /
+    `FETCH_FAILURE_MESSAGE` from `@pca/shared`.
+- **Render-test infrastructure:** new `apps/web/vitest.config.ts` uses
+  `test.projects` — a `node` project (existing `test/**` + `app/**/*.test.ts`,
+  node env, no setup) and a `jsdom` project (`app/**/*.test.tsx`, jsdom env,
+  `test/setup.jsdom.ts`). The **`test.projects` approach held** (Vitest 3.2.7);
+  no fallback to per-file `@vitest-environment` docblocks was needed. Web keeps
+  **dist resolution** (no `pca-source` condition) per the 11.1 standing
+  decision, so `pnpm run build:packages` remains the prerequisite and the three
+  workspace-resolution knobs in the shared/db/api configs are untouched.
+  `esbuild.jsx: 'automatic'` is set so test files need no `import React`.
+  devDependencies added (with lockfile): `@testing-library/react`,
+  `@testing-library/dom`, `@testing-library/user-event`,
+  `@testing-library/jest-dom`, `jsdom`.
+- **Tests added:** `ChargeSearchInput.test.tsx` (11 — below-min no request,
+  single debounced request, stale-response guard, loading, suggestion fields +
+  mouse commit/close, ARIA/activedescendant, Escape/second-Escape, edit-clears,
+  no-result, api-error, transport-error); `SearchForm.test.tsx` (5 — full
+  keyboard commit→submit push, mouse button submit, Enter-open-no-active does
+  nothing, no-commit hint, judge placeholder unchanged); `charge-search-copy.test.ts`
+  (scanPublicCopy over every value). Fake timers throughout for the debounce.
+- **Files touched:** new — `apps/web/app/components/ChargeSearchInput.tsx`,
+  `apps/web/app/components/charge-search-copy.ts`, `apps/web/vitest.config.ts`,
+  `apps/web/test/setup.jsdom.ts`, `apps/web/app/components/ChargeSearchInput.test.tsx`,
+  `apps/web/app/components/SearchForm.test.tsx`,
+  `apps/web/app/components/charge-search-copy.test.ts`; modified —
+  `apps/web/app/components/SearchForm.tsx`, `apps/web/package.json`,
+  `pnpm-lock.yaml`, `tasks/worklog.md`.
+- **Deviations from plan:** none material. Two implementation-detail choices
+  surfaced by the gate: (a) below-minimum clearing moved from the effect body
+  into `handleChange` to satisfy `react-hooks/set-state-in-effect`; (b) added
+  `esbuild.jsx: 'automatic'` so JSX compiles with the React automatic runtime
+  under Vitest's esbuild transform.
+- **How to verify:** `pnpm run build:packages` (dist prereq for `@pca/*`), then
+  from root `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, and
+  `pnpm --filter @pca/web test`. Routing to `/charges/<slug>` lands on Next's
+  404 in dev until 13.2 — expected; tests assert the `router.push` call.
+- **Gates — all green:** lint 0; format:check clean; typecheck 0; web tests 51
+  (17 new across node+jsdom projects), existing node suites (formatters 17,
+  public-api-client 14, copy-guard 2, home-copy 1) unchanged; shared 163,
+  taxonomy pass. api/db suites are DATABASE_URL-gated and were not run here;
+  no api/db/shared files were touched.
+- **Notes for next task (12.3):** extend this same `SearchForm.handleSubmit`
+  for the judge path; the judge region is still the disabled placeholder with
+  its mount point intact. Reuse the `ChargeSearchInput` combobox pattern
+  (useId-based ids already prevent collision) for `JudgeSearchInput`. The
+  jsdom Vitest project already covers `app/**/*.test.tsx`.
