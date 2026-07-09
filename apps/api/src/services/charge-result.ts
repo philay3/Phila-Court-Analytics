@@ -1,5 +1,7 @@
 import type { Kysely } from 'kysely';
 import {
+  CHARGE_NOT_FOUND_MESSAGE,
+  CHARGE_RESULT_UNAVAILABLE_MESSAGE,
   PUBLIC_ERROR_CODES,
   type ChargeOnlyResultResponse,
   type OutcomeCategoryCode,
@@ -14,12 +16,6 @@ import {
   getChargeSentencingRows,
 } from '../repositories/charge-result.js';
 import { UUID_PATTERN, buildDistributionBlock, buildSentencing } from './result-helpers.js';
-
-const CHARGE_NOT_FOUND_MESSAGE = 'No charge matches the requested identifier.';
-// One message for both no-published-run and zero-outcome-rows: the two states
-// are publicly indistinguishable by design. Exported for the 8.2 service,
-// which throws the same code for the same two states.
-export const CHARGE_RESULT_UNAVAILABLE_MESSAGE = 'Results are not available for this charge yet.';
 
 /**
  * Charge-only public result: resolves the charge (id or slug, no

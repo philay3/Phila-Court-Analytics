@@ -1,9 +1,14 @@
 import type { Kysely } from 'kysely';
 import { describe, expect, it } from 'vitest';
-import { METHODOLOGY_SECTION_KEYS, type MethodologyResponse } from '@pca/shared';
+import {
+  GUARDED_DISCLAIMER_PHRASES,
+  METHODOLOGY_SECTION_KEYS,
+  scanPublicCopy,
+  type MethodologyResponse,
+} from '@pca/shared';
 import { buildApp } from '../../app.js';
 import type { PublicApiDatabase } from '../../db.js';
-import { GUARDED_DISCLAIMER_PHRASES, METHODOLOGY_CONTENT } from '../../content/methodology.js';
+import { METHODOLOGY_CONTENT } from '../../content/methodology.js';
 
 const METHODOLOGY_URL = '/api/v1/public/methodology';
 
@@ -68,17 +73,21 @@ describe('GET /methodology', () => {
 
   it('contains no forbidden term outside the guarded disclaimer phrases', async () => {
     const response = await getMethodology();
-    // Word-boundary regexes (9.1 pattern). The exported guarded phrases —
-    // and ONLY those — are stripped first, so disclaimers can say "not a
-    // prediction" while any unguarded predict/advice vocabulary still fails.
+    // All canonical terms come from the shared scanner (mask-then-scan).
+    expect(scanPublicCopy(response.body)).toEqual([]);
+
+    // Deliberate route-specific additions BEYOND the shared scanner:
+    // methodology copy is held to a stricter vocabulary than the sitewide
+    // locked list. None of these duplicates a locked term — bare best/worst/
+    // win are intentionally broader than the locked "best judge"/"worst
+    // judge"/"win rate" multi-word terms. Same mask-then-scan discipline,
+    // using the shared guarded phrases.
     let text = response.body;
     for (const phrase of GUARDED_DISCLAIMER_PHRASES) {
       const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       text = text.replace(new RegExp(escaped, 'gi'), ' ');
     }
-    const forbiddenPatterns = [
-      /\bpredict(?:s|ed|ion|ions|ive)?\b/i,
-      /\bodds\b/i,
+    const routeSpecificPatterns = [
       /\blikelihood\b/i,
       /\bprobabilit(?:y|ies)\b/i,
       /\bchances?\b/i,
@@ -87,11 +96,10 @@ describe('GET /methodology', () => {
       /\bworst\b/i,
       /\brecommend(?:s|ed|ation|ations)?\b/i,
       /\badvice\b/i,
-      /\bguarantee(?:s|d)?\b/i,
       /\bwin(?:s|ning)?\b/i,
       /\blos(?:e|es|ing)\b/i,
     ];
-    for (const pattern of forbiddenPatterns) {
+    for (const pattern of routeSpecificPatterns) {
       expect(text).not.toMatch(pattern);
     }
   });

@@ -2,6 +2,7 @@ export * from './errors.js';
 export * from './formats.js';
 export * from './public/categories.js';
 export * from './public/common.js';
+export * from './public/copy-safety.js';
 export * from './public/definitions.js';
 export * from './public/forbidden-fields.js';
 export * from './public/search.js';

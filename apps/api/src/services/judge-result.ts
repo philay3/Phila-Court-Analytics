@@ -1,5 +1,8 @@
 import type { Kysely } from 'kysely';
 import {
+  CHARGE_NOT_FOUND_MESSAGE,
+  CHARGE_RESULT_UNAVAILABLE_MESSAGE,
+  JUDGE_NOT_FOUND_MESSAGE,
   JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE,
   PUBLIC_ERROR_CODES,
   type JudgeSpecificResultResponse,
@@ -22,11 +25,7 @@ import {
   getJudgeOutcomeRows,
   getJudgeSentencingRows,
 } from '../repositories/judge-result.js';
-import { CHARGE_RESULT_UNAVAILABLE_MESSAGE } from './charge-result.js';
 import { UUID_PATTERN, buildDistributionBlock, buildSentencing } from './result-helpers.js';
-
-const CHARGE_NOT_FOUND_MESSAGE = 'No charge matches the requested identifier.';
-const JUDGE_NOT_FOUND_MESSAGE = 'No judge matches the requested identifier.';
 
 function chargeSummary(charge: ChargeRow) {
   return {

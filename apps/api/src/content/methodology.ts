@@ -3,24 +3,12 @@ import type { MethodologyResponse } from '@pca/shared';
 /**
  * Methodology copy for GET /public/methodology — static per deploy, computed
  * at module load, no database dependency (the 9.1 static-response pattern).
- * Plain-English and neutral throughout; the route test runs the word-boundary
- * forbidden-term regexes over the full response body, so any copy edit here
- * that introduces prediction/ranking/advice vocabulary fails tests.
+ * Plain-English and neutral throughout; the route test scans the full
+ * response body with the @pca/shared copy-safety scanner (plus stricter
+ * route-specific patterns), so any copy edit here that introduces
+ * prediction/ranking/advice vocabulary fails tests. The guarded disclaimer
+ * phrases live in @pca/shared (GUARDED_DISCLAIMER_PHRASES, migrated in 10.2).
  */
-
-/**
- * The ONLY phrasings in which prediction/advice vocabulary may appear in
- * public methodology copy. The copy-safety test strips these exact phrases
- * (case-insensitively) before applying the forbidden-term regexes, so any
- * unguarded use of the vocabulary still fails. Migrates to @pca/shared with
- * the other copy-guard constants in task 10.2.
- */
-export const GUARDED_DISCLAIMER_PHRASES = [
-  'not a prediction',
-  'do not predict',
-  'not legal advice',
-  'does not provide legal advice',
-] as const;
 
 export const METHODOLOGY_CONTENT: MethodologyResponse = {
   sections: {

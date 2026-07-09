@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DISCLAIMER_ALLOWLIST, FORBIDDEN_TERMS, GUARDED_STEM } from './copy-terms';
+import { scanPublicCopy } from '@pca/shared';
 
 const SCAN_EXTENSIONS = ['.ts', '.tsx', '.css', '.md'];
 
@@ -21,44 +21,15 @@ function collectSourceFiles(dir: string): string[] {
   return files;
 }
 
-function findAllIndexes(haystack: string, needle: string): number[] {
-  const indexes: number[] = [];
-  for (let i = haystack.indexOf(needle); i !== -1; i = haystack.indexOf(needle, i + 1)) {
-    indexes.push(i);
-  }
-  return indexes;
-}
-
 function findViolations(content: string): string[] {
   // Collapse whitespace so multi-word terms and disclaimer phrases still
-  // match when source formatting wraps them across lines.
-  const lower = content.toLowerCase().replace(/\s+/g, ' ');
-  const violations: string[] = [];
-
-  for (const term of FORBIDDEN_TERMS) {
-    if (lower.includes(term.toLowerCase())) {
-      violations.push(term);
-    }
-  }
-
-  const allowedRanges = DISCLAIMER_ALLOWLIST.flatMap((phrase) => {
-    const lowerPhrase = phrase.toLowerCase();
-    return findAllIndexes(lower, lowerPhrase).map(
-      (start) => [start, start + lowerPhrase.length] as const,
-    );
-  });
-
-  for (const start of findAllIndexes(lower, GUARDED_STEM)) {
-    const end = start + GUARDED_STEM.length;
-    const allowed = allowedRanges.some(
-      ([rangeStart, rangeEnd]) => start >= rangeStart && end <= rangeEnd,
-    );
-    if (!allowed) {
-      violations.push(`${GUARDED_STEM} (outside disclaimer allowlist)`);
-    }
-  }
-
-  return violations;
+  // match when source formatting wraps them across lines. This is file-level
+  // preprocessing only — all term and guarded-phrase matching lives in the
+  // shared scanner (@pca/shared copy-safety, task 10.2).
+  const collapsed = content.replace(/\s+/g, ' ');
+  return scanPublicCopy(collapsed).map(
+    (violation) => `${violation.term} ("${violation.context.trim()}")`,
+  );
 }
 
 describe('copy guard', () => {

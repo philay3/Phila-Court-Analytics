@@ -25,6 +25,16 @@ import {
 export const CHARGE_SENTENCING_UNAVAILABLE_MESSAGE =
   'Historical sentencing data is not available for this charge yet.';
 
+/**
+ * Pinned public message literals for the charge-result error arms (migrated
+ * from the 8.1 service in task 10.2). CHARGE_NOT_FOUND_MESSAGE accompanies
+ * PUBLIC_ERROR_CODES.CHARGE_NOT_FOUND; CHARGE_RESULT_UNAVAILABLE_MESSAGE is
+ * the one message for both no-published-run and zero-outcome-rows — the two
+ * states are publicly indistinguishable by design.
+ */
+export const CHARGE_NOT_FOUND_MESSAGE = 'No charge matches the requested identifier.';
+export const CHARGE_RESULT_UNAVAILABLE_MESSAGE = 'Results are not available for this charge yet.';
+
 export const chargeSummarySchema = Type.Object(
   {
     id: Type.String({ format: 'uuid' }),

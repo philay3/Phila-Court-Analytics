@@ -27,6 +27,12 @@ export const JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE =
   'No judge-specific aggregate is available for this charge and judge yet. ' +
   'Philadelphia-wide historical data for this charge is still available.';
 
+/**
+ * Pinned public message literal for PUBLIC_ERROR_CODES.JUDGE_NOT_FOUND
+ * (migrated from the 8.2 service in task 10.2).
+ */
+export const JUDGE_NOT_FOUND_MESSAGE = 'No judge matches the requested identifier.';
+
 export const judgeSummarySchema = Type.Object(
   {
     id: Type.String({ format: 'uuid' }),

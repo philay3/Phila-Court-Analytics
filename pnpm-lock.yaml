@@ -82,6 +82,9 @@ importers:
         specifier: 19.2.7
         version: 19.2.7(react@19.2.7)
     devDependencies:
+      '@pca/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.0
