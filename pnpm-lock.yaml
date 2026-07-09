@@ -35,16 +35,31 @@ importers:
       '@fastify/type-provider-typebox':
         specifier: ^5.1.0
         version: 5.2.0(@sinclair/typebox@0.34.49)(fastify@5.10.0)
+      '@pca/db':
+        specifier: workspace:*
+        version: link:../../db
+      '@pca/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@sinclair/typebox':
         specifier: ^0.34.0
         version: 0.34.49
       fastify:
         specifier: ^5.2.0
         version: 5.10.0
+      kysely:
+        specifier: ^0.29.3
+        version: 0.29.3
+      pg:
+        specifier: ^8.22.0
+        version: 8.22.0
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.0
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
       tsx:
         specifier: ^4.19.0
         version: 4.23.0

@@ -3,11 +3,8 @@ import { Value } from '@sinclair/typebox/value';
 import { describe, expect, it } from 'vitest';
 
 import { validOutcomeDistribution, validSentencingDistribution } from '../test-support/fixtures.js';
-import { registerStringFormats } from '../test-support/formats.js';
 import { outcomeCategoryCodeSchema, sentencingCategoryCodeSchema } from './categories.js';
 import { outcomeDistributionEntrySchema, sentencingDistributionEntrySchema } from './common.js';
-
-registerStringFormats();
 
 describe('category code schemas', () => {
   it('outcome codes match the taxonomy generated artifact (public categories) exactly', () => {

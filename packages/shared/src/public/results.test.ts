@@ -2,10 +2,7 @@ import { Value } from '@sinclair/typebox/value';
 import { describe, expect, it } from 'vitest';
 
 import { validChargeOnlyResult, validJudgeSpecificResult } from '../test-support/fixtures.js';
-import { registerStringFormats } from '../test-support/formats.js';
 import { chargeOnlyResultSchema, judgeSpecificResultSchema } from './results.js';
-
-registerStringFormats();
 
 describe('chargeOnlyResultSchema', () => {
   it('accepts a valid result with sentencing', () => {

@@ -62,7 +62,22 @@ export function validJudgeSpecificResult(): JudgeSpecificResult {
 
 export function validChargeSearchResponse(): ChargeSearchResponse {
   return {
-    results: [{ chargeId: 'charge-1', displayName: 'Example charge', slug: 'example-charge' }],
+    results: [
+      {
+        id: 'b8eb27a6-6fa1-4d0c-816b-96be2e3428b6',
+        slug: 'example-charge',
+        displayName: 'Example charge',
+        statuteCode: '18 § 0000',
+        grade: 'M1',
+        matchedAlias: 'example alias',
+      },
+      {
+        // Optionals omitted — the shared convention is omission, not null.
+        id: '2f9c1e04-8d5b-4c33-9a67-0d1e2f3a4b5c',
+        slug: 'minimal-charge',
+        displayName: 'Minimal charge',
+      },
+    ],
   };
 }
 

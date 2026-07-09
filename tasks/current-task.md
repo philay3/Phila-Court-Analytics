@@ -1,113 +1,126 @@
-# Task 7.1 — Public Error Catalog + Format Registration
+# Task 7.2 — Charge Search Endpoint
+
+## Standing rule
+Respond with an implementation plan BEFORE writing any code. Wait for approval.
 
 ## Goal
+Implement the first real public endpoint:
 
-Extend the existing error handling from task 1.3 with a stable public
-error `code` field, define the public error code catalog in
-`@pca/shared`, and make TypeBox string formats (`date`, `date-time`,
-`uuid`) actually enforced in schema validation — closing the 3.2
-worklog finding that unregistered formats pass silently.
+GET /api/v1/public/charges/search?q={query}&limit={limit}
+
+Searches seeded normalized charges and their aliases (6.3 data) and returns
+public-safe charge suggestions using the shared response envelope and the 7.1
+error plumbing.
 
 ## Context
+- ref.normalized_charges and ref.charge_aliases exist (6.1) and are seeded (6.3).
+- Error catalog + central handler passthrough exist (7.1): endpoints throw
+  errors carrying a catalog code; the handler shapes the response. Do NOT
+  shape errors in the route.
+- registerFormats() is already buildApp's first statement — do not move it.
+- Ajv remains the request validator; do not switch validator compilers.
 
-- Sprint 2, Phase 7. Endpoints 7.2+ depend on this plumbing.
-- The 1.3 error handler ships a flat shape:
-  `{ statusCode, error, message, requestId }`. This shape is KEPT and
-  extended with `code: string`. The nested `{ error: { ... } }`
-  envelope is explicitly rejected (standing decision).
-- The 3.2 worklog recorded that TypeBox schemas using
-  `format: 'date'` etc. pass validation silently when the format is
-  unregistered. This task must make malformed format values fail in
-  the real request validation path.
-- 5xx responses currently have message-leak protection (internal error
-  messages are not echoed to clients). That protection must survive
-  unchanged.
+## Scope
 
-## Deliverables
+### 1. Shared contracts (@pca/shared)
+- TypeBox querystring schema: 
+  - q: required string. Trimmed server-side; after trimming, length must be
+    1–100. Empty/whitespace-only q → INVALID_REQUEST (400) via catalog throw.
+  - limit: optional integer, default 10, min 1, max 25. Out-of-range or
+    non-integer → INVALID_REQUEST (400).
+  - additionalProperties: false.
+- Response schema/type: { results: ChargeSearchResult[] } using the existing
+  envelope convention. ChargeSearchResult fields (exactly these, camelCase):
+  - id (uuid string)
+  - slug
+  - displayName
+  - statuteCode (optional — omit or null per existing shared-type convention
+    for optionals; be consistent with existing public types)
+  - grade (optional, same convention)
+  - matchedAlias (optional string)
+- No counts, percentages, sample sizes, or aggregate fields of any kind.
 
-### 1. Error code catalog in `@pca/shared`
+### 2. Search behavior (apps/api)
+- Repository layer reads ONLY ref.normalized_charges + ref.charge_aliases
+  via Kysely. No analytics.*, no raw/parsed/fact/review/audit access.
+- Only active charges are searchable (active-status column from 6.1).
+- Matching: case-insensitive substring (ILIKE) against:
+  a. normalized_charges.display_name
+  b. charge_aliases alias text
+  c. normalized_charges.statute_code (nullable — skip nulls)
+- LIKE-wildcard escaping: escape %, _, and the escape character itself in
+  user input before building the pattern (use an explicit ESCAPE clause).
+  q="%" must NOT match everything; it matches only literal-% content
+  (i.e., returns empty against seeded data).
+- Ranking (deterministic):
+  1. exact match (case-insensitive equality) on display name, alias, or
+     statute code
+  2. prefix match on any of the three
+  3. substring match
+  Tie-break: display_name ascending. Rank is computed across the best match
+  the charge achieves via ANY of name/alias/statute.
+- Deduplication: each charge appears at most once regardless of how many
+  fields/aliases matched.
+- matchedAlias: populated ONLY when the display name itself did not match
+  (i.e., the result is present because of an alias). If multiple aliases
+  matched, use the alphabetically first matching alias. Never populate it
+  for statute-code-only matches.
+- limit applied after ranking/dedup.
+- No results is a SUCCESS: 200 with { results: [] }. Not an error, not 404.
 
-- New module (e.g. `packages/shared/src/errors.ts`) exporting:
-  - a const object of public error codes:
-    `INVALID_REQUEST`, `CHARGE_NOT_FOUND`, `JUDGE_NOT_FOUND`,
-    `CHARGE_RESULT_UNAVAILABLE`, `JUDGE_SPECIFIC_RESULT_UNAVAILABLE`,
-    `SENTENCING_RESULT_UNAVAILABLE`, `RATE_LIMITED`, `INTERNAL_ERROR`
-  - a derived union type (e.g. `PublicErrorCode`)
-  - a TypeBox schema for the public error response shape:
-    `{ statusCode, code, error, message, requestId }`
-- `RATE_LIMITED` is defined only. No rate limiting middleware or
-  implementation of any kind.
-- Each code maps to a default HTTP status (documented in the module):
-  INVALID_REQUEST→400, *_NOT_FOUND→404, *_UNAVAILABLE→404 (final
-  status per code may be proposed in the plan; unavailable-state
-  semantics are consumed by 8.1/8.2), RATE_LIMITED→429,
-  INTERNAL_ERROR→500.
+### 3. Route wiring
+- Route registered in the existing /api/v1/public namespace plugin.
+- Request validation via the shared TypeBox schemas through Fastify's
+  schema option (Ajv path).
+- Layering per architecture: route → validation → service → repository.
+  Keep it thin; no business logic in the route handler.
 
-### 2. Error handler extension in `apps/api`
-
-- Central error handler emits
-  `{ statusCode, code, error, message, requestId }` for all error
-  responses.
-- Validation failures map to `INVALID_REQUEST` (400).
-- Unmapped/unexpected errors map to `INTERNAL_ERROR` (500) with the
-  existing message-leak protection intact: internal error messages
-  never reach the client on 5xx.
-- 404 for unknown routes carries an appropriate code (propose in plan;
-  `INVALID_REQUEST` vs a generic not-found — do not invent new public
-  codes beyond the catalog without flagging it).
-
-### 3. Format registration
-
-- `registerFormats()` exported from `@pca/shared` registering `date`,
-  `date-time`, `uuid`. Idempotent.
-- `buildApp` calls `registerFormats()` before any route/schema
-  registration. No app instance can exist without formats registered.
-- CRITICAL: the implementation plan must state which compiler actually
-  validates incoming requests (Fastify's Ajv vs TypeBox TypeCompiler)
-  and wire format enforcement into that real path. TypeBox
-  FormatRegistry registration alone is insufficient if Ajv performs
-  route validation.
-- If `@pca/shared` schema tests compile schemas directly, a Vitest
-  setup file calls `registerFormats()` there too.
-
-## Acceptance criteria
-
-1. Error responses from the API have exactly the shape
-   `{ statusCode, code, error, message, requestId }`.
-2. All eight codes exist in `@pca/shared` with a derived union type;
-   API imports them from `@pca/shared` (no local re-definition).
-3. A test proves a request with a malformed `format: 'date'` (or
-   `uuid`) value is rejected with 400 + `INVALID_REQUEST` through the
-   real request path (`fastify.inject`), where the same schema
-   previously passed silently.
-4. A test proves `registerFormats()` is idempotent (calling twice does
-   not throw or change behavior).
-5. A test proves 5xx responses do not leak internal error messages
-   (existing protection retained, now with `code: INTERNAL_ERROR`).
-6. No public error message mentions: parser confidence, extraction,
-   review status, raw records, odket/docket internals, odds,
-   predictions, legal advice, or internal IDs.
-7. Existing 1.3 tests updated, not deleted; full suite green;
-   lint/typecheck/format pass.
+### 4. Tests (Vitest + fastify.inject, seeded local DB)
+Required cases:
+- exact display-name match returns the charge ranked first
+- alias match returns the parent charge with matchedAlias populated
+- substring match (e.g. "theft" → Retail Theft)
+- case-insensitivity (upper/lower/mixed q)
+- dedup: a charge whose name AND alias both match appears exactly once;
+  matchedAlias absent (name matched)
+- statute-code match returns the charge WITHOUT matchedAlias
+- no match → 200 { results: [] }
+- missing q → 400 INVALID_REQUEST (catalog shape: statusCode, code, error,
+  message, requestId)
+- whitespace-only q → 400 INVALID_REQUEST
+- limit default (10) and max (25) enforced; limit=0 and limit=26 → 400
+- q="%" and q="_" return empty (wildcard escaping proof)
+- forbidden-content assertion: response JSON contains no counts,
+  percentages, sampleSize, docket/defendant/source/parser/review fields
+- inactive charge (insert one in test setup or via seed helper) is never
+  returned
 
 ## Out of scope
+- judge search (7.3)
+- fuzzy/trigram search, pg_trgm, full-text search (comes due at Sprint 5
+  normalization when the real charge corpus exists)
+- pagination beyond limit
+- rate limiting (RATE_LIMITED remains defined-only)
+- any migration or seed changes (if seeds prove insufficient for a test
+  case, say so in the plan — do not silently modify them)
+- caching
 
-- Any public endpoint (7.2 onward)
-- Rate limiting implementation (code defined only)
-- Copy-guard/forbidden-term test suites (10.1/10.2)
-- Moving copy-guard constants to `@pca/shared` (10.2)
-- Any `ref.*`/`analytics.*` queries or DB access changes
+## Files you may touch
+- packages/shared/** (new schemas/types + exports only; no changes to the
+  error catalog or format registration)
+- apps/api/** (route, service, repository, tests)
+- tasks/worklog.md (on completion)
 
-## Files the agent may touch
+Do NOT touch: db migrations, db/seeds, apps/web, services/pipeline,
+CI workflow.
 
-- `packages/shared/src/**` (new errors + formats modules, tests, index exports)
-- `apps/api/src/**` (error handler, buildApp wiring, tests)
-- Vitest setup/config files in those two workspaces only
-
-## Process
-
-Return an implementation plan BEFORE writing code. The plan must
-explicitly answer: (a) which validator compiles request schemas today
-and how formats reach it; (b) proposed status-code mapping for the
-unavailable-state codes; (c) how idempotency of registerFormats() is
-achieved. Append a worklog entry to tasks/worklog.md on completion.
+## Acceptance criteria
+1. GET /api/v1/public/charges/search works against seeded data with the
+   exact field list above — nothing more.
+2. Validation, defaults, and limits enforced exactly as specified; all
+   errors flow through the 7.1 catalog/handler (no per-endpoint shaping).
+3. Matching, ranking, dedup, matchedAlias, and wildcard-escaping semantics
+   as specified, with tests proving each.
+4. Repository reads only ref.* tables; inactive charges excluded.
+5. All listed tests pass; pnpm lint / typecheck / test green at root.
+6. Worklog entry appended.

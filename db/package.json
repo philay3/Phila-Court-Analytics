@@ -6,6 +6,10 @@
   "engines": {
     "node": ">=22.9"
   },
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "migrate:latest": "tsx --env-file-if-exists=../.env src/migrate.ts latest",
     "migrate:up": "tsx --env-file-if-exists=../.env src/migrate.ts up",

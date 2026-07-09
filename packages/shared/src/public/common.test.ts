@@ -2,7 +2,6 @@ import { Value } from '@sinclair/typebox/value';
 import { describe, expect, it } from 'vitest';
 
 import { validOutcomeDistribution, validSentencingDistribution } from '../test-support/fixtures.js';
-import { registerStringFormats } from '../test-support/formats.js';
 import {
   dateRangeSchema,
   outcomeDistributionEntrySchema,
@@ -11,8 +10,6 @@ import {
   sentencingDistributionSchema,
   taxonomyVersionSchema,
 } from './common.js';
-
-registerStringFormats();
 
 function firstEntry() {
   const [entry] = validOutcomeDistribution().entries;
