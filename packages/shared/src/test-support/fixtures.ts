@@ -13,6 +13,14 @@ import {
   type JudgeSpecificResultUnavailable,
 } from '../public/judge-result.js';
 import type { ChargeSearchResponse, JudgeSearchResponse } from '../public/search.js';
+import {
+  DATA_COVERAGE_COURT_SCOPE,
+  DATA_COVERAGE_JURISDICTION,
+  DATA_COVERAGE_PLANNED_DATA_START,
+  DATA_COVERAGE_UNAVAILABLE_MESSAGE,
+  type DataCoverageResponse,
+} from '../public/data-coverage.js';
+import { METHODOLOGY_SECTION_KEYS, type MethodologyResponse } from '../public/methodology.js';
 
 // Fixtures are typed against the Static types and built from taxonomy artifacts, so a
 // schema/type drift or a hand-copied category code fails to compile.
@@ -170,5 +178,46 @@ export function validJudgeSearchResponse(): JudgeSearchResponse {
         displayName: 'Minimal judge',
       },
     ],
+  };
+}
+
+export function validMethodologyResponse(): MethodologyResponse {
+  // Built by iterating the exported key list, so a key added to the schema
+  // without being added to METHODOLOGY_SECTION_KEYS fails to compile here.
+  const sections = Object.fromEntries(
+    METHODOLOGY_SECTION_KEYS.map((key) => [
+      key,
+      { heading: `Heading for ${key}`, body: `Body copy for ${key}.` },
+    ]),
+  ) as MethodologyResponse['sections'];
+  return { sections };
+}
+
+export function validDataCoverageAvailable(): DataCoverageResponse {
+  return {
+    jurisdiction: DATA_COVERAGE_JURISDICTION,
+    courtScope: DATA_COVERAGE_COURT_SCOPE,
+    plannedDataStart: DATA_COVERAGE_PLANNED_DATA_START,
+    knownLimitations: ['An example public-safe limitation.'],
+    coverage: {
+      available: true,
+      dataStart: '2025-01-01',
+      dataEnd: '2026-06-30',
+      lastRefreshed: '2026-07-01T02:00:00Z',
+      taxonomyVersion: TAXONOMY_VERSION,
+      aggregateRunId: '2f9c1e04-8d5b-4c33-9a67-0d1e2f3a4b5c',
+      counts: {
+        chargesWithOutcomeAggregates: 5,
+        chargesWithSentencingAggregates: 3,
+        judgeChargePairs: 3,
+      },
+    },
+  };
+}
+
+export function validDataCoverageUnavailable(): DataCoverageResponse {
+  return {
+    ...validDataCoverageAvailable(),
+    coverage: { available: false, message: DATA_COVERAGE_UNAVAILABLE_MESSAGE },
   };
 }

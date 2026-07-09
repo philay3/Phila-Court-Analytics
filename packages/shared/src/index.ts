@@ -6,3 +6,5 @@ export * from './public/definitions.js';
 export * from './public/search.js';
 export * from './public/charge-result.js';
 export * from './public/judge-result.js';
+export * from './public/methodology.js';
+export * from './public/data-coverage.js';
