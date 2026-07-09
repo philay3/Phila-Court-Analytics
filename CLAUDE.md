@@ -60,3 +60,18 @@ Planning docs live in `docs/`. Consult them for context, but `docs/current-task.
   goes in `agent-docs/`.
 - Package-level READMEs (e.g. `db/README.md`, `apps/api/README.md`) are fine
   and belong with their package — they are not affected by this rule.
+## Task completion git protocol (mandatory)
+
+Every task completion report must END with the complete, copy-paste-ready
+git command sequence — unprompted, as the final section of the report.
+The sequence is always:
+
+1. `git switch -c task-N.N-short-name` (from main)
+2. `git add` of exactly the in-scope files
+3. `git commit` with a task-scoped message in a heredoc
+4. `git push -u origin <branch>`
+
+Never offer, suggest, or default to committing directly on main. The repo
+discipline is branch + PR + merge-on-green, no exceptions. The human
+handles the PR, CI check, and merge on GitHub. Never end a report with
+"say the word if you'd like me to commit" — provide the commands.
