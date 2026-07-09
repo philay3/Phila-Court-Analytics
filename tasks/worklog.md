@@ -385,3 +385,111 @@
   will fail until a message is added. The web copy-guard scans ALL `.ts`/`.tsx`
   under `app/` including test files, so avoid forbidden vocabulary (`guarantee`,
   `predict`, `odds`, …) even in test comments/fixtures.
+
+## Task 11.3 — Tailwind v4 Styling Foundation
+
+- **Date:** 2026-07-09
+- **What was built:** Tailwind CSS v4 (CSS-first) installed and wired into
+  `apps/web`, the 4.1 design tokens migrated into Tailwind's `@theme`, and the
+  layout shell (header/nav/main/footer) restyled with plain Tailwind utilities
+  on the unchanged semantic HTML, plus a minimal base heading hierarchy (h1–h6)
+  in the base layer to counter preflight's heading reset. No component UI
+  library; no dark mode; no page or copy changes.
+- **Integration mechanism:** `tailwindcss@4.3.2` + `@tailwindcss/postcss@4.3.2`
+  as `apps/web` devDependencies; new `apps/web/postcss.config.mjs`
+  (`{ plugins: { '@tailwindcss/postcss': {} } }`); `globals.css` starts with
+  `@import 'tailwindcss';`. Next 16 reads the PostCSS config under BOTH `next dev`
+  (Turbopack) and `next build` — no `next.config.ts` change needed. Verified:
+  `next build` compiled 8 routes cleanly under Turbopack, and `next dev`
+  (Turbopack) served the styled homepage with all generated utilities present in
+  the emitted CSS.
+- **allowBuilds:** added `'@tailwindcss/oxide': true` to the existing
+  `allowBuilds:` MAP in `pnpm-workspace.yaml` (Tailwind v4's native Rust engine;
+  its install step needs approval to run). This is the ONLY addition. `sharp`
+  stays `false`; `esbuild: true` / `unrs-resolver: false` unchanged. `pnpm
+  install` reported no other blocked build scripts. NOTE for future tasks: the
+  approved-plan wording originally said "onlyBuiltDependencies list" but the repo
+  actually manages these as an `allowBuilds` map (pnpm 11.10 honors it — esbuild's
+  binary builds); the human confirmed the map is controlling and the `false`
+  entries are deliberate-denial documentation to preserve. Do NOT convert to
+  `onlyBuiltDependencies`. On darwin-arm64 the oxide native binary is delivered by
+  the prebuilt optional dep `@tailwindcss/oxide-darwin-arm64` (a shipped `.node`),
+  not compiled locally; the allowBuilds entry still governs oxide's own install
+  script.
+- **Token rename map (old `:root` custom prop → `@theme` token → generated
+  utility).** Values preserved EXACTLY from 4.1; renames are only so the
+  generated utility reads naturally (`text-text` would be awkward). Phase 12–14
+  should use the NEW names:
+
+  | 4.1 token | value | `@theme` token | utility |
+  | --- | --- | --- | --- |
+  | `--color-text` | `#1f2733` | `--color-ink` | `text-ink` |
+  | `--color-text-muted` | `#5b6572` | `--color-muted` | `text-muted` |
+  | `--color-background` | `#ffffff` | `--color-canvas` | `bg-canvas` |
+  | `--color-surface` | `#f5f6f8` | `--color-surface` | `bg-surface` (name unchanged) |
+  | `--color-border` | `#d9dde3` | `--color-line` | `border-line` |
+  | `--color-link` | `#1d4ed8` | `--color-accent` | `text-accent` |
+  | `--max-content-width` | `44rem` | `--container-content` | `max-w-content` |
+
+  Accent `#1d4ed8` kept exactly as-is per standing decision — palette tuning is
+  deferred to 15.1 against real pages, not done as a side effect here.
+- **globals.css** now contains only: the Tailwind import, the `@theme` block, and
+  a minimal base layer: body defaults (font stack, line-height, ink color,
+  canvas background, flex column, min-height), the global `a:focus-visible`
+  outline, and an `@layer base` heading hierarchy (h1 1.75rem, h2 1.375rem,
+  h3 1.125rem, all 600-weight with restrained margins; h4–h6 inherit body size
+  but stay semibold). No page-specific styles, no dead/duplicate token defs.
+- **Shell restyle (`layout.tsx`, className-only):** surface-tinted header/footer
+  with `border-line` hairline dividers, a centered `max-w-content` reading column
+  (`mx-auto … px-6 py-8`), `text-lg font-semibold` site name, a flex-wrap nav,
+  and `text-accent` links with `hover:underline` + an explicit
+  `focus-visible:outline` ring (belt-and-suspenders over the global
+  `a:focus-visible`). Landmarks, headings, nav `aria-label`, and list structure
+  are byte-for-byte identical in shape — only `className` values changed.
+- **Stale-reference sweep (required):** grep across `apps/web`
+  (`.ts/.tsx/.css/.md/.json`, excl. `node_modules`/`.next`) for every removed
+  identifier — `--color-text`, `--color-text-muted`, `--color-background`,
+  `--color-border`, `--color-link`, `--max-content-width`, and the `.site-*`
+  class prefix — returned ZERO real references. The one grep hit was the word
+  `site-wide` inside an existing code comment (substring false positive from the
+  `site-` pattern), not a class reference. Renamed tokens fail silently as
+  unstyled elements, so this was proven, not assumed.
+- **How to verify:** `pnpm run build:packages` (still required before web work
+  that resolves `@pca/*` dist), then `pnpm --filter @pca/web run build`,
+  `pnpm --filter @pca/web run typecheck`, `pnpm lint`, `pnpm format:check`, and
+  the full `pnpm test`. `next dev -p <port>` renders the styled shell.
+- **Gates — all green:** `next build` 8 routes clean (Turbopack); typecheck 0
+  errors; lint 0; format:check clean; full workspace tests pass (web 16, api 194,
+  shared 163, taxonomy 14, db 6). Copy-guard passed UNCHANGED — no copy added,
+  removed, or edited.
+- **Files touched:** `pnpm-workspace.yaml` (one allowBuilds line),
+  `apps/web/package.json` (two devDeps), `apps/web/postcss.config.mjs` (new),
+  `apps/web/app/globals.css` (rewritten), `apps/web/app/layout.tsx`
+  (className-only), `pnpm-lock.yaml` (install), `tasks/worklog.md`. No CI change
+  (see gap below). No page, route, component, or copy change.
+- **Deviations from plan:** one human-directed addition after initial review —
+  base heading styles (`@layer base` h1–h6) added to `globals.css` beyond the
+  originally-approved "body defaults + a:focus-visible" base layer, to prevent a
+  visual regression from preflight's heading reset (Sprint 3 acceptance: no
+  visual regression to shell pages beyond intended restyling). One approval-time
+  clarification: the allowBuilds mechanism is the `allowBuilds` map, not an
+  `onlyBuiltDependencies` list (see above).
+- **Notes for next task (Phases 12–14):**
+  - **CI gap (important):** CI does NOT run `next build` — `ci.yml` only runs
+    lint/typecheck/format/test on the Node job, so a Tailwind/PostCSS or web-build
+    regression would NOT be caught by CI today. It was verified locally here. This
+    gap closes at **task 15.2**, when the E2E job boots web via a production build;
+    15.2's spec inherits the requirement to exercise `next build` in CI.
+  - **Tailwind v4 preflight flattens headings — MITIGATED with base heading
+    styles in 11.3.** Preflight resets `h1–h6` to `font-size/weight: inherit`,
+    which would render existing shell-page headings (methodology, definitions,
+    about, home) at body size. 11.3 adds an `@layer base` heading hierarchy in
+    `globals.css` (h1 1.75rem / h2 1.375rem / h3 1.125rem, all 600; h4–h6 inherit
+    size but stay semibold) so the base state is correct rather than broken.
+    Because it lives in `@layer base` (which precedes `@layer utilities`), Phase
+    12–14 pages remain free to override any heading with utility classes.
+  - Tokens are consumed as utilities (`bg-surface`, `text-ink`, `max-w-content`,
+    …); the raw `--color-*` / `--container-content` CSS vars also exist for
+    arbitrary values if ever needed. Use the new names (table above).
+  - No `tailwind.config.*` file exists (CSS-first): all theme config lives in
+    `globals.css` `@theme`. Add future tokens there.

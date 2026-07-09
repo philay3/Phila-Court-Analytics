@@ -29,20 +29,25 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <header className="site-header">
-          <p className="site-name">Philadelphia Court Outcomes</p>
+        <header className="border-b border-line bg-surface px-6 py-4">
+          <p className="mb-2 text-lg font-semibold text-ink">Philadelphia Court Outcomes</p>
           <nav aria-label="Main navigation">
-            <ul className="site-nav">
+            <ul className="flex flex-wrap gap-4">
               {NAV_LINKS.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href}>{link.label}</Link>
+                  <Link
+                    href={link.href}
+                    className="text-accent hover:underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    {link.label}
+                  </Link>
                 </li>
               ))}
             </ul>
           </nav>
         </header>
-        <main className="site-main">{children}</main>
-        <footer className="site-footer">
+        <main className="mx-auto w-full max-w-content flex-1 px-6 py-8">{children}</main>
+        <footer className="border-t border-line bg-surface px-6 py-4 text-sm text-muted">
           <p>
             Historical data about past court outcomes. Not legal advice, and not a prediction of any
             future result.

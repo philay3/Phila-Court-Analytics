@@ -11,3 +11,6 @@ allowBuilds:
   # unrs-resolver ships prebuilt platform binaries via optionalDependencies;
   # its postinstall is only a fallback check, so no build script needed.
   unrs-resolver: false
+  # Tailwind v4's native Rust engine (@tailwindcss/oxide) builds/fetches a
+  # platform binary in its install step; required for CSS compilation.
+  '@tailwindcss/oxide': true
