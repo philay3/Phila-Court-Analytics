@@ -48,6 +48,25 @@ jobs:
       - name: Generate taxonomy artifacts
         run: pnpm generate
 
+      # Build the workspace packages to dist/ so the runtime smoke below (and
+      # any dist consumer) has emitted output. Idempotent with the build that
+      # `pnpm typecheck` runs later.
+      - name: Build workspace packages
+        run: pnpm run build:packages
+
+      # Execute built dist under PLAIN node — no tsx, no --conditions flag — so
+      # the exports `default` (dist) path is exercised end-to-end. Tests resolve
+      # source via the `development` condition, so until the Sprint 3 E2E job
+      # lands nothing else in CI runs dist; an exports-map or emit-layout mistake
+      # would otherwise ship silently. Run from apps/api, which depends on all
+      # three packages, so the bare specifiers resolve.
+      - name: Plain-node runtime smoke (built dist)
+        working-directory: apps/api
+        run: >-
+          node --input-type=module -e "await import('@pca/shared'); await
+          import('@pca/taxonomy'); await import('@pca/db');
+          console.log('runtime smoke: all three packages imported under plain node');"
+
       - name: Lint
         run: pnpm lint
 

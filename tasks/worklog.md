@@ -217,3 +217,75 @@
 - **Files touched:** `packages/shared/src/public/copy-safety.ts` + `copy-safety.test.ts` (new), `packages/shared/src/index.ts`, `packages/shared/src/public/charge-result.ts`, `packages/shared/src/public/judge-result.ts`; `apps/api/src/test-support/public-route-probes.ts`, `apps/api/src/public-copy-safety.test.ts` (new), `apps/api/src/public-forbidden-fields.test.ts`, `apps/api/src/content/methodology.ts`, `apps/api/src/routes/public/methodology.test.ts`, `apps/api/src/services/charge-result.ts`, `apps/api/src/services/judge-result.ts`; `apps/web/test/copy-guard.test.ts`, `apps/web/test/copy-terms.ts` (deleted), `apps/web/package.json`, `pnpm-lock.yaml`; `tasks/worklog.md`.
 - **Deviations from plan:** none beyond the plan-review rulings themselves (guarantee stem, phrase union, not-found-message migration, methodology-test rework — all ruled before implementation). `apps/web/package.json` + lockfile were the only files outside the task's files-in-scope list, pre-approved as Ruling 3.
 - **Notes for next task:** All public prose is now gated twice: 10.1 (structure/identifiers) and 10.2 (copy terms), both walking the SAME `PROBE_REGISTRY` — a new public route fails BOTH suites until a registry entry exists and 10.1's route count (7) is bumped. Any new public copy (content modules, error messages, taxonomy definitions) is scanned automatically if it flows through a registered route or one of the imported static sources; a new static content module must be added to the 10.2 static-source tests by hand. The web guard's whitespace collapse is FILE-level preprocessing — `scanPublicCopy` itself deliberately does not match multi-word terms across newlines (pinned single-space discipline), so any new consumer scanning multi-line sources must collapse first. `better`/`worse` remain outside the mechanical list by design; bare `best`/`worst`/`win` are enforced only in the methodology route test's stricter local extras.
+
+## Chore — API dev script loads root .env
+
+- **Date:** 2026-07-09
+- **What was built:** `apps/api` `dev` script now runs `tsx watch --env-file-if-exists=../../.env src/server.ts` and `start` runs `node --env-file-if-exists=../../.env dist/server.js`, matching the `@pca/db` scripts' env-loading so local dev needs no shell exports — `cp .env.example .env` at the repo root is enough. Per Ruling 1, engines were tightened to `>=22.11` (Node 22 LTS floor, where `--env-file-if-exists` is universally supported) in `apps/api`, the root `package.json`, `packages/shared`, `packages/taxonomy`, `apps/web`, and `db` (db said `>=22.9`, tightened under the same rationale and flagged in the report). Per Ruling 2, `apps/api/README.md` got a factual refresh: "shell only / no database" framing removed, API described as DB-backed with public aggregate endpoints, `DATABASE_URL` added to the env table, auto-loading + shell-precedence behavior documented. Verified: (1) with nothing exported and a root `.env`, dev serves `GET /api/v1/public/charges/search?q=retail` → 200 with results; (2) shell precedence proven empirically — a bogus exported `DATABASE_URL` produced a 500 (generic body, no leak) over a valid `.env`, a valid exported value worked; (3) `start` env-loading verified in isolation only (see below). All gates green: lint, format:check, typecheck, full JS suites (194 api tests incl. live DB probes), pytest 31.
+- **Files touched:** `apps/api/package.json`, `apps/api/README.md`, `package.json`, `packages/shared/package.json`, `packages/taxonomy/package.json`, `apps/web/package.json`, `db/package.json`, `tasks/worklog.md`. Commit `baf828f`.
+- **Deviations from plan:** none beyond the two pre-approved rulings; the `db` engines value (`>=22.9` → `>=22.11`) was a judgment call within Ruling 1's rationale, flagged at report time.
+- **Notes for next task:** PRE-EXISTING BUG (out of scope here, unrelated to env loading): `pnpm --filter @pca/api start` cannot boot — `@pca/shared`'s `main` points at TS source (`./src/index.ts`), which plain `node` can't resolve (`ERR_MODULE_NOT_FOUND` for `errors.js`); reproduced identically pre-change. The env flag on `start` is correct and ready for whenever workspace-dep builds make `start` runnable. Env-flag paths are cwd-relative to each package (`../../.env` from `apps/api`, `../.env` from `db`) — a package at a different depth needs a different path. Two stale local dev servers holding ports 3001/3199 were killed during verification (user-approved).
+
+## Task 11.1 — Workspace Package Build + Runtime Fix
+
+- **Date:** 2026-07-09
+- **What was built:** Per-package `dist` builds (tsc emit) + conditional `exports`
+  maps for `@pca/shared`, `@pca/taxonomy`, `@pca/db`, killing the plain-node
+  `start` failure documented at the end of the previous chore entry. Each package
+  gained a `tsconfig.build.json` (declaration + declarationMap + sourceMap,
+  emit-only, published surface only) and an exports map of shape
+  `{ types: dist/*.d.ts, "pca-source": <source>, default: dist/*.js }`.
+  Plain node / `next build` / consumer typecheck resolve `default`/`types` → dist;
+  vitest + tsx opt into `pca-source` → TS source.
+- **Mechanism chosen & the naming gotcha:** the source condition is named
+  `pca-source`, NOT `development`. Next.js auto-injects `development` in dev mode,
+  so a `development` source condition made `next dev` resolve `@pca/shared` to
+  `src/index.ts` and fail on its `.js`-extension re-exports (Turbopack won't map
+  `.js`→`.ts` for a non-transpiled external; transpilePackages is rejected).
+  Namespacing to `pca-source` makes `next dev` fall through to `default`→dist,
+  matching `next build`; only tsx (`--conditions pca-source`) and vitest opt in.
+- **Exact Vitest knob:** per config —
+  `resolve.conditions: ['pca-source']`,
+  `ssr.resolve.conditions: ['pca-source','module','node']`,
+  `test.server.deps.inline: [/@pca\//]`.
+  The `ssr.resolve.conditions` line is load-bearing: Vitest resolves inlined
+  package *entries* through the SSR resolver, so top-level `resolve.conditions`
+  alone resolved to dist. Applied in `packages/shared`, `db`, `apps/api` vitest
+  configs. `@pca/taxonomy` has no vitest config and no workspace deps → exempt.
+  `--conditions pca-source` on all boundary-crossing tsx calls: api `dev`, db
+  `migrate:*`, db `seed`.
+- **Per-package:** shared → `dist/index.js` (rootDir src, tests/test-support
+  excluded); taxonomy → build = `tsx src/generate.ts && tsc` so gitignored
+  `generated/index.ts` exists before emit (taxonomy.json is inlined, not a runtime
+  artifact); db → rootDir `.`, `include: ["src/index.ts"]` so tsc emits exactly the
+  published closure (`dist/src/{index,types}.js` + `dist/seeds/*.js`), verified NOT
+  to pull migrations/connection/migrate/run.ts.
+- **Root ordering:** new `build:packages` (topological via pnpm filters, taxonomy
+  first); `typecheck` now `build:packages && tsc && pnpm -r typecheck` (consumers
+  read dist `.d.ts`); `test` unchanged (source-resolved, no dist needed). Fresh
+  clone proven by wiping `dist/` + `generated/` and running the full pipeline.
+- **CI:** added `Build workspace packages` + a plain-node runtime smoke
+  (`node --input-type=module -e "await import(...×3)"` from apps/api, no
+  `--conditions`) before Lint — because tests resolve source, this is the only
+  thing executing dist until the Sprint 3 E2E job, so exports/emit regressions
+  fail here instead of shipping silently.
+- **Files touched:** new `packages/{shared,taxonomy}/tsconfig.build.json`,
+  `db/tsconfig.build.json`, `apps/web/app/import-proof/page.tsx`; modified
+  `packages/{shared,taxonomy}/package.json` + `db/package.json` (exports/build),
+  `packages/shared/vitest.config.ts`, `db/vitest.config.ts`,
+  `apps/api/{package.json,vitest.config.ts}`, root `package.json`,
+  `.github/workflows/ci.yml`. No package source logic changed; no public API,
+  schema, seed, or endpoint change. dist/ already gitignored.
+- **Deviations:** (1) source condition `development`→`pca-source` (Next collision,
+  above); (2) `apps/api/vitest.config.ts` already existed — modified, not created.
+- **Notes for 11.2 / 11.3:**
+  - DELETE `apps/web/app/import-proof/page.tsx` when 11.2 lands the real API client
+    module — it exists only to prove a `@pca/shared` value import survives
+    `next build`.
+  - **Stale-dist tradeoff:** consumer typecheck AND editor intellisense resolve
+    `dist/*.d.ts`, so after editing a package's source, editors/`tsc` may lag until
+    `pnpm run build:packages` reruns; declarationMap softens go-to-def but not the
+    staleness. Tests/tsx are unaffected (they use `pca-source`→source). `next dev`
+    /`next build` resolve dist, so web work needs `build:packages` first.
+  - Adding a new package export subpath means extending its exports map with the
+    same `{types, pca-source, default}` triple.

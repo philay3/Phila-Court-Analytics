@@ -6,13 +6,22 @@
   "engines": {
     "node": ">=22.11"
   },
-  "main": "./generated/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./generated/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "pca-source": "./generated/index.ts",
+      "default": "./dist/index.js"
+    }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "validate": "tsx src/validate.ts",
     "generate": "tsx src/generate.ts",
+    "build": "tsx src/generate.ts && tsc -p tsconfig.build.json",
     "lint": "eslint .",
     "typecheck": "tsx src/generate.ts && tsc -p tsconfig.json --noEmit",
     "test": "vitest run"

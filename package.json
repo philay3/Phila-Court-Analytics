@@ -8,11 +8,12 @@
   "scripts": {
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
+    "build:packages": "pnpm --filter @pca/taxonomy --filter @pca/shared --filter @pca/db run build",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "generate": "pnpm -r run generate",
-    "typecheck": "pnpm run generate && tsc -p tsconfig.json && pnpm -r run typecheck",
+    "typecheck": "pnpm run build:packages && tsc -p tsconfig.json && pnpm -r run typecheck",
     "test": "pnpm run generate && pnpm -r run test",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",

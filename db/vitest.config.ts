@@ -13,4 +13,15 @@ try {
   // No root .env — DATABASE_URL may still come from the environment (e.g. CI).
 }
 
-export default defineConfig({});
+// Resolve workspace packages (@pca/taxonomy) to TypeScript source via the
+// custom `pca-source` export condition rather than built dist/, so tests need
+// no package build step. The condition is namespaced (not `development`) to
+// avoid colliding with Next.js's dev condition. `inline` forces Vite to process
+// the symlinked workspace deps instead of externalizing them to Node's resolver.
+export default defineConfig({
+  resolve: { conditions: ['pca-source'] },
+  ssr: { resolve: { conditions: ['pca-source', 'module', 'node'] } },
+  test: {
+    server: { deps: { inline: [/@pca\//] } },
+  },
+});

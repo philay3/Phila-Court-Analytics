@@ -6,16 +6,25 @@
   "engines": {
     "node": ">=22.11"
   },
-  "main": "./src/index.ts",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "pca-source": "./src/index.ts",
+      "default": "./dist/src/index.js"
+    }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "migrate:latest": "tsx --env-file-if-exists=../.env src/migrate.ts latest",
-    "migrate:up": "tsx --env-file-if-exists=../.env src/migrate.ts up",
-    "migrate:down": "tsx --env-file-if-exists=../.env src/migrate.ts down",
-    "migrate:status": "tsx --env-file-if-exists=../.env src/migrate.ts status",
-    "seed": "pnpm --filter @pca/taxonomy run generate && tsx --env-file-if-exists=../.env seeds/run.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "migrate:latest": "tsx --conditions pca-source --env-file-if-exists=../.env src/migrate.ts latest",
+    "migrate:up": "tsx --conditions pca-source --env-file-if-exists=../.env src/migrate.ts up",
+    "migrate:down": "tsx --conditions pca-source --env-file-if-exists=../.env src/migrate.ts down",
+    "migrate:status": "tsx --conditions pca-source --env-file-if-exists=../.env src/migrate.ts status",
+    "seed": "pnpm --filter @pca/taxonomy run generate && tsx --conditions pca-source --env-file-if-exists=../.env seeds/run.ts",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
