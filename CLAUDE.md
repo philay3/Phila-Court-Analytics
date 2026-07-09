@@ -14,7 +14,7 @@ You are the implementation agent for this project. Planning and task sequencing 
    - anything ambiguous or missing that you need answered
 4. After approval, implement exactly the approved plan. If you discover mid-implementation that the plan needs to change, STOP and say so — do not silently deviate.
 5. When done, report: what you built, how to run/verify it, and which acceptance criteria are met.
-6. After the human confirms the task is complete, append an entry to tasks/worklog.md: task ID, date, what was built, files touched, any deviations from plan, and anything the next task should know
+6. After implementation and before committing, append an entry to tasks/worklog.md: task ID, date, what was built, files touched, any deviations from plan, and anything the next task should know. (The worklog entry precedes the commit; it is part of the same commit.)
 
 ## Scope discipline
 

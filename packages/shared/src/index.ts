@@ -4,6 +4,7 @@ export * from './public/categories.js';
 export * from './public/common.js';
 export * from './public/copy-safety.js';
 export * from './public/definitions.js';
+export * from './public/error-messages.js';
 export * from './public/forbidden-fields.js';
 export * from './public/search.js';
 export * from './public/charge-result.js';
