@@ -1,8 +1,12 @@
 import { TAXONOMY_VERSION } from '@pca/taxonomy';
 
 import { publicOutcomeCategories, publicSentencingCategories } from '../public/categories.js';
+import {
+  CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
+  type ChargeOnlyResultResponse,
+} from '../public/charge-result.js';
 import type { OutcomeDistribution, SentencingDistribution } from '../public/common.js';
-import type { ChargeOnlyResult, JudgeSpecificResult } from '../public/results.js';
+import type { JudgeSpecificResult } from '../public/results.js';
 import type { ChargeSearchResponse, JudgeSearchResponse } from '../public/search.js';
 
 // Fixtures are typed against the Static types and built from taxonomy artifacts, so a
@@ -36,14 +40,50 @@ export function validSentencingDistribution(): SentencingDistribution {
   };
 }
 
-export function validChargeOnlyResult(): ChargeOnlyResult {
+export function validChargeOnlyResult(): ChargeOnlyResultResponse {
   return {
-    chargeDisplayName: 'Example charge',
-    geographyLabel: 'Philadelphia-wide',
-    outcomes: validOutcomeDistribution(),
-    sentencing: validSentencingDistribution(),
-    taxonomyVersion: TAXONOMY_VERSION,
+    charge: {
+      id: 'b8eb27a6-6fa1-4d0c-816b-96be2e3428b6',
+      slug: 'example-charge',
+      displayName: 'Example charge',
+      statuteCode: '18 § 0000',
+      grade: 'M1',
+    },
+    resultType: 'charge_only',
+    geography: 'philadelphia',
+    dateRange: { start: '2025-01-01', end: '2026-06-30' },
     lastRefreshed: '2026-07-01T04:30:00Z',
+    taxonomyVersion: TAXONOMY_VERSION,
+    aggregateRunId: '2f9c1e04-8d5b-4c33-9a67-0d1e2f3a4b5c',
+    outcomes: {
+      sampleSize: 120,
+      thinData: false,
+      rows: publicOutcomeCategories.map((category, index) => ({
+        categoryCode: category.code,
+        displayName: category.displayName,
+        count: index + 1,
+        percentage: 100 / publicOutcomeCategories.length,
+      })),
+    },
+    sentencing: {
+      available: true,
+      sampleSize: 45,
+      thinData: true,
+      rows: publicSentencingCategories.map((category, index) => ({
+        categoryCode: category.code,
+        displayName: category.displayName,
+        count: index + 1,
+        percentage: 100 / publicSentencingCategories.length,
+      })),
+    },
+    links: { methodology: '/methodology', definitions: '/definitions' },
+  };
+}
+
+export function validChargeOnlyResultSentencingUnavailable(): ChargeOnlyResultResponse {
+  return {
+    ...validChargeOnlyResult(),
+    sentencing: { available: false, message: CHARGE_SENTENCING_UNAVAILABLE_MESSAGE },
   };
 }
 

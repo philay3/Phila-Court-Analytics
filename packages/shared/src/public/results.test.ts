@@ -1,43 +1,11 @@
 import { Value } from '@sinclair/typebox/value';
 import { describe, expect, it } from 'vitest';
 
-import { validChargeOnlyResult, validJudgeSpecificResult } from '../test-support/fixtures.js';
-import { chargeOnlyResultSchema, judgeSpecificResultSchema } from './results.js';
+import { validJudgeSpecificResult } from '../test-support/fixtures.js';
+import { judgeSpecificResultSchema } from './results.js';
 
-describe('chargeOnlyResultSchema', () => {
-  it('accepts a valid result with sentencing', () => {
-    expect(Value.Check(chargeOnlyResultSchema, validChargeOnlyResult())).toBe(true);
-  });
-
-  it('accepts a valid result without sentencing (optional)', () => {
-    const withoutSentencing: Record<string, unknown> = { ...validChargeOnlyResult() };
-    delete withoutSentencing.sentencing;
-    expect(Value.Check(chargeOnlyResultSchema, withoutSentencing)).toBe(true);
-  });
-
-  it('requires outcome distribution, taxonomy version, and lastRefreshed', () => {
-    for (const field of ['outcomes', 'taxonomyVersion', 'lastRefreshed'] as const) {
-      const result: Record<string, unknown> = { ...validChargeOnlyResult() };
-      delete result[field];
-      expect(Value.Check(chargeOnlyResultSchema, result)).toBe(false);
-    }
-  });
-
-  it('rejects a non-semver taxonomy version and a non-ISO lastRefreshed', () => {
-    expect(
-      Value.Check(chargeOnlyResultSchema, { ...validChargeOnlyResult(), taxonomyVersion: 'v1' }),
-    ).toBe(false);
-    expect(
-      Value.Check(chargeOnlyResultSchema, { ...validChargeOnlyResult(), lastRefreshed: 'today' }),
-    ).toBe(false);
-  });
-
-  it('rejects unknown extra properties', () => {
-    expect(
-      Value.Check(chargeOnlyResultSchema, { ...validChargeOnlyResult(), docketNumber: 'CP-0000' }),
-    ).toBe(false);
-  });
-});
+// The charge-only result schema (task 8.1 shape) is tested in
+// charge-result.test.ts.
 
 describe('judgeSpecificResultSchema', () => {
   it('accepts a valid result with sentencing distributions', () => {

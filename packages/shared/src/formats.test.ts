@@ -3,8 +3,8 @@ import { Value } from '@sinclair/typebox/value';
 import { describe, expect, it } from 'vitest';
 
 import { registerFormats } from './formats.js';
+import { chargeOnlyResultResponseSchema } from './public/charge-result.js';
 import { dateRangeSchema } from './public/common.js';
-import { chargeOnlyResultSchema } from './public/results.js';
 import { validChargeOnlyResult } from './test-support/fixtures.js';
 
 // The vitest setup file already called registerFormats() once before this file runs.
@@ -66,14 +66,14 @@ describe('date format (via the real dateRangeSchema)', () => {
   });
 });
 
-describe('date-time format (via the real chargeOnlyResultSchema)', () => {
+describe('date-time format (via the real chargeOnlyResultResponseSchema)', () => {
   it('accepts the valid fixture and RFC 3339 variants', () => {
-    expect(Value.Check(chargeOnlyResultSchema, validChargeOnlyResult())).toBe(true);
+    expect(Value.Check(chargeOnlyResultResponseSchema, validChargeOnlyResult())).toBe(true);
     const withOffset = {
       ...validChargeOnlyResult(),
       lastRefreshed: '2026-07-01T08:30:00.250-04:00',
     };
-    expect(Value.Check(chargeOnlyResultSchema, withOffset)).toBe(true);
+    expect(Value.Check(chargeOnlyResultResponseSchema, withOffset)).toBe(true);
   });
 
   it('rejects malformed date-times', () => {
@@ -86,7 +86,7 @@ describe('date-time format (via the real chargeOnlyResultSchema)', () => {
       '2026-07-01T08:30:00',
     ]) {
       expect(
-        Value.Check(chargeOnlyResultSchema, { ...validChargeOnlyResult(), lastRefreshed }),
+        Value.Check(chargeOnlyResultResponseSchema, { ...validChargeOnlyResult(), lastRefreshed }),
       ).toBe(false);
     }
   });

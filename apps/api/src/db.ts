@@ -4,14 +4,22 @@ import pg from 'pg';
 import type { Database } from '@pca/db';
 
 /**
- * The public API's view of the database: exactly the four ref.* tables the
- * public surface may read, derived from @pca/db's Database so column types
- * can never drift. Everything else (analytics.*, and the future raw/parsed/
- * fact/review layers) is a compile error, not a convention.
+ * The public API's view of the database: exactly the tables the public
+ * surface may read, derived from @pca/db's Database so column types can
+ * never drift — the four ref.* tables plus the aggregate-run bookkeeping and
+ * the two charge aggregate tables the 8.1 result endpoint consumes. The
+ * judge aggregate tables arrive with task 8.2. Everything else (the future
+ * raw/parsed/fact/review layers) is a compile error, not a convention.
  */
 export type PublicApiDatabase = Pick<
   Database,
-  'ref.normalized_charges' | 'ref.charge_aliases' | 'ref.normalized_judges' | 'ref.judge_aliases'
+  | 'ref.normalized_charges'
+  | 'ref.charge_aliases'
+  | 'ref.normalized_judges'
+  | 'ref.judge_aliases'
+  | 'analytics.aggregate_runs'
+  | 'analytics.charge_outcome_aggregates'
+  | 'analytics.charge_sentencing_aggregates'
 >;
 
 export function createApiDb(): Kysely<PublicApiDatabase> {

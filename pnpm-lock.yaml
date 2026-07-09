@@ -41,6 +41,9 @@ importers:
       '@pca/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@pca/taxonomy':
+        specifier: workspace:*
+        version: link:../../packages/taxonomy
       '@sinclair/typebox':
         specifier: ^0.34.0
         version: 0.34.49

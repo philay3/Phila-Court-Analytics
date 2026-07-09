@@ -5,3 +5,4 @@
 // package-private.
 export type { Database } from './types.js';
 export { seedReference } from '../seeds/reference.js';
+export { seedAggregates } from '../seeds/aggregates.js';
