@@ -493,3 +493,71 @@
     arbitrary values if ever needed. Use the new names (table above).
   - No `tailwind.config.*` file exists (CSS-first): all theme config lives in
     `globals.css` `@theme`. Add future tokens there.
+
+## Task 11.4 — Shared Frontend Formatting Utilities
+
+- **Date:** 2026-07-09
+- **What was built:** the pure display-formatting module that every Sprint 3
+  result and content page will render metadata through — counts, percentages,
+  sample-size labels, date ranges, last-refreshed timestamps, result-type
+  labels, and thin-data labels. `Intl`-only, no React, no new dependencies, no
+  analytics. Closes Phase 11.
+- **Files touched:** `apps/web/app/lib/formatters.ts` (new),
+  `apps/web/app/lib/formatters.test.ts` (new), `tasks/worklog.md`. Nothing else.
+- **API surface:** `formatCount`, `formatPercentage`, `formatSampleSize`,
+  `formatDateRange`, `formatLastRefreshed`, `formatResultTypeLabel`,
+  `formatThinDataLabel`, plus exported label constants
+  (`SAMPLE_SIZE_LABEL_PREFIX`, `RESULT_TYPE_CHARGE_ONLY_LABEL`,
+  `RESULT_TYPE_JUDGE_SPECIFIC_LABEL`, `THIN_DATA_LABEL`).
+- **Evidence pinned in the plan (contract facts 13.1 inherits):**
+  - **Percentage scale is 0–100**, not 0–1 —
+    `common.ts` `percentage: Type.Number({ minimum: 0, maximum: 100 })`, seed
+    `percentageOf` returns a `.toFixed(2)` 0–100 value, fixtures use `100 / n`.
+    The formatter renders the wire value directly and does NO count/sample-size
+    arithmetic (locked decision 2 / AC3).
+  - **`lastRefreshed` wire format is `date-time`** (RFC 3339 instant) on both
+    the charge-only and judge-specific success responses. Rendered in **UTC with
+    an explicit `UTC` suffix** (e.g. `January 5, 2026 at 2:30 PM UTC`) so output
+    is deterministic and host-timezone-independent.
+  - **Thin-data is a plain `boolean`** (`thinDataStatusSchema = Type.Boolean()`),
+    one `thinData` flag per distribution block — no reason enum exists. Label
+    maps `true` → `"Based on a small sample."`, `false` → `null`. No invented
+    categories (AC6).
+  - **Result-type union has no single named export.** The labeller's parameter
+    is derived from the shared contracts —
+    `ChargeOnlyResultResponse['resultType'] | JudgeSpecificResultSuccess['resultType']`
+    (= `charge_only | judge_specific`) — with a `never`-assertion default arm, so
+    a new labelable result type fails typecheck rather than mislabeling (locked
+    decision 4 / AC5). `judge_specific_unavailable` is deliberately excluded — it
+    is a fallback state, not a labelable result.
+- **Timezone safety (locked decision 3 / AC4):** date-only `YYYY-MM-DD` values
+  are parsed via a guarded regex into calendar parts, rebuilt with `Date.UTC`,
+  and rendered by a `timeZone:'UTC'`-pinned formatter. The naive
+  `new Date("2025-01-01")` UTC-midnight shift is never used. Load-bearing proof
+  is the direct assertion that Jan 1 renders as "January 1". A **supplementary**
+  `process.env.TZ='Pacific/Kiritimati'` (UTC+14) assertion is included and
+  **passes** — kept, not dropped; it was not flaky on this platform (per the
+  approval clarification, it is supplementary to the UTC-construction proof).
+- **Locale:** every `Intl` call pins `en-US` via a single `LOCALE` constant
+  (AC7). All label strings live under `app/` and are additionally asserted clean
+  by `scanPublicCopy` inside the module's own tests (AC9); the `app/**` copy
+  guard also covers them.
+- **Deviations from plan (all from the approved review fixes):**
+  - Sample-size label is **noun-free** — `"Sample size: 1,234"`, not
+    `"1,234 cases"` (sample sizes are charge-level; one docket carries multiple
+    charges). No singular/plural logic; the `n = 1` test exists only to lock the
+    format.
+  - Thin-data label is the unit-free `"Based on a small sample."`.
+  - Every formatted percentage carries `%`, including `0 → "0%"` and
+    `100 → "100%"`.
+- **How to verify:** `pnpm run build:packages` (prereq for `@pca/*` dist), then
+  from root `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm test`.
+- **Gates — all green:** typecheck 0 errors; lint 0; format:check clean; full
+  workspace tests pass (web 33 incl. 17 new formatter tests, api 194, shared 163,
+  taxonomy 14). Copy guard green.
+- **Notes for next task (13.1):** consume these formatters for all metadata
+  rendering; do not re-implement. `formatThinDataLabel` returns `null` when the
+  flag is unset — render nothing in that case. `formatDateRange`/
+  `formatLastRefreshed` do NOT guard missing fields because `start`, `end`, and
+  `lastRefreshed` are all required by the shared types (intentional, noted in
+  code); if a future contract makes one optional, add fallback then.
