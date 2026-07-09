@@ -561,3 +561,60 @@
   `formatLastRefreshed` do NOT guard missing fields because `start`, `end`, and
   `lastRefreshed` are all required by the shared types (intentional, noted in
   code); if a future contract makes one optional, add fallback then.
+
+## Task 12.1 — Homepage Search Layout
+
+- **Date:** 2026-07-09
+- **What was built:** The public homepage (`/`) rebuilt as the site's search
+  surface — layout and copy only, no functional search (pinned decisions 1–2).
+  New `apps/web/app/components/SearchForm.tsx` is a server component (no
+  `'use client'`, no state, no handlers): a `<form noValidate>` (no `action`,
+  no submit wiring) with two regions — a visually **primary** charge region
+  (larger, `bg-surface` card, `text-lg` label) and a visually **secondary**,
+  optional judge region whose visible label reads "Judge (optional)". Both
+  inputs are **disabled** presentational placeholders — disabled inputs cannot
+  be focused or submitted, so Enter never navigates (this is why disabled was
+  chosen over focusable readOnly). Each region carries an explicit
+  `{/* MOUNT: task 12.2/12.3 replaces this disabled placeholder ... */}`
+  comment; only the `<input>` swaps in 12.2/12.3 — label + wrapper + styling
+  stay, so the swap needs no layout rework. Labels are associated via
+  `htmlFor`/`id` (`charge-search`, `judge-search`) with `aria-describedby` help
+  text. An `sr-only` `<h2 id="search-heading">` gives the form section a
+  heading in hierarchy while keeping the single visible `<h1>` in `page.tsx`.
+  `page.tsx` now renders framing intro, `<SearchForm />`, the
+  historical/not-a-prediction/not-legal-advice disclaimer, and Methodology
+  (`/methodology`) + Data Coverage (`/data-coverage`) links (shell
+  focus-visible pattern reused).
+- **Copy constants:** all user-facing homepage copy — including input
+  placeholder text — lives in `apps/web/app/components/home-copy.ts` as the
+  `HOME_COPY` object (pinned decision 4). No inline JSX user-facing string
+  literals in `page.tsx`/`SearchForm.tsx` (only punctuation glue: `·`, `()`).
+- **Disclaimer sourcing (approved adjustment 3):** checked `@pca/shared` — it
+  exposes **no pinned disclaimer literal** suitable for rendering
+  (`methodology.notPrediction` is a served-content schema section;
+  `GUARDED_DISCLAIMER_PHRASES` are scanner guards, not prose). Per the
+  adjustment, wrote the framing copy fresh in `home-copy.ts`, deliberately
+  using the exact guarded phrases "not a prediction" and "not legal advice" so
+  it passes `scanPublicCopy`.
+- **Test added:** `apps/web/test/home-copy.test.ts` asserts every `HOME_COPY`
+  value passes `scanPublicCopy` from `@pca/shared` directly (AC5). The existing
+  `app/**` copy-guard walker also covers `home-copy.ts` automatically.
+- **Files touched:** `apps/web/app/page.tsx` (modified);
+  `apps/web/app/components/home-copy.ts`,
+  `apps/web/app/components/SearchForm.tsx`,
+  `apps/web/test/home-copy.test.ts` (new). `globals.css` untouched — Tailwind
+  utilities on the 11.3 tokens sufficed.
+- **Deviations from plan:** none.
+- **How to verify:** `pnpm run build:packages`, then from root
+  `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm test`; and
+  `pnpm --filter @pca/web build` + `start` (route `/` prerenders static).
+- **Gates — all green:** lint 0; format:check clean; typecheck 0; full
+  workspace tests pass (web 34 incl. 1 new home-copy test, api 194).
+  `next build` succeeds — `/` is a static route. Rendered HTML verified: exactly
+  one `<h1>`, two disabled inputs, both labels `for=`-associated with described-by
+  help, "Judge (optional)" present, both content links routed.
+- **Notes for next task (12.2/12.3):** replace the disabled `#charge-search` /
+  `#judge-search` placeholders with the client `ChargeSearchInput` /
+  `JudgeSearchInput`; keep the `id` and `aria-describedby` wiring; the region
+  wrappers and labels are the stable layout — do not restructure them. Add
+  testing-library/jsdom in 12.2.
