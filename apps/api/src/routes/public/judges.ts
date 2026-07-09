@@ -1,25 +1,25 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import {
   SEARCH_LIMIT_DEFAULT,
-  chargeSearchQuerySchema,
-  chargeSearchResponseSchema,
+  judgeSearchQuerySchema,
+  judgeSearchResponseSchema,
 } from '@pca/shared';
-import { searchCharges } from '../../services/charge-search.js';
+import { searchJudges } from '../../services/judge-search.js';
 
-export const chargeRoutes: FastifyPluginAsyncTypebox = async (app) => {
+export const judgeRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
-    '/charges/search',
+    '/judges/search',
     {
       schema: {
-        querystring: chargeSearchQuerySchema,
+        querystring: judgeSearchQuerySchema,
         // Serializing through the response schema strips anything outside the
         // public contract — aggregate-only defense in depth.
-        response: { 200: chargeSearchResponseSchema },
+        response: { 200: judgeSearchResponseSchema },
       },
     },
     async (request) => {
       const { q, limit } = request.query;
-      const results = await searchCharges(() => app.getDb(), q, limit ?? SEARCH_LIMIT_DEFAULT);
+      const results = await searchJudges(() => app.getDb(), q, limit ?? SEARCH_LIMIT_DEFAULT);
       return { results };
     },
   );

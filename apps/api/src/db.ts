@@ -4,12 +4,15 @@ import pg from 'pg';
 import type { Database } from '@pca/db';
 
 /**
- * The public API's view of the database: exactly the two ref.* tables the
+ * The public API's view of the database: exactly the four ref.* tables the
  * public surface may read, derived from @pca/db's Database so column types
  * can never drift. Everything else (analytics.*, and the future raw/parsed/
  * fact/review layers) is a compile error, not a convention.
  */
-export type PublicApiDatabase = Pick<Database, 'ref.normalized_charges' | 'ref.charge_aliases'>;
+export type PublicApiDatabase = Pick<
+  Database,
+  'ref.normalized_charges' | 'ref.charge_aliases' | 'ref.normalized_judges' | 'ref.judge_aliases'
+>;
 
 export function createApiDb(): Kysely<PublicApiDatabase> {
   const connectionString = process.env.DATABASE_URL;

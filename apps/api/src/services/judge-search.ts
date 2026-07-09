@@ -3,11 +3,11 @@ import {
   PUBLIC_ERROR_CODES,
   SEARCH_Q_MAX_LENGTH,
   SEARCH_Q_MIN_LENGTH,
-  type ChargeSearchResult,
+  type JudgeSearchResult,
 } from '@pca/shared';
 import type { PublicApiDatabase } from '../db.js';
 import { publicError } from '../public-error.js';
-import { searchChargeRows } from '../repositories/charge-search.js';
+import { searchJudgeRows } from '../repositories/judge-search.js';
 
 /**
  * Trims q, enforces the post-trim 1–100 length rule via a catalog throw, and
@@ -15,11 +15,11 @@ import { searchChargeRows } from '../repositories/charge-search.js';
  * the shared-type convention). Validation runs before the database is touched,
  * so `getDb` is a thunk: bad requests never open a connection.
  */
-export async function searchCharges(
+export async function searchJudges(
   getDb: () => Kysely<PublicApiDatabase>,
   rawQ: string,
   limit: number,
-): Promise<ChargeSearchResult[]> {
+): Promise<JudgeSearchResult[]> {
   const q = rawQ.trim();
   if (q.length < SEARCH_Q_MIN_LENGTH || q.length > SEARCH_Q_MAX_LENGTH) {
     throw publicError(
@@ -28,13 +28,11 @@ export async function searchCharges(
     );
   }
 
-  const rows = await searchChargeRows(getDb(), q, limit);
+  const rows = await searchJudgeRows(getDb(), q, limit);
   return rows.map((row) => ({
     id: row.id,
     slug: row.slug,
     displayName: row.display_name,
-    ...(row.statute_code !== null ? { statuteCode: row.statute_code } : {}),
-    ...(row.grade !== null ? { grade: row.grade } : {}),
     ...(row.matched_alias !== null ? { matchedAlias: row.matched_alias } : {}),
   }));
 }

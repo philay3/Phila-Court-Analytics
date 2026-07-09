@@ -6,8 +6,9 @@ import {
   chargeSearchQuerySchema,
   chargeSearchResponseSchema,
   chargeSearchResultSchema,
+  judgeSearchQuerySchema,
   judgeSearchResponseSchema,
-  judgeSuggestionSchema,
+  judgeSearchResultSchema,
 } from './search.js';
 
 describe('chargeSearchQuerySchema', () => {
@@ -70,9 +71,44 @@ describe('chargeSearchResponseSchema', () => {
   });
 });
 
+describe('judgeSearchQuerySchema', () => {
+  it('accepts q alone and q with an in-range limit', () => {
+    expect(Value.Check(judgeSearchQuerySchema, { q: 'placeholder' })).toBe(true);
+    expect(Value.Check(judgeSearchQuerySchema, { q: 'placeholder', limit: 1 })).toBe(true);
+    expect(Value.Check(judgeSearchQuerySchema, { q: 'placeholder', limit: 25 })).toBe(true);
+  });
+
+  it('rejects a missing q', () => {
+    expect(Value.Check(judgeSearchQuerySchema, {})).toBe(false);
+    expect(Value.Check(judgeSearchQuerySchema, { limit: 10 })).toBe(false);
+  });
+
+  it('rejects out-of-range and non-integer limits', () => {
+    expect(Value.Check(judgeSearchQuerySchema, { q: 'placeholder', limit: 0 })).toBe(false);
+    expect(Value.Check(judgeSearchQuerySchema, { q: 'placeholder', limit: 26 })).toBe(false);
+    expect(Value.Check(judgeSearchQuerySchema, { q: 'placeholder', limit: 1.5 })).toBe(false);
+  });
+
+  it('rejects unknown extra properties', () => {
+    expect(Value.Check(judgeSearchQuerySchema, { q: 'placeholder', offset: 5 })).toBe(false);
+  });
+});
+
 describe('judgeSearchResponseSchema', () => {
-  it('accepts a valid response', () => {
+  it('accepts a valid response, including an empty result list', () => {
     expect(Value.Check(judgeSearchResponseSchema, validJudgeSearchResponse())).toBe(true);
+    expect(Value.Check(judgeSearchResponseSchema, { results: [] })).toBe(true);
+  });
+
+  it('accepts a result with matchedAlias omitted', () => {
+    const minimal = validJudgeSearchResponse().results[1];
+    expect(minimal).toBeDefined();
+    expect(Value.Check(judgeSearchResultSchema, minimal)).toBe(true);
+  });
+
+  it('rejects a non-uuid id', () => {
+    const result = { ...validJudgeSearchResponse().results[0], id: 'judge-1' };
+    expect(Value.Check(judgeSearchResultSchema, result)).toBe(false);
   });
 
   it('rejects unknown extra properties on the envelope', () => {
@@ -81,10 +117,16 @@ describe('judgeSearchResponseSchema', () => {
     ).toBe(false);
   });
 
-  it('rejects unknown extra properties on a suggestion', () => {
+  it('rejects unknown extra properties on a result', () => {
     const response = validJudgeSearchResponse();
-    const suggestion = { ...response.results[0], internalId: 7 };
-    expect(Value.Check(judgeSuggestionSchema, suggestion)).toBe(false);
-    expect(Value.Check(judgeSearchResponseSchema, { results: [suggestion] })).toBe(false);
+    const result = { ...response.results[0], caseCount: 7 };
+    expect(Value.Check(judgeSearchResultSchema, result)).toBe(false);
+    expect(Value.Check(judgeSearchResponseSchema, { results: [result] })).toBe(false);
+  });
+
+  it('rejects a result missing a required field', () => {
+    const withoutSlug: Record<string, unknown> = { ...validJudgeSearchResponse().results[0] };
+    delete withoutSlug['slug'];
+    expect(Value.Check(judgeSearchResultSchema, withoutSlug)).toBe(false);
   });
 });

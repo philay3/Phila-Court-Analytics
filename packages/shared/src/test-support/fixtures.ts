@@ -83,6 +83,19 @@ export function validChargeSearchResponse(): ChargeSearchResponse {
 
 export function validJudgeSearchResponse(): JudgeSearchResponse {
   return {
-    results: [{ judgeId: 'judge-1', displayName: 'Example judge', slug: 'example-judge' }],
+    results: [
+      {
+        id: 'c4d5e6f7-1a2b-4c3d-8e9f-0a1b2c3d4e5f',
+        slug: 'example-judge',
+        displayName: 'Example judge',
+        matchedAlias: 'example alias',
+      },
+      {
+        // Optionals omitted — the shared convention is omission, not null.
+        id: '9e8d7c6b-5a4f-4e3d-9c2b-1a0f9e8d7c6b',
+        slug: 'minimal-judge',
+        displayName: 'Minimal judge',
+      },
+    ],
   };
 }

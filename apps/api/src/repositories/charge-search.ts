@@ -1,14 +1,10 @@
 import { sql, type Kysely } from 'kysely';
 import type { PublicApiDatabase } from '../db.js';
+import { escapeLike } from './search-helpers.js';
 
-/**
- * Escapes LIKE/ILIKE wildcards (%, _) and the escape character itself so user
- * input always matches literally. Patterns built from the result must be used
- * with `ESCAPE '\'`.
- */
-export function escapeLike(input: string): string {
-  return input.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-}
+// escapeLike lives in search-helpers.ts (shared with judge search); re-exported
+// so this module's public surface is unchanged.
+export { escapeLike };
 
 export interface ChargeSearchRow {
   id: string;
