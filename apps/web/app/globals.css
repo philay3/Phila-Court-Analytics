@@ -1,17 +1,23 @@
-:root {
-  --color-text: #1f2733;
-  --color-text-muted: #5b6572;
-  --color-background: #ffffff;
+@import 'tailwindcss';
+
+/*
+ * Design tokens (migrated from the 4.1 :root custom properties into Tailwind
+ * v4's CSS-first @theme). Each token also generates the matching utility, e.g.
+ * --color-ink -> text-ink, --color-surface -> bg-surface, --container-content
+ * -> max-w-content. Values are preserved exactly from 4.1; renames are only so
+ * the generated utility reads naturally.
+ */
+@theme {
+  --color-ink: #1f2733;
+  --color-muted: #5b6572;
+  --color-canvas: #ffffff;
   --color-surface: #f5f6f8;
-  --color-border: #d9dde3;
-  --color-link: #1d4ed8;
-  --max-content-width: 44rem;
+  --color-line: #d9dde3;
+  --color-accent: #1d4ed8;
+  --container-content: 44rem;
 }
 
-* {
-  box-sizing: border-box;
-}
-
+/* Minimal base-element layer carried over from 4.1. */
 body {
   margin: 0;
   font-family:
@@ -20,58 +26,52 @@ body {
     'Segoe UI',
     sans-serif;
   line-height: 1.6;
-  color: var(--color-text);
-  background: var(--color-background);
+  color: var(--color-ink);
+  background: var(--color-canvas);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
 }
 
-a {
-  color: var(--color-link);
-}
-
 a:focus-visible {
-  outline: 2px solid var(--color-link);
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 
-.site-header {
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
-  padding: 1rem 1.5rem;
-}
+/*
+ * Base heading hierarchy. Tailwind v4 preflight resets h1-h6 to inherited
+ * size/weight; without this, shell-page headings render at body size. Kept in
+ * @layer base so Phase 12-14 utility classes still override. Restrained
+ * civic scale — modest steps, no dramatic jumps. h4-h6 inherit body size but
+ * stay semibold so they remain distinguishable.
+ */
+@layer base {
+  h1 {
+    margin: 0 0 0.75rem;
+    font-size: 1.75rem;
+    font-weight: 600;
+    line-height: 1.25;
+  }
 
-.site-name {
-  margin: 0 0 0.5rem;
-  font-weight: 600;
-}
+  h2 {
+    margin: 1.75rem 0 0.5rem;
+    font-size: 1.375rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
 
-.site-nav {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
+  h3 {
+    margin: 1.5rem 0 0.5rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    line-height: 1.4;
+  }
 
-.site-main {
-  flex: 1;
-  width: 100%;
-  max-width: var(--max-content-width);
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
-}
-
-.site-footer {
-  border-top: 1px solid var(--color-border);
-  background: var(--color-surface);
-  padding: 1rem 1.5rem;
-  font-size: 0.875rem;
-  color: var(--color-text-muted);
-}
-
-.site-footer p {
-  margin: 0;
+  h4,
+  h5,
+  h6 {
+    margin: 1.25rem 0 0.5rem;
+    font-weight: 600;
+    line-height: 1.4;
+  }
 }
