@@ -15,6 +15,7 @@
     "generate": "pnpm -r run generate",
     "typecheck": "pnpm run build:packages && tsc -p tsconfig.json && pnpm -r run typecheck",
     "test": "pnpm run generate && pnpm -r run test",
+    "test:e2e": "pnpm run build:packages && pnpm --filter @pca/api run build && pnpm --filter @pca/web run build && pnpm --filter @pca/e2e run test:e2e",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",

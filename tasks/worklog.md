@@ -1355,3 +1355,86 @@
   a violation to flag; the `localhost:3001` local-dev default (now in
   `app/lib/api-base-url.ts`) is what lets result pages render without `API_BASE_URL`
   set. Input focus rings rely on the UA default — worth a visual/axe confirmation.
+
+## Task 15.2 — Playwright E2E + axe-core + CI E2E Job
+
+- **Date:** 2026-07-10
+- **What was built:** A chromium Playwright suite (`e2e/`, new `@pca/e2e`
+  workspace package) that walks every public flow against a REAL seeded DB, the
+  API booted from built `dist` under plain node, and the web app booted from a
+  production `next build`/`next start`. On every visited page/state it asserts
+  (1) axe-core WCAG 2.2 AA (tags `wcag2a,wcag2aa,wcag21a,wcag21aa,wcag22aa`),
+  (2) rendered-copy safety via `scanPublicCopy`, and (3) rendered-page privacy
+  via the relocated `scanForForbidden`. Plus a dedicated required-ready CI `e2e`
+  job. 15 tests, all green.
+- **Suite coverage (15 tests):** homepage (charge primary / judge optional);
+  charge autocomplete keyboard select (ArrowDown+Enter) → charge-only result;
+  charge-only data-bearing (outcome table + bars, sentencing, sample size, date
+  range, responsible-use); thin-data charge; sentencing-unavailable charge; add
+  judge → judge-specific (judge dist + Philadelphia baseline, separate sample
+  sizes) → remove filter → charge-only; judge-unavailable pair (200 arm);
+  **W1 regression lock** (`/charges/harassment/judge/judge-testina-placeholder`
+  → friendly `CHARGE_RESULT_UNAVAILABLE` view, not the error boundary);
+  charge-only unavailable; not-found; definitions/methodology/data-coverage
+  (asserts the 2025-01-01 start) / about; 390px mobile content-order + no
+  horizontal scroll. Pinned messages asserted via `@pca/shared` imports only;
+  seed slugs centralized in `e2e/support/constants.ts` (read off `db/seeds/`).
+- **ForbiddenViolation checker relocation (approved):** moved
+  `apps/api/src/test-support/forbidden-scan.ts` (+ its self-test) to
+  `packages/shared/src/forbidden-scan.{ts,test.ts}`, exposed via a new
+  `@pca/shared/forbidden-scan` subpath export (standard types/pca-source/default
+  triple). The 10.1 suite (`apps/api/src/public-forbidden-fields.test.ts`) now
+  imports from there; behavior is byte-for-byte identical (only the import path
+  changed). No term/field list is duplicated anywhere. The probe registry stayed
+  in `apps/api/src/test-support`.
+- **webServer + CI:** Playwright `webServer` starts API (`pnpm --filter @pca/api
+  run start`, readiness `GET /health`, port 3001) and web (`next start`, port
+  3000, `API_BASE_URL` set explicitly). New CI `e2e` job: install → generate →
+  build:packages → build api → migrate → real `pnpm db:seed` → build web → cached
+  `playwright install` → run suite; `postgres:17.10`, env-driven DB (CI 5432, no
+  hardcoded port), `retries: 0`, `forbidOnly` in CI. Root `pnpm test:e2e`
+  orchestrates the local build+run; `test:e2e` (not `test`) keeps E2E out of the
+  node unit-test sweep; `@pca/e2e` has a `typecheck` script so the root `-r`
+  typecheck covers it.
+- **F4 (build-time prerender) — resolved favorably:** `next build` passes offline
+  (no API). The content pages render LIVE API content at runtime under
+  `next start` (verified green in the suite), not a baked error state.
+- **Authorized in-scope deviation (a11y fix in apps/web):** the first automated
+  axe run against RENDERED pages caught a real WCAG 1.4.1 (Use of Color, Level A)
+  `link-in-text-block` defect on the homepage: the two intro-paragraph links
+  (Methodology, Data Coverage) used `hover:underline` (underline on hover only),
+  so link meaning relied on color at rest (1.13:1 vs surrounding text). Notably
+  this passed the 15.1 static a11y audit, which explicitly checked for hover-only
+  meaning — evidence for the value of the rendered-page axe gate. Fixed per
+  Chops's explicit authorization (class-only: `hover:underline` → `underline` on
+  the two links in `apps/web/app/page.tsx`); no copy change, no other apps/web
+  edits. Re-ran the full suite: 15/15 green, homepage `link-in-text-block`
+  resolved (the fix satisfies the rule, not suppresses it — all WCAG tags still
+  run). No web component test asserted the old class string.
+- **Files touched:** `e2e/*` (new: package.json, tsconfig.json,
+  playwright.config.ts, support/{constants,checks,combobox}.ts, tests/*.spec.ts,
+  README.md); `packages/shared/src/forbidden-scan.{ts,test.ts}` (moved),
+  `packages/shared/package.json` (subpath export);
+  `apps/api/src/public-forbidden-fields.test.ts` (import path);
+  removed `apps/api/src/test-support/forbidden-scan.{ts,test.ts}`;
+  `apps/web/app/page.tsx` (authorized a11y fix); `pnpm-workspace.yaml`,
+  `package.json` (`test:e2e`), `.github/workflows/ci.yml` (e2e job), `README.md`,
+  `.gitignore` + `.prettierignore` (Playwright artifacts), `pnpm-lock.yaml`,
+  `tasks/worklog.md`.
+- **New dependencies (task-authorized):** `@playwright/test` (1.61.1),
+  `@axe-core/playwright` (4.12.1), `@types/node`, all devDeps of `@pca/e2e`.
+- **Gates — all green:** eslint 0; prettier clean; full-workspace typecheck 0
+  (incl. `@pca/e2e`); taxonomy valid; tests — web 183 (45 files), api 26-file
+  forbidden suite green via the new import, shared 14 files (incl. relocated
+  `forbidden-scan.test.ts`, 22 tests), db, taxonomy; E2E 15/15. Python untouched.
+- **Runtime:** local end-to-end `pnpm test:e2e` (build packages + api + web +
+  server boot + 15 tests) ≈ 16s wall; the suite alone ≈ 6s. The CI `e2e` job is
+  dominated by `pnpm install` + Playwright browser provisioning (cached after the
+  first run); estimated ~3–5 min, well under the 15-min budget. The exact CI
+  runtime cannot be measured locally (GitHub Actions is not runnable here) and
+  will be confirmed on the first CI run.
+- **Notes for next task:** the branch-protection "required check" for the `e2e`
+  job is a GitHub setting the human enables. The content pages are marked
+  `○ (Static)` in the `next build` summary but serve live content at runtime;
+  if a future change makes them truly static, the E2E content assertions would
+  catch a baked error state.

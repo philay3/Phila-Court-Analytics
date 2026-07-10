@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { buildApp } from './app.js';
-import { formatViolations, scanForForbidden } from './test-support/forbidden-scan.js';
+import { formatViolations, scanForForbidden } from '@pca/shared/forbidden-scan';
 import {
   PUBLIC_ROUTE_PREFIX,
   checkProbeCoverage,

@@ -1,0 +1,19 @@
+{
+  "name": "@pca/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.11"
+  },
+  "scripts": {
+    "test:e2e": "playwright test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@pca/shared": "workspace:*",
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^22.10.0"
+  }
+}

@@ -13,6 +13,11 @@
       "types": "./dist/index.d.ts",
       "pca-source": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./forbidden-scan": {
+      "types": "./dist/forbidden-scan.d.ts",
+      "pca-source": "./src/forbidden-scan.ts",
+      "default": "./dist/forbidden-scan.js"
     }
   },
   "files": [

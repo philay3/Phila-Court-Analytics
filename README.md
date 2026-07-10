@@ -52,6 +52,7 @@ development the defaults are chosen so a fresh clone runs without any `.env`:
 | `packages/taxonomy/` | Offense and outcome taxonomy definitions         |
 | `packages/ui/`       | Shared React UI components                       |
 | `db/`                | PostgreSQL migrations and database tooling       |
+| `e2e/`               | Playwright end-to-end + accessibility suite      |
 | `docs/`              | Planning and reference documentation             |
 | `infra/`             | Infrastructure configuration                     |
 | `scripts/`           | Repo maintenance and development scripts         |
@@ -84,6 +85,34 @@ pnpm generate   # runs every package's generate script
 Root `typecheck` and `test` run `pnpm generate` first, so on a fresh clone the root
 scripts work in any order after `pnpm install`. When running package-scoped commands
 (e.g. `pnpm --filter @pca/shared test`), run `pnpm generate` at the root first.
+
+## End-to-end tests
+
+`e2e/` (`@pca/e2e`) is a Playwright (chromium) suite that walks every public
+flow against a **real seeded database**, the **API booted from built output
+under plain node**, and the **web app booted from a production build**. On every
+visited page it asserts accessibility (axe-core, WCAG 2.2 AA), copy safety
+(`scanPublicCopy`), and privacy (`scanForForbidden`).
+
+The suite **does not provision the database**. Set up the local database once
+before running it:
+
+```sh
+pnpm db:up               # local Docker Postgres (port 5433)
+pnpm db:migrate:latest   # apply migrations
+pnpm db:seed             # deterministic seed data
+```
+
+Your local `DATABASE_URL` (root `.env`, port 5433) must be in place — no DB port
+is hardcoded in the E2E path; the connection comes from the environment (CI uses
+5432). Then, from the repo root:
+
+```sh
+pnpm test:e2e            # builds packages + API + web, then runs Playwright
+```
+
+First run only, install the browser: `pnpm --filter @pca/e2e exec playwright
+install chromium`. See [e2e/README.md](e2e/README.md) for details.
 
 ## Privacy rules
 
