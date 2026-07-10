@@ -8,15 +8,19 @@ envelope is the exact object ``parse_docket_text`` returns — nothing inside it
 added, removed, renamed, or reformatted (criterion 5).
 
 Two version numbers, deliberately distinct (decision 4 + decision 7): the
-ENVELOPE carries ``parser_version = 2`` (this Phase-18 parse-pipeline format),
-while the wrapped record keeps its own internal ``parser_version = 1``, untouched.
-The record is the v1 Capstone-equivalent record; the envelope is the v2 wrapper.
+ENVELOPE carries ``parser_version = 3`` (bumped in 18.2 for the hardened parse
+pipeline), while the wrapped record keeps its own internal ``parser_version = 1``,
+untouched. That internal literal is the record-SCHEMA/shape axis: the record's
+shape stays Capstone-equivalent, but as of 18.2 its output VALUES deliberately
+diverge (junk-judge guard, disposition line-wrap fix). The two axes are separate
+— schema-unchanged, values-diverge.
 
-Emission scope is observation-only (decision 6): warnings are wired ONLY for
-conditions the current parser/extraction output already exposes. Three defined
-codes are NOT emitted here — MISSING_CHARGE_SECTION, SUSPECT_JUDGE_LINE, and
-SUSPECTED_AMENDED_CHARGE — because their detectors are future hardening work
-(18.2). Their absence from emission is asserted by the closure test.
+Emission scope (decision 6, extended in 18.2): observation-only warnings are
+derived here from the parsed record/extraction status, and the parser's own
+structural parse-time warnings (18.2 Items 1 and 3: SUSPECT_JUDGE_LINE,
+SUSPECTED_AMENDED_CHARGE) are merged in. One defined code remains NOT emitted —
+MISSING_CHARGE_SECTION — because its detector is future work. Its absence from
+emission is asserted by the closure test.
 
 Failure capture (decision 5): a docket that raises during parse — ParseError,
 KeyError (the quarantined unsupported-disposition specimen), anything — yields a
@@ -46,8 +50,6 @@ from pipeline.warning_codes import (
     MISSING_DISPOSITION_DATE,
     MISSING_SENTENCE_DATE,
     NON_TERMINAL_CASE,
-    SUSPECT_JUDGE_LINE,
-    SUSPECTED_AMENDED_CHARGE,
     UNPARSEABLE_DURATION,
     UNSUPPORTED_FORMAT,
     WARNING_CODES,
@@ -58,8 +60,9 @@ from pipeline.warning_codes import (
 logger = logging.getLogger("pipeline.envelope")
 
 # The envelope format / parse-pipeline version (decision 4). Distinct from the
-# wrapped record's internal parser_version, which stays 1 (decision 7).
-ENVELOPE_PARSER_VERSION = 2
+# wrapped record's internal parser_version, which stays 1 (decision 7). Bumped
+# 2 -> 3 in 18.2 for the hardened parse pipeline.
+ENVELOPE_PARSER_VERSION = 3
 
 # Parse status vocabulary (decision 4/5): exactly one per envelope.
 PARSE_STATUS_PARSED = "parsed"
@@ -73,11 +76,12 @@ _LOW_TEXT_STATUSES = frozenset({STATUS_PARTIAL, STATUS_NEEDS_OCR_OR_REVIEW})
 # raise UNPARSEABLE_DURATION (accepted at plan review).
 _NO_DURATION_TYPES = frozenset({"no further penalty", "fines and costs"})
 
-# Defined codes 18.1 deliberately does NOT emit (their detectors are 18.2 work).
-UNEMITTED_CODES: frozenset[str] = frozenset(
-    {MISSING_CHARGE_SECTION, SUSPECT_JUDGE_LINE, SUSPECTED_AMENDED_CHARGE}
-)
-# Codes 18.1 can produce (as a warning or, for UNSUPPORTED_FORMAT, as an error).
+# Defined code still NOT emitted (its detector is future work). 18.2 wired
+# SUSPECT_JUDGE_LINE and SUSPECTED_AMENDED_CHARGE, so only MISSING_CHARGE_SECTION
+# remains unemitted.
+UNEMITTED_CODES: frozenset[str] = frozenset({MISSING_CHARGE_SECTION})
+# Codes the pipeline can produce (as a warning or, for UNSUPPORTED_FORMAT, as an
+# error).
 EMITTED_CODES: frozenset[str] = WARNING_CODES - UNEMITTED_CODES
 
 
@@ -201,7 +205,9 @@ def parse_document(
         "provenance_path": provenance_path,
     }
     try:
-        record, _sentinels = parse_docket_text(docket_number, pages_text, salt=salt)
+        record, _sentinels, parser_warnings = parse_docket_text(
+            docket_number, pages_text, salt=salt
+        )
     except Exception as exc:  # noqa: BLE001 - any parse failure becomes a failed envelope (decision 5)
         warnings: list[dict[str, object]] = []
         if extraction_status in _LOW_TEXT_STATUSES:
@@ -219,7 +225,9 @@ def parse_document(
             error=error,
         )
 
-    warnings = observe(record, extraction_status=extraction_status)
+    # Observation warnings (from the record/extraction status) plus the parser's
+    # own structural parse-time warnings (18.2 Items 1 and 3), in that order.
+    warnings = observe(record, extraction_status=extraction_status) + parser_warnings
     return _assemble(
         source_sha256=source_sha256,
         extraction_artifact=extraction_artifact,

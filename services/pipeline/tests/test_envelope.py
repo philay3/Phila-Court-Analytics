@@ -106,6 +106,25 @@ KEYERROR_SPECIMEN = build(
     "Max of 12.00 Months",
 )
 
+# 18.2 Item 1: a sentence fragment ending in a date lands in the disposition
+# judge slot -> guard nulls the judge field and emits SUSPECT_JUDGE_LINE.
+JUDGE_FRAGMENT = build(
+    "DISPOSITION SENTENCING/PENALTIES",
+    "Trial",
+    "01/15/2025 Final Disposition",
+    "1 / Simple Assault Guilty",
+    "Confinement Min of 11.00 Months 01/15/2025",
+)
+
+# 18.2 Item 3: an amended-charge marker in disposition_raw -> SUSPECTED_AMENDED_CHARGE.
+AMENDED_CHARGE = build(
+    "DISPOSITION SENTENCING/PENALTIES",
+    "Trial",
+    "01/15/2025 Final Disposition",
+    "1 / Simple Assault Amended",
+    "Judge B. 01/15/2025",
+)
+
 # Name present, DOB absent: parse_docket_text raises ParseError.
 PARSEERROR_SPECIMEN = "\n".join(
     [
@@ -164,7 +183,7 @@ def _all_keys(obj) -> set:
 def test_envelope_shape_has_exactly_the_pinned_fields():
     envelope = make_envelope(DISPOSED_CLEAN)
     assert set(envelope) == EXPECTED_ENVELOPE_KEYS
-    assert envelope["parser_version"] == env.ENVELOPE_PARSER_VERSION == 2
+    assert envelope["parser_version"] == env.ENVELOPE_PARSER_VERSION == 3
     assert set(envelope["extraction_artifact"]) == {
         "artifact_id",
         "text_hash",
@@ -197,7 +216,7 @@ def test_failed_envelope_shape_and_structural_error():
 
 
 def test_embedded_record_is_field_identical_to_direct_parse():
-    record_direct, _ = parse_docket_text(DOCKET, [DISPOSED_CLEAN], salt=TEST_SALT)
+    record_direct, _, _ = parse_docket_text(DOCKET, [DISPOSED_CLEAN], salt=TEST_SALT)
     envelope = make_envelope(DISPOSED_CLEAN)
     embedded = envelope["record"]
     # parsed_at is the only per-run field (a timestamp), excluded exactly as 17.3
@@ -216,7 +235,7 @@ def test_envelope_embeds_the_parser_record_object_verbatim(monkeypatch):
     envelope's record IS that object — nothing wraps, copies, or reshapes it.
     """
     sentinel = {"charges": [], "marker": object()}
-    monkeypatch.setattr(env, "parse_docket_text", lambda *a, **k: (sentinel, []))
+    monkeypatch.setattr(env, "parse_docket_text", lambda *a, **k: (sentinel, [], []))
     envelope = make_envelope(DISPOSED_CLEAN)
     assert envelope["record"] is sentinel
 
@@ -225,7 +244,7 @@ def test_envelope_embeds_the_parser_record_object_verbatim(monkeypatch):
 
 
 def test_warnings_carry_no_docket_text_names_or_raw_values():
-    _, sentinels = parse_docket_text(DOCKET, [LIFE_DURATION], salt=TEST_SALT)
+    _, sentinels, _ = parse_docket_text(DOCKET, [LIFE_DURATION], salt=TEST_SALT)
     envelope = make_envelope(LIFE_DURATION)
     assert envelope["warnings"]  # this fixture must produce a warning
     blob = json.dumps(envelope["warnings"])
@@ -298,19 +317,38 @@ def test_parse_error_maps_to_unsupported_format_not_missing_charge_section():
     assert envelope["error"]["exception_class"] == "ParseError"
 
 
-# --- criterion 1: closed vocabulary; three codes defined but never emitted ----
+# --- 18.2: parser warnings surface into the envelope and flag review ----------
+
+
+def test_envelope_emits_suspect_judge_line_and_flags_review():
+    envelope = make_envelope(JUDGE_FRAGMENT)
+    assert wc.SUSPECT_JUDGE_LINE in codes_of(envelope)
+    assert envelope["review_needed"] is True
+    charge = envelope["record"]["charges"][0]
+    # Only the judge field is nulled; the disposition_date is still captured.
+    assert charge["disposition_judge_raw"] is None
+    assert charge["disposition_date"] == "2025-01-15"
+
+
+def test_envelope_emits_suspected_amended_charge_and_flags_review():
+    envelope = make_envelope(AMENDED_CHARGE)
+    assert wc.SUSPECTED_AMENDED_CHARGE in codes_of(envelope)
+    assert envelope["review_needed"] is True
+    # Warning-only: the parsed disposition_raw is unchanged.
+    assert envelope["record"]["charges"][0]["disposition_raw"] == "Amended"
+
+
+# --- criterion 1: closed vocabulary; MISSING_CHARGE_SECTION defined-but-unemitted
 
 
 def test_emitted_codes_are_a_subset_of_the_defined_vocabulary():
     assert env.EMITTED_CODES <= wc.WARNING_CODES
 
 
-def test_unemitted_set_is_exactly_the_three_future_codes():
-    assert env.UNEMITTED_CODES == {
-        wc.MISSING_CHARGE_SECTION,
-        wc.SUSPECT_JUDGE_LINE,
-        wc.SUSPECTED_AMENDED_CHARGE,
-    }
+def test_unemitted_set_is_exactly_missing_charge_section():
+    # 18.2 wired SUSPECT_JUDGE_LINE and SUSPECTED_AMENDED_CHARGE, leaving only
+    # MISSING_CHARGE_SECTION defined-but-unemitted (its detector is future work).
+    assert env.UNEMITTED_CODES == {wc.MISSING_CHARGE_SECTION}
     assert env.EMITTED_CODES == wc.WARNING_CODES - env.UNEMITTED_CODES
 
 

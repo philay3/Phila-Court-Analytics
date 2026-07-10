@@ -2022,3 +2022,192 @@
   each becomes a golden delta then. The `parse` stage consumes 16.2 extraction
   artifacts (`~/court-data/extracted/`) and emits envelopes to
   `~/court-data/envelopes/`.
+- **18.1 post-merge verification: equivalence rerun PASS 1596/1596 (hash field
+excluded — salt rotated post-17.3; parity permanently unconfirmed vs frozen
+baseline going forward). Real-corpus parse run: 1596 extracted (all
+success), 1596 parsed, 0 failed. Warning distribution: UNPARSEABLE_DURATION
+280 (known duration-null population), MISSING_DISPOSITION_DATE 211 across
+67 review_needed dockets, NON_TERMINAL_CASE 104 = 91 CP pending + 13 MC
+held-for-court — all accurate per definition, info severity, mechanically
+excluded from aggregates (no disposition → no outcome fact). record
+court_type is None across all 1596 (faithful-port inert field; Capstone
+baseline identical per 17.3). Sprint 5 normalization note: docket-number
+prefix is the authoritative court-type source; decide populate-vs-drop for
+the record field there.
+## Task 18.2 — Hardening: Charges, Dispositions, Judges
+
+- **Date:** 2026-07-10
+- **What was built:** The first three locked hardening items on the ported
+  parser, each proven isolated and warning-surfaced. All three land in one
+  commit. The parser now DELIBERATELY diverges in output VALUES from the
+  Capstone baseline (schema/shape unchanged); the equivalence comparator's role
+  flips from "prove identical" to "prove the diff set is exactly the intended
+  delta set."
+  - **Item 1 — junk judge guard:** `_is_junk_judge(value)` (single documented
+    pattern set in `docket_parser.py`) rejects judge-slot captures matching
+    sentence-component patterns — keywords `Confinement|Probation|IPP`, the
+    `Min|Max of` slot, duration expressions (number + day/month/year unit), and
+    currency (`$` or a `\d[\d,]*\.\d{2}` amount). NO name-shape/identity
+    validation (Sprint 5). `ARD`/`No Further Penalty`/`Fines and Costs`
+    deliberately excluded ("Ard" is a name-shaped surname). Applied at BOTH
+    capture sites: assigned judge (`CASE INFORMATION`) and per-charge
+    disposition judge (`DISPOSITION SENTENCING/PENALTIES`). On rejection ONLY
+    the judge field is nulled — `disposition_date`/`filed_date` on the same line
+    are still recorded and control flow is unchanged — so each rejected capture
+    is exactly ONE field delta. Emits `SUSPECT_JUDGE_LINE` (structural context:
+    section + charge_sequence).
+  - **Item 2 — disposition line-wrap fix:** a pure-prose tail line (letters and
+    spaces only, ≥1 letter) in the judge-expectation slot is appended to the
+    current charge's `disposition_raw`, so a wrapped disposition
+    ("Transferred to Another Jurisdiction") is captured in full. Root cause
+    (hypothesis, to be confirmed on the corpus): the value wraps to a second
+    physical line; the parser captured only the charge-line remainder and
+    dropped the wrapped tail via the `expecting_judge_line` fall-through
+    `continue`. Sentence-type and judge/date lines are matched BEFORE this
+    check, so only disposition prose is appended.
+  - **Item 3 — amended/downgraded/replaced signal:** `_matches_amended_charge`
+    scans the already-parsed `disposition_raw` for `amended | downgraded |
+    replaced by | charge changed` (case-insensitive). WARNING-ONLY: reads a
+    parsed field, changes no field, never merges/re-keys charges. Pattern basis
+    is explicitly labelled **SPECULATIVE-CONSERVATIVE** in the code (no cited
+    CPCMS document, no agent-readable corpus observation) — the real per-pattern
+    corpus hit counts (from the human rerun) are what turn the basis into data.
+    Emits `SUSPECTED_AMENDED_CHARGE` (section `CHARGES` + charge_sequence).
+- **Mechanism:** `parse_docket_text` now returns a 3-tuple
+  `(record, sentinels, warnings)`; the record object shape is byte-unchanged
+  (warnings live OUTSIDE it), so record↔baseline equivalence is untouched.
+  `parse_docket_checked` and `docket_parser_pdf.parse_docket` forward the
+  3-tuple; `envelope.parse_document` merges parser warnings after the `observe()`
+  warnings; `equivalence_check.compare_one` ignores the warnings (it diffs
+  records). No new warning codes — `SUSPECT_JUDGE_LINE`/`SUSPECTED_AMENDED_CHARGE`
+  already existed at `review` severity in the 18.1 vocabulary.
+- **parser_version (per approved reading):** envelope `ENVELOPE_PARSER_VERSION`
+  bumped 2→3; the record's internal `parser_version` stays 1 (record-SCHEMA/shape
+  axis — the shape is still Capstone-equivalent even though values diverge). The
+  comparator excludes `parser_version` regardless, so the bump is delta-neutral.
+  Envelope/parser docstrings relabelled from "Capstone-equivalent record" to
+  schema/shape framing (values-diverge, schema-unchanged).
+- **Emission-scope update:** `envelope.UNEMITTED_CODES` shrinks from three codes
+  to `{MISSING_CHARGE_SECTION}` (its detector is future work, out of 18.2 scope).
+- **Files touched:** `services/pipeline/src/pipeline/docket_parser.py`
+  (guard + line-wrap fix + amended scan + 3-tuple + docstring),
+  `docket_parser_pdf.py` (passthrough return/annotation),
+  `envelope.py` (merge parser warnings, version 2→3, UNEMITTED_CODES,
+  docstrings), `equivalence_check.py` (3-tuple unpack only),
+  `tests/test_docket_parser.py`, `tests/test_envelope.py`,
+  `tests/test_equivalence_check.py`, `tasks/worklog.md`. No `@pca/*`, apps, db,
+  CI, or `docs/` changes. `warning_codes.py` untouched (no vocabulary change).
+- **Test adjustments (named per convention):** (1) every `parse_docket_text` /
+  `parse_docket_checked` call site updated for the 3-tuple return (mechanical
+  unpack: `record, _` → `record, _, _`); (2) the two monkeypatch fakes
+  (`test_envelope` embed-verbatim test, `test_equivalence_check._fake_parse`)
+  return the extra warnings element; (3) `test_envelope` version assertion
+  `== 2` → `== 3`; (4) `test_unemitted_set_...` rewritten to assert the single
+  remaining unemitted code `{MISSING_CHARGE_SECTION}`. New tests: 19 across the
+  three items (guard reject/pass at both sites, line-wrap-in-full + no-spurious-
+  extension + Item 2→3 no-false-amended, amended positive/negative parametrized,
+  envelope surfacing + review_needed for both new codes). All synthetic
+  (fictional `Example`, placeholder zero-sequence dockets); no real PDF/docket/
+  baseline touched.
+- **Verification (all three pipeline CI gates green):**
+  - `.venv/bin/ruff check src tests` — All checks passed.
+  - `.venv/bin/ruff format --check .` — 30 files already formatted.
+  - `.venv/bin/python -m pytest -q` — 191 passed (19 new).
+- **STANDING LOCAL human step (Chops) — consolidated corpus rerun.** Corpus
+  runs are out-of-repo (real dockets); ONE consolidated final rerun is
+  sufficient because the three delta classes are field-disjoint. Commands:
+  - `DEFENDANT_HASH_SALT=… pipeline equivalence-check` (defaults:
+    `--corpus-dir ~/court-data/fixtures`, `--baseline-dir
+    ~/court-data/capstone-baseline`, `--output-dir ~/court-data/equivalence`).
+    Attributes Items 1 & 2 (both change the record).
+  - `DEFENDANT_HASH_SALT=… pipeline parse` (defaults:
+    `--artifacts-dir ~/court-data/extracted`, `--output-dir
+    ~/court-data/envelopes`), then count `SUSPECTED_AMENDED_CHARGE` /
+    `SUSPECT_JUDGE_LINE` across the envelopes. Item 3's corpus effect is
+    warning-only (zero record diff) so it shows here, NOT in the comparator.
+  - **Expected delta classes (each diff attributable to exactly one item):**
+    - Item 1: `value` diffs on `case.assigned_judge_raw` and/or
+      `charges[i].disposition_judge_raw`, baseline=sentence-fragment →
+      corpus=null. Nothing else.
+    - Item 2: `value` diffs on `charges[i].disposition_raw` ONLY, where the
+      after-string is a PREFIX-EXTENSION of the before-string (appended
+      disposition prose). STOP-AND-REPORT if: any after-string is not a
+      prefix-extension of its before-string; any appended content is not
+      disposition prose; or any Item-2 diff appears on a field other than
+      `disposition_raw`. Enumerate the distinct before→after pairs in the report.
+    - Item 3: ZERO record diffs; only new `SUSPECTED_AMENDED_CHARGE` warnings.
+      Report the per-pattern hit counts; implausible hits (ordinary dockets
+      flagged) are a STOP-AND-REPORT.
+    - Any diff outside these three classes, or not attributable to exactly one
+      item, is a STOP-AND-REPORT (not to be explained away).
+  - An optional intermediate rerun after Item 2 (before Item 3) is available —
+    Item 2 is self-contained and runnable on its own — given its
+    hypothesis-driven nature.
+- **Sprint 5 dependency (Item 2):** once the corpus rerun confirms
+  "Transferred to Another Jurisdiction" is captured in full, Sprint 5 can DROP
+  the disposition-map truncated-form workaround (a named Sprint 5 opening item).
+  Evidence it needs: the Item 2 before→after pair enumeration from the rerun
+  showing the truncated form no longer emitted.
+- **Notes for next task (18.3):** held-case event dates, min_assumed
+  annotation, third-party name guard, sentinel precision, and the 7 quarantined
+  sentinel-block dockets remain 18.3. `MISSING_CHARGE_SECTION` is still the sole
+  defined-but-unemitted code.
+
+### Task 18.2 — Item 2 repair (post-corpus-rerun; supersedes the Item 2 sections above)
+
+- **Date:** 2026-07-10
+- **Why:** The consolidated corpus rerun (1,596 dockets) FAILED Item 2's stop
+  condition. Item 1 validated (exactly 3 `disposition_judge_raw` fragments →
+  null); Item 3 clean (zero record diffs). Item 2's pure-prose append gate
+  produced ~535 divergent dockets whose appended tails were NOT disposition
+  prose. Root cause from the data: the disposition section re-prints the charge
+  description; the disposition column and the (re-printed) charge-description
+  column wrap together and interleave with section-header furniture, so the
+  continuation line cannot be distinguished from a disposition wrap. Even the
+  32 Transferred true-positives were polluted (e.g. `Transferred to Another` →
+  `Transferred to Another Manufacture or Deliver Jurisdiction`, or trailing
+  `COMMONWEALTH INFORMATION ATTORNEY INFORMATION Office Private`). The Capstone
+  fall-through drop was correct for those lines.
+- **Repaired design (plan-approved, Approach B1 — deterministic repair, reads no
+  continuation line):** reverted the append gate + continuation helpers (Capstone
+  fall-through restored verbatim; Items 1 and 3 untouched). Added
+  `_TRUNCATED_DISPOSITION_REPAIRS`, a corpus-evidenced single-entry table
+  (`"Transferred to Another"` → `"Transferred to Another Jurisdiction"`). After
+  the disposition loop, before the Item 3 scan, a charge whose `disposition_raw`
+  is an EXACT-MATCH table key is rewritten to the full string. Each key is a
+  complete, unambiguous disposition prefix with exactly one full form that is
+  never itself a complete disposition, so the rewrite is unambiguous and — because
+  no subsequent line is read — immune to charge-name wraps and section furniture
+  by construction. Zero-false-positive-by-construction. Table grows only with the
+  same corpus evidence and exact-match discipline; any other truncated
+  disposition is left to the downstream map (deliberate false-negative bias).
+- **Why the failure classes are now rejected:** `Guilty Plea - Negotiated`,
+  `Guilty`, `ARD - County`, every charge-name wrap, and every section-furniture
+  run are not table keys and no continuation line is read → all untouched. Only
+  an exact `Transferred to Another` capture is rewritten; its polluted
+  continuation is never read, so the clean full string is produced every time.
+- **New expected corpus delta (Item 2):** `value` diffs on
+  `charges[i].disposition_raw` ONLY, where before ∈ table keys and after = the
+  exact table value; count ≈ 32 (the Transferred true-positive class). STOP-AND-
+  REPORT if any `disposition_raw` diff has a before not in the table or an after
+  not equal to the table value, or any Item-2 diff on any other field. Combined
+  repaired delta = Item 1 (3 × `disposition_judge_raw`→null) + Item 2 (~32 ×
+  exact `disposition_raw` repairs) + Item 3 (0 record diffs).
+- **Fixtures (replacing the old Item 2 tests):** polluted-continuation positive
+  (`Transferred to Another` + `Manufacture or Deliver Jurisdiction` → full clean
+  string, no amended flag), charge-description-wrap negative (`Guilty Plea -
+  Negotiated` + `Manufacture or Deliver` → unchanged), section-furniture negative
+  (`COMMONWEALTH INFORMATION …` → unchanged), plus the retained single-line
+  sentence-type negative. Item 2→3 no-`SUSPECTED_AMENDED_CHARGE` assertion stands.
+- **Files touched (repair):** `services/pipeline/src/pipeline/docket_parser.py`,
+  `services/pipeline/tests/test_docket_parser.py`, `tasks/worklog.md`. Items 1
+  and 3 code and tests unchanged. `envelope.py` / `equivalence_check.py` /
+  `docket_parser_pdf.py` unchanged from the first 18.2 pass.
+- **Verification (all three pipeline CI gates green):**
+  - `.venv/bin/ruff check src tests` — All checks passed.
+  - `.venv/bin/ruff format --check .` — 30 files already formatted.
+  - `.venv/bin/python -m pytest -q` — 193 passed.
+- **STANDING LOCAL human step (Chops) — repeat the consolidated rerun.** Same
+  commands as the first pass (`pipeline equivalence-check`, then `pipeline
+  parse` + warning counts). Item 3 warning-count validation (deferred at the
+  failed rerun) lands with this repeated run once envelopes are regenerated.

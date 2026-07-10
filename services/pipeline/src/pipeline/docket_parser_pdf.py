@@ -28,13 +28,14 @@ from pipeline.helpers import ParseError
 
 def parse_docket(
     pdf_path: Path, docket_number: str, *, salt: str
-) -> tuple[dict, list[str]]:
+) -> tuple[dict, list[str], list[dict[str, object]]]:
     """Parse one docket sheet PDF.
 
-    Returns (record, sentinels): record matches the JSON contract; sentinels
-    are the transient identifying strings (printed name, name parts, DOB text)
-    for the privacy check. Raises ParseError when the sheet cannot be read;
-    error messages never quote docket text.
+    Returns (record, sentinels, warnings): record matches the JSON contract;
+    sentinels are the transient identifying strings (printed name, name parts,
+    DOB text) for the privacy check; warnings are the structural-only parse-time
+    warnings (18.2). Raises ParseError when the sheet cannot be read; error
+    messages never quote docket text.
     """
     # Extract text and split by line
     try:
