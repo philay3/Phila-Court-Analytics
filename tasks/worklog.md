@@ -1508,3 +1508,53 @@
 - **Deviations from plan:** none — no code changes.
 - **Notes for next task:** Sprint 4 planning in progress; `current-task.md`
   holds the "No active task" placeholder until the next task is assigned.
+
+---
+
+## Task 16.1 — Helpers + Identity Port (Capstone → pipeline)
+
+- **Date:** 2026-07-10
+- **What was built:** Ported Capstone's `helpers.py` and `identity.py` into the
+  `pipeline` package with behavior preserved exactly, severing the `config.py`
+  dependency and all import-time side effects. Foundation layer for the
+  Sprint 4 parser port.
+  - `services/pipeline/src/pipeline/helpers.py`: `parse_date`, `to_days`,
+    `GRADES`, `ParseError`, `_UNIT_DAYS` — verbatim (day=1/month=30/year=360;
+    360-day-year documented, no 365 doc drift).
+  - `services/pipeline/src/pipeline/identity.py`: `normalize_name`,
+    `hash_defendant`, `_iter_values`, `assert_no_leak`, `RELATED_CASE_KEYS`,
+    `assert_related_cases_clean`. Dropped `from src.config import ...`.
+  - Tests: 13 ported helper/identity tests (`test_helpers.py`), 2 ported
+    `assert_related_cases_clean` tests + new salt/allowlist tests
+    (`test_identity.py`), and a fresh-import side-effect test
+    (`test_import_side_effects.py`). Full pipeline suite: 55 passed. ruff lint
+    and format clean.
+  - `.env.example`: documented `DEFENDANT_HASH_SALT` (required, no default,
+    stable across runs, never committed).
+- **Behavioral differences from Capstone (exactly the two approved):**
+  1. `hash_defendant` now takes salt as a **required keyword-only** parameter:
+     `hash_defendant(name: str, birth_year: int, *, salt: str)`. Basis string
+     `f"{salt}|{normalize_name(name)}|{birth_year}"` unchanged. Missing/None/
+     empty salt raises `ValueError` naming `DEFENDANT_HASH_SALT` and the salt
+     parameter; the message contains no name, birth year, or docket data.
+     Capstone's silent `"change-me-in-env"` fallback is gone.
+  2. No import-time side effects: modules read no env, load no dotenv, create
+     no directories, touch no filesystem. Proven by a fresh-import test that
+     evicts each module from `sys.modules` and re-imports under guards that
+     raise on `os.getenv` / `Path.mkdir`.
+- **Files touched:** `services/pipeline/src/pipeline/helpers.py` (new),
+  `services/pipeline/src/pipeline/identity.py` (new),
+  `services/pipeline/tests/test_helpers.py` (new),
+  `services/pipeline/tests/test_identity.py` (new),
+  `services/pipeline/tests/test_import_side_effects.py` (new),
+  `.env.example`, `tasks/worklog.md`.
+- **Deviations from plan:** none behavioral. Ruff format rewrapped a few long
+  lines in the two modules and one test dict literal (cosmetic only).
+- **Notes for next task (source-path discrepancy):** the task named the
+  Capstone source at `~/court-data/capstone-src/`, which does not exist. The
+  authoritative source was found at `~/Desktop/Capstone/` (`src/parse/helpers.py`,
+  `src/identity.py`, `tests/test_helpers.py`, and the two
+  `assert_related_cases_clean` tests inside `tests/test_mc_parser.py`).
+  Future Sprint 4 port tasks should reference `~/Desktop/Capstone/`. No
+  additional Capstone couplings or quirks surfaced beyond the config
+  dependency already removed.
