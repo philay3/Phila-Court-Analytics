@@ -17,11 +17,24 @@ export type DistributionKind = 'outcome' | 'sentencing';
 export const DEFINITIONS_PATH = '/definitions';
 
 /**
- * Builds the definition anchor for one category. `categoryCode` is the taxonomy
- * code exactly as served by the API (`@pca/shared` `OutcomeCategoryCode` /
- * `SentencingCategoryCode`); it is used verbatim so the fragment matches the
- * id 14.1 will emit.
+ * Builds the fragment id for one category's definition entry: `<kind>-<code>`,
+ * e.g. `outcome-guilty_plea`. `categoryCode` is the taxonomy code exactly as
+ * served by the API (`@pca/shared` `OutcomeCategoryCode` /
+ * `SentencingCategoryCode`); it is used verbatim.
+ *
+ * This is the single place the fragment format lives. The 14.1 definitions page
+ * mints its per-entry element ids from this helper, and `definitionAnchor`
+ * composes it into the full result-page link, so the two stay in lockstep.
+ */
+export function definitionAnchorId(kind: DistributionKind, categoryCode: string): string {
+  return `${kind}-${categoryCode}`;
+}
+
+/**
+ * Builds the definition anchor for one category: the definitions-page path plus
+ * the `definitionAnchorId` fragment, so the result-page link and the page's
+ * element id are minted from the same source and never drift.
  */
 export function definitionAnchor(kind: DistributionKind, categoryCode: string): string {
-  return `${DEFINITIONS_PATH}#${kind}-${categoryCode}`;
+  return `${DEFINITIONS_PATH}#${definitionAnchorId(kind, categoryCode)}`;
 }
