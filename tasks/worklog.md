@@ -1025,3 +1025,84 @@
   submit and the charge page's `JudgeFilterEntry`; it does not yet exist. The
   `resolveChargeResultState` pattern and the `section-*` DOM-order test approach
   are reusable for the judge-specific page.
+
+## Task 13.3 — Judge-Specific Result Page
+
+- **Date:** 2026-07-09
+- **What was built:** the public judge-specific result route at
+  `/charges/[chargeSlug]/judge/[judgeSlug]` — a thin async server component that
+  fetches via the 11.2 client (`getJudgeSpecificResult`) and branches into
+  success / in-page unavailable / in-page not-found / error, composing the 13.1
+  display components twice per distribution type (one "Judge-specific result"
+  section, one "Philadelphia-wide baseline" section — no merged comparison
+  component). Four independent distribution slots, each with its own sample
+  size, thin-data state, and independent sentencing-unavailable fallback.
+- **Files created:**
+  - **Route** `apps/web/app/charges/[chargeSlug]/judge/[judgeSlug]/`:
+    - `page.tsx` — async server component; `React.cache`-memoized loader shared
+      between `generateMetadata` and the body; dispatches via the pure state
+      helper: success → `JudgeSpecificResultView`, unavailable →
+      `JudgeUnavailableView`, not-found → in-page `ResultNotFoundView`, error →
+      generic `throw` (→ `error.tsx`). `generateMetadata` sets `<title>` to
+      `"{charge} — {judge}"` on both 200 arms (required fix 1).
+    - `judge-result-state.ts` + `.test.ts` — pure resolver mapping the typed
+      client result to `success | unavailable | not-found(reason) | error`;
+      `JUDGE_SPECIFIC_RESULT_UNAVAILABLE` is handled as the 200 `resultType`
+      arm, never as an api_error; `CHARGE_NOT_FOUND`/`JUDGE_NOT_FOUND` map to
+      `not-found` with a `reason` discriminator selecting the distinct pinned
+      message.
+    - `loading.tsx` + `.test.tsx`, `error.tsx` + `.test.tsx` — reuse
+      `CHARGE_RESULT_COPY` chrome (loading/error copy shared, no new strings).
+  - **Components** `apps/web/app/components/`:
+    - `JudgeSpecificResultView.tsx` — presentational success render in the
+      pinned mobile DOM order (summary → responsible-use → thin-data callout →
+      judge outcome → judge sentencing → baseline outcome → baseline
+      sentencing → links). The two section headings wrap their slots without
+      their own `section-*` testid, so the leaf `data-testid="section-*"` order
+      matches the pinned mobile order one-for-one; each slot wrapped in
+      `overflow-x-auto`. Reuses `DistributionSection`/`SentencingUnavailableNotice`
+      via a private `ScopeSlots` helper so judge and baseline are structurally
+      identical. Remove-filter link "View Philadelphia-wide result instead" →
+      `/charges/[chargeSlug]`.
+    - `JudgeUnavailableView.tsx` — in-page 200 `judge_specific_unavailable` arm:
+      charge + judge identity, imported `JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE`
+      (verbatim, not read off `data.message`), charge-only link; renders NO
+      distribution sections and never surfaces the internal `code`.
+    - `ResultNotFoundView.tsx` — generic in-page not-found view taking the
+      pinned message; used for both missing-charge and missing-judge.
+    - `judge-result-copy.ts` + `.test.ts` — the three new chrome strings
+      (two section headings + remove-filter link) under `scanPublicCopy`; all
+      pinned message literals imported from `@pca/shared`, never duplicated.
+  - **Tests:** `JudgeSpecificResultView.test.tsx` (success+baseline with four
+    distinct sample sizes, server-order rows, thin-data pure-OR + per-slot
+    badge, sentencing-unavailable slot, remove-filter target, DOM order),
+    `JudgeUnavailableView.test.tsx` (literal via import, names, link, NO
+    distribution sections per required fix 3, no internal code),
+    `ResultNotFoundView.test.tsx` (both distinct pinned messages).
+- **Required-fix conformance:** (1) title names both charge and judge on
+  success + unavailable. (2a) per-slot `ThinDataBadge` still renders inside each
+  `DistributionSection`; (2b) the page-level callout is a pure OR over the four
+  API-provided `thinData` booleans — no counts, sample sizes, or thresholds in
+  web code. (3) added the "renders NO distribution sections" assertion.
+- **Not-found rendering — deliberate divergence from 13.2 (approved):** both
+  missing-charge and missing-judge render IN PAGE via `ResultNotFoundView` with
+  the distinct pinned `@pca/shared` literals (HTTP 200), rather than calling
+  `notFound()`. This is a **soft 404 on this route** and diverges from 13.2's
+  real-404 behavior for a missing charge. It is acceptable because result pages
+  are `noindex`, and it is **to be revisited at the Sprint 9 launch-readiness
+  indexing review**. Next's not-found boundary is prop-less, so it cannot carry
+  the two distinct messages — hence the in-page approach.
+- **How to verify:** `pnpm run build:packages`, then from root `pnpm typecheck`,
+  `pnpm lint`, `pnpm format:check`, `pnpm test`.
+- **Gates — all green:** typecheck 0; web tests 129 passed (33 files, +21 new);
+  shared 166; api 198; eslint 0; prettier clean; copy guard + forbidden-field
+  suites green.
+- **Deviations from plan:** none beyond the approved in-page not-found. No
+  changes to `@pca/shared`, the API, 13.1 component contracts, or 11.4
+  formatters. Copy-guard note: two source comments were reworded to avoid the
+  `predict` and `harsher` forbidden stems (the guard scans raw file text,
+  comments included).
+- **Notes for next task:** the definitions/methodology anchor targets the
+  per-row `Definition` links point at (`/definitions#...`) are still Phase 14
+  pages; the judge page renders four sets of those anchors (judge + baseline ×
+  outcome + sentencing). E2E coverage of the route is task 15.2.
