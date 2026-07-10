@@ -1,0 +1,698 @@
+"""Faithful port of Capstone's ``src/parse/docket_parser.py`` (Task 17.2).
+
+This is a behavior-preserving PORT, not a rewrite or a hardening pass. Known
+defects (disposition truncation, un-annotated min-days fill, unvalidated judge
+capture, the KeyError crash on one unsupported disposition layout) are carried
+UNCHANGED here; each is a named Phase 18 deliverable. See tasks/worklog.md for
+the defect inventory with line references.
+
+Pure stdlib only: no pdfplumber import anywhere in this module's path. The
+PDF-opening wrapper ``parse_docket`` lives in ``docket_parser_pdf``. The
+identifying-string hash and the two privacy assertions come from the 16.1
+ported ``pipeline.identity`` surface; the small parse helpers come from
+``pipeline.helpers``. The salt is supplied by the caller (severed config).
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import datetime
+
+from pipeline.helpers import GRADES, ParseError, parse_date, to_days
+from pipeline.identity import (
+    assert_no_leak,
+    assert_related_cases_clean,
+    hash_defendant,
+)
+
+HEADERS = [
+    "CASE INFORMATION",
+    "RELATED CASES",
+    "STATUS INFORMATION",
+    "CALENDAR EVENTS",
+    "DEFENDANT INFORMATION",
+    "CASE PARTICIPANTS",
+    "BAIL INFORMATION",
+    "CHARGES",
+    "DISPOSITION SENTENCING/PENALTIES",
+    "COMMONWEALTH INFORMATION",
+    "ATTORNEY INFORMATION",
+    "CASE FINANCIAL INFORMATION",
+    "ENTRIES",
+]
+
+# Sections recognized so their lines stop folding into a neighbor, but whose
+# content is not turned into output fields (Phase 7, MC sheets). CASE
+# PARTICIPANTS is still scanned for the transient defendant name used only to
+# build the hash; nothing from these sections lands in the record.
+SKIP_SECTIONS = {
+    "CASE PARTICIPANTS",
+    "BAIL INFORMATION",
+    "CASE FINANCIAL INFORMATION",
+}
+
+# The defendant name (transient, hash only) prints under CASE PARTICIPANTS on
+# MC sheets and, on CP sheets, under a CASE PARTICIPANTS subheader that used to
+# fold into DEFENDANT INFORMATION. Search both so the hash basis is unchanged
+# now that CASE PARTICIPANTS is its own section.
+NAME_SECTIONS = ("DEFENDANT INFORMATION", "CASE PARTICIPANTS")
+
+DISPO_SKIP_HEADERS = {
+    "DISPOSITION SENTENCING/PENALTIES",
+    "Disposition",
+    "Case Event Disposition Date Final Disposition",
+    "Sequence/Description Offense Disposition Grade Section",
+    "Sentencing Judge Sentence Date Credit For Time Served",
+    "Sentence/Diversion Program Type Incarceration/Diversionary Period Start Date",
+    "Sentence Conditions",
+}
+
+
+def is_statute_token(tok: str) -> bool:
+    tok_clean = tok.strip()
+    if not tok_clean:
+        return True
+    if "§" in tok_clean:
+        return True
+    # Contains a digit
+    if re.search(r"\d", tok_clean):
+        return True
+    # Length 1 (e.g. single letters like A, or symbols like -)
+    if len(tok_clean) == 1:
+        return True
+    # Roman numerals (case-insensitive)
+    if tok_clean.lower() in (
+        "i",
+        "ii",
+        "iii",
+        "iv",
+        "v",
+        "vi",
+        "vii",
+        "viii",
+        "ix",
+        "x",
+    ):
+        return True
+    # Check for parenthesized subsections like (a), (1)
+    if tok_clean.startswith("(") and tok_clean.endswith(")"):
+        return True
+    return False
+
+
+# A related-cases row carries a Caption column with third-party names. It is
+# never captured. Every field below is pulled from a bounded pattern (a docket
+# regex, the court from the docket prefix, an association reason from a fixed
+# vocabulary), so the free-text caption cannot leak by construction.
+RELATED_DOCKET_RE = re.compile(r"(?:CP|MC)-\d{2}-[A-Z]{2}-\d{7}-\d{4}")
+
+# Association reason is the last column of a related-cases row, but the value
+# is a controlled CPCMS phrase that usually renders on its own wrapped line as
+# a grouping heading above the docket rows it covers. Reasons are matched ONLY
+# against this fixed vocabulary (longest first), never against free text, so
+# the caption column can never leak into the reason. A row with no controlled
+# phrase in scope stores association_reason None. Verified against real MC
+# sheets in Phase 7 stage 2; extend here if a real sheet prints a new phrase.
+ASSOCIATION_REASONS = [
+    "Consolidated Defendant Cases Number and Primary Participant",
+    "Joined Codefendant Cases Number and Different Primary Participant",
+    "Consolidated Defendant Cases",
+    "Joined Codefendant Cases",
+    "Refiled",
+    "Related",
+    "Consolidated",
+    "Joined",
+]
+
+
+def match_association_reason(line_str: str) -> str | None:
+    """Return the controlled association-reason phrase present in the line, or
+    None. Controlled vocabulary only, so caption text is never returned."""
+    for phrase in ASSOCIATION_REASONS:
+        if phrase in line_str:
+            return phrase
+    return None
+
+
+def parse_related_cases(lines: list[str]) -> list[dict]:
+    """Parse RELATED CASES rows into docket number, court, association reason.
+
+    The caption column (third-party names) is never read. Docket number comes
+    from a bounded regex, court from the docket prefix, and association reason
+    only from the controlled vocabulary (matched on the docket line or carried
+    from the most recent grouping heading). No free text is ever captured.
+    """
+    entries: list[dict] = []
+    current_reason: str | None = None
+    for line in lines:
+        line_str = line.strip()
+        if not line_str:
+            continue
+        heading = match_association_reason(line_str)
+        m = RELATED_DOCKET_RE.search(line_str)
+        if not m:
+            # A standalone controlled phrase is a grouping heading; carry it to
+            # the docket rows that follow.
+            if heading:
+                current_reason = heading
+            continue
+        docket = m.group(0)
+        entries.append(
+            {
+                "docket_number": docket,
+                "court": detect_court_type(docket),
+                "association_reason": heading or current_reason,
+            }
+        )
+    return entries
+
+
+def detect_court_type(docket_number: str) -> str:
+    """Court type from the docket-number prefix (Phase 7). The stem is
+    authoritative and always present, so it is preferred over the banner text.
+    MC-51 dockets are Municipal Court; everything else (CP-51) is Common Pleas.
+    """
+    if docket_number.startswith("MC-"):
+        return "Municipal Court"
+    return "Common Pleas"
+
+
+def parse_docket_text(
+    docket_number: str, pages_text: list[str], *, salt: str
+) -> tuple[dict, list[str]]:
+    """Parse already-extracted page text into the record and sentinels.
+
+    Split out from parse_docket so the section logic can be exercised on
+    synthetic text fixtures without a PDF. ``salt`` is caller-supplied and
+    threaded straight to ``hash_defendant``; this module never reads the
+    environment and does no salt validation of its own (hash_defendant's own
+    required-salt check fires instead).
+    """
+    # Gather transient names from page headers (under "v.")
+    v_names = set()
+    raw_lines = []
+
+    for text in pages_text:
+        page_lines = text.splitlines()
+        skip_next = False
+        for i, line in enumerate(page_lines):  # noqa: B007 - faithful port; i unused
+            line_str = line.strip()
+            if skip_next:
+                if line_str:
+                    v_names.add(line_str)
+                skip_next = False
+                continue
+            if line_str.lower() in ("v.", "v"):
+                skip_next = True
+                continue
+            raw_lines.append(line)
+
+    # Filter out header/footer lines and organize into sections
+    sections = {h: [] for h in HEADERS}
+    current_section = None
+
+    for line in raw_lines:
+        line_str = line.strip()
+        if not line_str:
+            continue
+
+        # Skip page headers, footers, and disclaimers
+        if line_str == "COURT OF COMMON PLEAS OF PHILADELPHIA COUNTY":
+            continue
+        if line_str == "MUNICIPAL COURT OF PHILADELPHIA COUNTY":
+            continue
+        if line_str == "DOCKET":
+            continue
+        if line_str.startswith("Docket Number:"):
+            continue
+        if line_str == "CRIMINAL DOCKET":
+            continue
+        if line_str == "Court Case":
+            continue
+        if line_str == "Commonwealth of Pennsylvania":
+            continue
+        if re.match(r"^Page \d+ of \d+$", line_str):
+            continue
+        if re.match(r"^CPCMS .* Printed:.*$", line_str, re.IGNORECASE):
+            continue
+        if "Recent entries made in the court" in line_str:
+            continue
+        if "Neither the courts of the Unified Judicial" in line_str:
+            continue
+        if "System of the Commonwealth of Pennsylvania" in line_str:
+            continue
+        if "data, errors or omissions on these reports" in line_str:
+            continue
+        if "only be provided by the Pennsylvania State Police" in line_str:
+            continue
+        if "Moreover an employer who does not comply" in line_str:
+            continue
+        if "Information Act may be subject to civil liability" in line_str:
+            continue
+
+        if line_str in HEADERS:
+            current_section = line_str
+        elif current_section is not None:
+            sections[current_section].append(line)
+
+    # Extract Defendant Name and Date of Birth
+    defendant_name = None
+    dob_str = None
+
+    # Transient name and DOB source lines, in section order. CASE PARTICIPANTS
+    # is now its own section; on CP sheets the "Defendant" name line lives
+    # there, so scanning both keeps the first-match (and thus the hash) exactly
+    # as it was when CASE PARTICIPANTS folded into DEFENDANT INFORMATION.
+    name_source_lines: list[str] = []
+    for header in NAME_SECTIONS:
+        name_source_lines.extend(sections.get(header, []))
+
+    # Find DOB
+    for line in name_source_lines:
+        if "Date Of Birth:" in line or "Date of Birth:" in line:
+            m_dob = re.search(r"Date\s+of\s+Birth:\s*([\d/]+)", line, re.IGNORECASE)
+            if m_dob:
+                dob_str = m_dob.group(1).strip()
+                break
+
+    # Find Defendant Name
+    for line in name_source_lines:
+        m_def = re.match(r"^Defendant\s+(.*)$", line.strip())
+        if m_def:
+            defendant_name = m_def.group(1).strip()
+            break
+
+    # Fallback to v_names if defendant_name is not in CASE PARTICIPANTS
+    if not defendant_name and v_names:
+        defendant_name = sorted(list(v_names))[0]
+
+    if not defendant_name or not dob_str:
+        raise ParseError("Missing defendant name or date of birth")
+
+    try:
+        birth_year = int(dob_str.split("/")[-1])
+    except Exception as exc:
+        raise ParseError("Invalid date of birth format") from exc
+
+    defendant_hash = hash_defendant(defendant_name, birth_year, salt=salt)
+
+    # Compile privacy sentinels
+    sentinels = [dob_str, defendant_name]
+    for part in re.split(r"[^a-zA-Z]", defendant_name):
+        if len(part) >= 3:
+            sentinels.append(part)
+    for name in v_names:
+        sentinels.append(name)
+        for part in re.split(r"[^a-zA-Z]", name):
+            if len(part) >= 3:
+                sentinels.append(part)
+    sentinels = sorted(list(set(sentinels)))
+
+    # Parse Case status
+    case_status = None
+    for line in sections.get("STATUS INFORMATION", []):
+        m = re.search(
+            r"Case\s+Status:\s*(.*?)(?:\s+Status\s+Date|\s+Processing|\s+Arrest|$)",
+            line,
+            re.IGNORECASE,
+        )
+        if m:
+            case_status = m.group(1).strip()
+            break
+
+    # Parse Case Filed Date, Assigned Judge, OTN, Cross Court Docket Nos
+    filed_date = None
+    assigned_judge_raw = None
+    otn = None
+    cross_court_dockets = None
+    for line in sections.get("CASE INFORMATION", []):
+        if "Judge Assigned:" in line or "Date Filed:" in line:
+            m_judge = re.search(
+                r"Judge\s+Assigned:\s*(.*?)\s+Date\s+Filed:", line, re.IGNORECASE
+            )
+            if m_judge:
+                assigned_judge_raw = m_judge.group(1).strip()
+            m_date = re.search(r"Date\s+Filed:\s*([\d/]+)", line, re.IGNORECASE)
+            if m_date:
+                filed_date = parse_date(m_date.group(1))
+        if "OTN:" in line:
+            m_otn = re.search(
+                r"OTN:\s*([A-Za-z0-9\s-]+?)(?:\s+LOTN:|\s+Originating|$)",
+                line,
+                re.IGNORECASE,
+            )
+            if m_otn:
+                otn = m_otn.group(1).strip()
+        # Cross Court Docket Nos: the held-to-CP and de-novo linkage. Raw
+        # string as printed (docket numbers only; no caption). Captured to the
+        # end of the line; null when the label is absent.
+        if "Cross Court Docket Nos:" in line:
+            m_ccd = re.search(
+                r"Cross\s+Court\s+Docket\s+Nos:\s*(.*)$", line, re.IGNORECASE
+            )
+            if m_ccd:
+                val = m_ccd.group(1).strip()
+                cross_court_dockets = val if val else None
+
+    # Parse Charges
+    parsed_charges = {}
+    active_charge = None
+
+    for line in sections.get("CHARGES", []):
+        line_str = line.strip()
+        if not line_str:
+            continue
+        if "Seq." in line_str and "Statute" in line_str:
+            continue
+
+        m_seq = re.match(r"^(\d+)\s+(\d+)\s+(.*)$", line_str)
+        if m_seq:
+            seq = int(m_seq.group(1))
+            rest = m_seq.group(3).strip()
+
+            tokens = rest.split()
+            if not tokens:
+                continue
+
+            grade = None
+            if tokens[0] in GRADES:
+                grade = tokens[0]
+                tokens = tokens[1:]
+
+            # Indirect Criminal contempt rows lead with an "IC" filing marker
+            # in front of the statute. Drop it so statute detection starts at
+            # the real statute instead of stopping on a non-statute token.
+            if tokens and tokens[0] == "IC":
+                tokens = tokens[1:]
+
+            date_idx = -1
+            for idx in range(len(tokens) - 1, -1, -1):
+                if re.match(r"^\d{2}/\d{2}/\d{4}$", tokens[idx]):
+                    date_idx = idx
+                    break
+
+            offense_date = None
+            otn_val = None
+            statute_tokens = []
+            offense_tokens = []
+
+            if date_idx != -1:
+                offense_date = parse_date(tokens[date_idx])  # noqa: F841 - faithful port; computed, unused
+                if date_idx + 1 < len(tokens):
+                    otn_val = " ".join(tokens[date_idx + 1 :])  # noqa: F841 - faithful port; computed, unused
+                left_tokens = tokens[:date_idx]
+
+                first_offense_idx = len(left_tokens)
+                for idx, tok in enumerate(left_tokens):
+                    if not is_statute_token(tok):
+                        first_offense_idx = idx
+                        break
+                statute_tokens = left_tokens[:first_offense_idx]
+                offense_tokens = left_tokens[first_offense_idx:]
+            else:
+                first_offense_idx = len(tokens)
+                for idx, tok in enumerate(tokens):
+                    if not is_statute_token(tok):
+                        first_offense_idx = idx
+                        break
+                statute_tokens = tokens[:first_offense_idx]
+                offense_tokens = tokens[first_offense_idx:]
+
+            statute_str = " ".join(statute_tokens)
+            offense_str = " ".join(offense_tokens)
+
+            active_charge = {
+                "sequence": seq,
+                "statute": statute_str if statute_str else None,
+                "grade": grade,
+                "offense": offense_str if offense_str else None,
+                "disposition_raw": None,
+                "disposition_date": None,
+                "disposition_judge_raw": None,
+                "sentences": [],
+            }
+            parsed_charges[seq] = active_charge
+        else:
+            # A void placeholder charge ("0 § 0 Unknown Statute ...") can trail
+            # a real charge on a line the sequence regex rejects (comma in the
+            # OTN). Drop it so it never pollutes the prior charge's offense.
+            if "Unknown Statute" in line_str:
+                continue
+            if active_charge:
+                if active_charge["offense"]:
+                    active_charge["offense"] = active_charge["offense"] + " " + line_str
+                else:
+                    active_charge["offense"] = line_str
+
+    # Parse Dispositions and Sentences
+    current_charge_seq = None
+    expecting_judge_line = False
+    current_sentence_comp = None
+    in_valid_event = False
+    current_event_name = ""
+
+    def save_current_sentence():
+        nonlocal current_sentence_comp
+        if current_sentence_comp and current_charge_seq is not None:
+            raw_text = ", ".join(current_sentence_comp["raw_text_parts"])
+
+            min_days = None
+            max_days = None
+            type_lower = current_sentence_comp["sentence_type"].lower()
+
+            if type_lower not in ("no further penalty", "fines and costs"):
+                min_match = re.search(
+                    r"Min of\s+(.*?)(?:Max of|$|,)", raw_text, re.IGNORECASE
+                )
+                max_match = re.search(
+                    r"Max of\s+(.*?)(?:Min of|$|,)", raw_text, re.IGNORECASE
+                )
+
+                if min_match:
+                    min_days = to_days(min_match.group(1).replace(".00", ""))
+                if max_match:
+                    max_days = to_days(max_match.group(1).replace(".00", ""))
+
+                if min_days is None and max_days is None:
+                    flat_days = to_days(raw_text.replace(".00", ""))
+                    if flat_days is not None:
+                        min_days = flat_days
+                        max_days = flat_days
+                elif min_days is None and max_days is not None:
+                    min_days = max_days
+                elif max_days is None and min_days is not None:
+                    max_days = min_days
+
+            parsed_charges[current_charge_seq]["sentences"].append(
+                {
+                    "sentence_type": current_sentence_comp["sentence_type"],
+                    "min_days": min_days,
+                    "max_days": max_days,
+                    "program": current_sentence_comp["program"],
+                    "sentence_date": current_sentence_comp["sentence_date"],
+                    "raw_text": raw_text,
+                }
+            )
+            current_sentence_comp = None
+
+    disposition_lines = sections.get("DISPOSITION SENTENCING/PENALTIES", [])
+    for idx, line in enumerate(disposition_lines):
+        line_str = line.strip()
+        if not line_str:
+            continue
+
+        if line_str in DISPO_SKIP_HEADERS:
+            continue
+
+        # Check if the next line is an event date line (lookahead)
+        is_event_header = False
+        if idx + 1 < len(disposition_lines):
+            next_line = disposition_lines[idx + 1].strip()
+            if re.search(r"(Final Disposition|Not Final)$", next_line):
+                is_event_header = True
+
+        if is_event_header:
+            save_current_sentence()
+            current_charge_seq = None
+            current_event_name = line_str
+            continue
+
+        date_line_match = re.search(r"(Final Disposition|Not Final)$", line_str)
+        if date_line_match:
+            save_current_sentence()
+            current_charge_seq = None
+            if (
+                date_line_match.group(1) == "Final Disposition"
+                or "ard" in current_event_name.lower()
+            ):
+                in_valid_event = True
+            else:
+                in_valid_event = False
+            continue
+
+        charge_match = re.match(r"^(\d+)\s*/\s*(.*)$", line_str)
+        if charge_match:
+            save_current_sentence()
+            if not in_valid_event:
+                current_charge_seq = None
+                continue
+            seq = int(charge_match.group(1))
+            current_charge_seq = seq
+            expecting_judge_line = True
+
+            text = charge_match.group(2).strip()
+            if seq in parsed_charges:
+                charge = parsed_charges[seq]
+                offense = charge["offense"] or ""
+                matched_prefix = ""
+                for i in range(len(offense), 0, -1):
+                    prefix = offense[:i].strip()
+                    if text.startswith(prefix):
+                        matched_prefix = prefix
+                        break
+                remaining = text[len(matched_prefix) :].strip()
+
+                statute = charge["statute"] or ""
+                if statute and remaining.endswith(statute):
+                    remaining = remaining[: -len(statute)].strip()
+                grade = charge["grade"] or ""
+                if grade and remaining.endswith(grade):
+                    remaining = remaining[: -len(grade)].strip()
+
+                charge["disposition_raw"] = remaining if remaining else None
+            continue
+
+        if current_charge_seq is not None and expecting_judge_line:
+            if re.search(r"\d{2}/\d{2}/\d{4}$", line_str):
+                judge_match = re.match(r"^(.*?)\s+(\d{2}/\d{2}/\d{4})$", line_str)
+                if judge_match:
+                    judge_name = judge_match.group(1).strip()
+                    disp_date = parse_date(judge_match.group(2))
+                    if current_charge_seq in parsed_charges:
+                        parsed_charges[current_charge_seq]["disposition_judge_raw"] = (
+                            judge_name
+                        )
+                        parsed_charges[current_charge_seq]["disposition_date"] = (
+                            disp_date
+                        )
+                    expecting_judge_line = False
+                    continue
+            else:
+                is_sent_type = False
+                for stype in (
+                    "Confinement",
+                    "Probation",
+                    "ARD",
+                    "IPP",
+                    "No Further Penalty",
+                    "Fines and Costs",
+                ):
+                    if line_str.lower().startswith(stype.lower()):
+                        is_sent_type = True
+                        break
+                if is_sent_type:
+                    expecting_judge_line = False
+                else:
+                    continue
+
+        if current_charge_seq is not None and not expecting_judge_line:
+            matched_type = None
+            for stype in (
+                "Confinement",
+                "Probation",
+                "ARD",
+                "IPP",
+                "No Further Penalty",
+                "Fines and Costs",
+            ):
+                if line_str.lower().startswith(stype.lower()):
+                    matched_type = stype
+                    break
+
+            if matched_type:
+                save_current_sentence()
+                charge = parsed_charges[current_charge_seq]
+                current_sentence_comp = {
+                    "sentence_type": matched_type,
+                    "program": line_str,
+                    "sentence_date": charge["disposition_date"],
+                    "raw_text_parts": [line_str],
+                }
+            elif current_sentence_comp:
+                is_continuation = (
+                    (
+                        any(
+                            u in line_str.lower() for u in ("year", "month", "day", "½")
+                        )
+                        and any(c.isdigit() for c in line_str)
+                    )
+                    or line_str.lower().startswith("min of")
+                    or line_str.lower().startswith("max of")
+                )
+
+                if is_continuation:
+                    current_sentence_comp["raw_text_parts"].append(line_str)
+                else:
+                    save_current_sentence()
+
+    save_current_sentence()
+
+    # Format charges as list
+    charges_list = sorted(list(parsed_charges.values()), key=lambda x: x["sequence"])
+
+    # District Control Number from the Case Local Number(s) table. Printed on
+    # both CP and MC sheets; null when absent. Scanned across all sections
+    # because the table folds into whatever section precedes it.
+    dc_number = None
+    for section_lines in sections.values():
+        for line in section_lines:
+            m_dc = re.match(r"^District Control Number\s+(\S+)", line.strip())
+            if m_dc:
+                dc_number = m_dc.group(1).strip()
+                break
+        if dc_number:
+            break
+
+    # Related cases (MC sheets only; CP sheets have no such section).
+    related_cases = parse_related_cases(sections.get("RELATED CASES", []))
+
+    record = {
+        "docket_number": docket_number,
+        "parser_version": 1,
+        "parsed_at": datetime.now().replace(microsecond=0).isoformat(),
+        "case": {
+            "county": "Philadelphia",
+            "court_type": detect_court_type(docket_number),
+            "case_status": case_status,
+            "filed_date": filed_date,
+            "otn": otn,
+            "assigned_judge_raw": assigned_judge_raw,
+            "dc_number": dc_number,
+            "cross_court_dockets": cross_court_dockets,
+            "defendant_hash": defendant_hash,
+        },
+        "charges": charges_list,
+        "related_cases": related_cases,
+        "notes": [],
+    }
+
+    return record, sentinels
+
+
+def parse_docket_checked(
+    docket_number: str, pages_text: list[str], *, salt: str
+) -> tuple[dict, list[str]]:
+    """Parse and run the privacy assertions at the Capstone post-parse boundary.
+
+    Mirrors ``scripts/parse_fixtures.py`` lines 26-29 in Capstone (parse ->
+    assert_no_leak -> assert_related_cases_clean), minus the file/DB IO that
+    boundary carried. The assertions deliberately stay OUT of parse_docket_text
+    so parse behavior is unchanged; this is the seam a writer (17.3 comparator,
+    later loader) calls before persisting a record. Raises RuntimeError if an
+    identifying string reached a value or a related-cases entry carries an
+    unexpected field.
+    """
+    record, sentinels = parse_docket_text(docket_number, pages_text, salt=salt)
+    assert_no_leak(sentinels, record)
+    assert_related_cases_clean(record)
+    return record, sentinels
