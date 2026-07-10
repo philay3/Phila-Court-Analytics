@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // DOM is needed for the browser-context callbacks passed to page.evaluate /
+    // evaluateAll (document, Element APIs); node types cover the test runtime.
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "moduleResolution": "Bundler",
+    "module": "ESNext",
+    "verbatimModuleSyntax": false
+  },
+  "include": ["playwright.config.ts", "tests", "support"]
+}

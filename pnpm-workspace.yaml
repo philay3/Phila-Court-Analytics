@@ -3,6 +3,7 @@ packages:
   - 'packages/*'
   - 'services/*'
   - 'db'
+  - 'e2e'
 allowBuilds:
   esbuild: true
   # sharp is Next.js's optional native image-optimizer; the shell has no

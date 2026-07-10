@@ -91,6 +91,88 @@ jobs:
         env:
           DATABASE_URL: postgresql://ci:ci@localhost:5432/pca_ci
 
+  e2e:
+    name: E2E (Playwright + axe)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.10
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: pca_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d pca_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    # The whole E2E path is env-driven; no DB port is hardcoded anywhere. CI
+    # Postgres is 5432 (local Docker is 5433). API_BASE_URL is set explicitly
+    # rather than relying on the 15.1 localhost default.
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/pca_ci
+      API_BASE_URL: http://127.0.0.1:3001
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate taxonomy artifacts
+        run: pnpm generate
+
+      # Build workspace packages + the API so the webServer boots the API from
+      # built dist under plain node (not tsx) — the production start path.
+      - name: Build workspace packages
+        run: pnpm run build:packages
+
+      - name: Build API
+        run: pnpm --filter @pca/api run build
+
+      # Real migrate + seed (NOT the vitest globalSetup path): the suite runs
+      # against deterministic db:seed data.
+      - name: Apply migrations
+        run: pnpm db:migrate:latest
+
+      - name: Seed database
+        run: pnpm db:seed
+
+      # Production web build. Fails loudly if a build-time prerender fetch is
+      # ever introduced against the (not-yet-running) API — see task 15.2 F4.
+      - name: Build web (production)
+        run: pnpm --filter @pca/web run build
+
+      # Cache the chromium browser binary across runs, keyed on the lockfile
+      # (which pins the Playwright version). Install OS deps every run; download
+      # the browser only on a cache miss.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright chromium (+ deps)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @pca/e2e exec playwright install --with-deps chromium
+
+      - name: Install Playwright OS deps (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter @pca/e2e exec playwright install-deps chromium
+
+      - name: Run Playwright E2E
+        run: pnpm --filter @pca/e2e run test:e2e
+
   python:
     name: Python (ruff, pytest)
     runs-on: ubuntu-latest

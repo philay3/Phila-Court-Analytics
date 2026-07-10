@@ -36,3 +36,9 @@ next-env.d.ts
 
 # TypeScript incremental build state
 *.tsbuildinfo
+
+# Playwright E2E artifacts (task 15.2)
+test-results/
+playwright-report/
+blob-report/
+.playwright/

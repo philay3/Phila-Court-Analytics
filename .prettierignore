@@ -6,3 +6,5 @@ pnpm-lock.yaml
 docs/
 tasks/
 CLAUDE.md
+test-results/
+playwright-report/
