@@ -1288,3 +1288,70 @@
   guard) and no server-fetch/error shape, since it has no data source. Team/
   contact/credits content and SEO/indexing remain out of scope (site-wide
   noindex stands).
+
+## Task 15.1 — Accessibility + Mobile Pass (Cross-Cutting Sweep)
+
+- **Date:** 2026-07-10
+- **What was built:** A static (code) accessibility + mobile audit of every public
+  page, state, and shared component against the task checklist (WCAG 2.2 AA), with
+  findings fixed and documented in `agent-docs/a11y-mobile-pass.md`; then fixes for
+  the three functional findings from Chops's human keyboard/mobile walkthrough.
+- **Agent-audit finding (1, fixed):** the two terminal not-found states rendered no
+  `h1` while every other state carries one. Added an `<h1>` to `not-found.tsx` and
+  `ResultNotFoundView.tsx`, sourced from a new `CHARGE_RESULT_COPY.notFoundHeading`
+  ("Result not found"); added heading assertions to both suites. Every other
+  checklist section passed clean (landmarks, table `th`/`scope`, visibly-rendered
+  paired tables with `aria-hidden` bars, text bar values via 11.4 formatters,
+  text-accessible thin-data, combobox ARIA + arrow/Enter/Escape, 13.2/13.3 DOM
+  order, 320px-safe with no fixed widths, no `outline-none`/positive-tabindex/
+  hover-only/color-only — grep-proven).
+- **Walkthrough findings (3, fixed):**
+  - **W1 (highest):** the judge route had no mapping for the `CHARGE_RESULT_UNAVAILABLE`
+    404 error envelope (charge with no aggregate), so a designed state fell through
+    to the generic error boundary. Added a `charge-unavailable` state to
+    `resolveJudgeResultState`, a new `JudgeChargeUnavailableView` (adapts the 13.2
+    unavailable pattern; the 404 envelope carries no identity/links, so it renders
+    the pinned `CHARGE_RESULT_UNAVAILABLE_MESSAGE` + a generic heading + static
+    methodology/definitions links), and wired it into the judge page before the
+    generic throw. Audited the full code-to-state mapping for BOTH result routes
+    (enumerated in the report) — this was the only unmapped designed-state gap.
+  - **W2:** `API_BASE_URL` resolved inconsistently — the rewrite defaulted to
+    `localhost:3001` but the server client threw. Unified on a single shared
+    local-dev default via new `app/lib/api-base-url.ts` (`resolveApiBaseUrl`), used
+    by both `next.config.ts` and the server fetch path. Chose shared-default over
+    fail-fast (rationale in report: matches the already-working browser path + CI
+    build assumption; prod hardening stays Sprint 9).
+  - **W3:** documented the (now-optional) `apps/web` `API_BASE_URL` in
+    `apps/web/README.md`, the `apps/web/.env.example` comment, and a root README
+    "Environment files" note.
+- **Files touched:** `apps/web/app/charges/[chargeSlug]/not-found.tsx` (+test),
+  `apps/web/app/components/ResultNotFoundView.tsx` (+test),
+  `apps/web/app/components/charge-result-copy.ts`,
+  `apps/web/app/components/JudgeChargeUnavailableView.tsx` (new, +test),
+  `apps/web/app/charges/[chargeSlug]/judge/[judgeSlug]/judge-result-state.ts`
+  (+test), `.../judge/[judgeSlug]/page.tsx`,
+  `apps/web/app/lib/api-base-url.ts` (new, +test),
+  `apps/web/app/lib/public-api-client.ts`, `apps/web/next.config.ts`,
+  `apps/web/.env.example`, `apps/web/README.md`, `README.md`,
+  `agent-docs/a11y-mobile-pass.md` (new), `tasks/worklog.md`.
+- **Copy-safety call-out:** two app-level copy constants added (`notFoundHeading`,
+  `chargeUnavailableHeading` in `charge-result-copy.ts`) — both scanned by
+  `charge-result-copy.test.ts` via `scanPublicCopy`, both pass; no `@pca/shared`
+  copy touched.
+- **Deviations from plan:** W1–W3 are functional (not strictly a11y) and reach
+  beyond the task's original "Files you may touch" list (config: `next.config.ts`,
+  `apps/web/.env.example`; docs: root + `apps/web` README). Fixed here at Chops's
+  explicit direction under the task's two-halves structure; called out as
+  authorized deviations.
+- **Gates — all green:** eslint 0; prettier clean; full-workspace typecheck 0;
+  tests — web 183 (45 files, +6), api 198, shared 166 (copy-safety), taxonomy 14,
+  db 6; forbidden-field (`apps/api/src/public-forbidden-fields.test.ts`) green. No
+  new dependencies (Playwright/axe-core remain 15.2).
+- **Notes for next task (15.2 — E2E + axe-core):** axe should confirm one `h1` per
+  page/state (the not-found fix is the only heading change) and combobox ARIA
+  toggling live; add an E2E for the W1 judge-route charge-unavailable path
+  (`/charges/harassment/judge/{slug}` → friendly view, not the error boundary);
+  loading placeholders intentionally have no `h1` (transient `role="status"`) — not
+  a violation to flag; the `localhost:3001` local-dev default (now in
+  `app/lib/api-base-url.ts`) is what lets result pages render without `API_BASE_URL`
+  set. Input focus rings rely on the UA default — worth a visual/axe confirmation.

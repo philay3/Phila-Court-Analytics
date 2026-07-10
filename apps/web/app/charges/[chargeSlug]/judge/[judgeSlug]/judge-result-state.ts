@@ -23,6 +23,15 @@ import type { PublicApiResult } from '../../../../lib/public-api-client';
  *                    renders the in-page not-found view with the matching pinned
  *                    literal. `reason` selects which of the two distinct
  *                    @pca/shared messages is shown.
+ *   - charge-unavailable → CHARGE_RESULT_UNAVAILABLE api_error (task 15.1
+ *                    walkthrough Finding 1). The charge resolves but has no
+ *                    publishable aggregate, so a judge-specific one cannot exist
+ *                    either. Unlike the charge-only route — where this case is a
+ *                    200 `charge_only_unavailable` arm carrying identity — the
+ *                    judge endpoint delivers it as a 404 error envelope with the
+ *                    pinned message only. The page renders the in-page
+ *                    `JudgeChargeUnavailableView` (a designed friendly state)
+ *                    rather than the generic error boundary.
  *   - error        → any other api_error code or a transport failure; the page
  *                    throws so error.tsx renders generic, detail-free copy.
  *
@@ -34,6 +43,7 @@ export type JudgeResultState =
   | { kind: 'success'; data: JudgeSpecificResultSuccess }
   | { kind: 'unavailable'; data: JudgeSpecificResultUnavailable }
   | { kind: 'not-found'; reason: 'charge' | 'judge' }
+  | { kind: 'charge-unavailable' }
   | { kind: 'error' };
 
 export function resolveJudgeResultState(
@@ -50,6 +60,9 @@ export function resolveJudgeResultState(
     }
     if (result.error.code === PUBLIC_ERROR_CODES.JUDGE_NOT_FOUND) {
       return { kind: 'not-found', reason: 'judge' };
+    }
+    if (result.error.code === PUBLIC_ERROR_CODES.CHARGE_RESULT_UNAVAILABLE) {
+      return { kind: 'charge-unavailable' };
     }
   }
   return { kind: 'error' };

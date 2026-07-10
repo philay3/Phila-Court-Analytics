@@ -14,10 +14,14 @@ vi.mock('next/link', () => ({
 }));
 
 describe('ResultNotFoundView', () => {
-  it('renders the missing-charge pinned message and a link back to search', () => {
+  it('renders a page heading, the missing-charge pinned message, and a link back to search', () => {
     // Message asserted via the imported @pca/shared constant, never re-typed.
     render(<ResultNotFoundView message={CHARGE_NOT_FOUND_MESSAGE} />);
 
+    // Terminal state carries an h1 for heading navigation (task 15.1 a11y pass).
+    expect(
+      screen.getByRole('heading', { level: 1, name: CHARGE_RESULT_COPY.notFoundHeading }),
+    ).toBeInTheDocument();
     expect(screen.getByText(CHARGE_NOT_FOUND_MESSAGE)).toBeInTheDocument();
     const home = screen.getByRole('link', { name: CHARGE_RESULT_COPY.notFoundHomeLinkText });
     expect(home).toHaveAttribute('href', '/');

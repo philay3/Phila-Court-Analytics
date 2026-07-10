@@ -1,3 +1,4 @@
+import { resolveApiBaseUrl } from './api-base-url';
 import {
   isPublicErrorCode,
   type ChargeOnlyResultResponse,
@@ -17,6 +18,11 @@ import {
  * through the Next.js rewrite (same-origin, no CORS). API_BASE_URL is
  * server-only — it has no NEXT_PUBLIC_ prefix, so it never enters a
  * client-delivered bundle.
+ *
+ * The server-side base is resolved through the shared `resolveApiBaseUrl`
+ * helper (task 15.1 walkthrough Finding 2) — the SAME helper the next.config
+ * rewrite uses — so both fetch paths share one local-dev default instead of the
+ * server path failing hard when API_BASE_URL is unset.
  *
  * Every function returns a tagged union and never throws for expected
  * outcomes (API errors or transport failures). Success bodies are trusted
@@ -47,8 +53,10 @@ interface UrlContext {
 
 /**
  * Resolves the fetch URL for a public API path. Server-side needs an absolute
- * base (throwing on a missing API_BASE_URL is a config error, surfaced as
- * fetch_failed by the caller's try/catch); browser-side returns the relative
+ * base; the caller now passes one resolved through `resolveApiBaseUrl` (which
+ * always yields a non-empty string), so the empty-base throw here is a
+ * defensive guard — an unresolved base still surfaces as fetch_failed via the
+ * caller's try/catch rather than a raw crash. Browser-side returns the relative
  * path so the request rides the Next.js rewrite. Pure and directly unit-tested
  * for both branches.
  */
@@ -96,9 +104,13 @@ function toApiError(body: unknown): PublicApiFailure | null {
 async function fetchPublic<T>(path: string): Promise<PublicApiResult<T>> {
   let response: Response;
   try {
+    const isServer = typeof window === 'undefined';
+    // Only the server path consults the base URL; the browser path returns a
+    // relative URL and rides the rewrite, so the base is resolved server-side
+    // only (keeping the resolution — and its env read — off the client path).
     const url = resolvePublicApiUrl(path, {
-      isServer: typeof window === 'undefined',
-      apiBaseUrl: process.env.API_BASE_URL,
+      isServer,
+      apiBaseUrl: isServer ? resolveApiBaseUrl() : undefined,
     });
     response = await fetch(url, { headers: { accept: 'application/json' } });
   } catch {

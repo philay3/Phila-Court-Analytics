@@ -4,6 +4,7 @@ import { CHARGE_NOT_FOUND_MESSAGE, JUDGE_NOT_FOUND_MESSAGE } from '@pca/shared';
 import { getJudgeSpecificResult } from '../../../../lib/public-api-client';
 import { JudgeSpecificResultView } from '../../../../components/JudgeSpecificResultView';
 import { JudgeUnavailableView } from '../../../../components/JudgeUnavailableView';
+import { JudgeChargeUnavailableView } from '../../../../components/JudgeChargeUnavailableView';
 import { ResultNotFoundView } from '../../../../components/ResultNotFoundView';
 import { resolveJudgeResultState } from './judge-result-state';
 
@@ -60,6 +61,11 @@ export default async function JudgeResultPage({ params }: JudgeResultPageProps) 
         message={state.reason === 'judge' ? JUDGE_NOT_FOUND_MESSAGE : CHARGE_NOT_FOUND_MESSAGE}
       />
     );
+  }
+  if (state.kind === 'charge-unavailable') {
+    // Designed friendly state for a charge with no publishable aggregate,
+    // handled before the generic throw above catches truly unexpected responses.
+    return <JudgeChargeUnavailableView />;
   }
   return state.kind === 'success' ? (
     <JudgeSpecificResultView data={state.data} />
