@@ -13,6 +13,7 @@ from pipeline.evaluation.extractors import EXTRACTORS
 from pipeline.evaluation.harness import run_evaluation
 from pipeline.extraction import DEFAULT_LOW_TEXT_THRESHOLD, run_extraction
 from pipeline.logging_utils import configure_logging
+from pipeline.manual_import import run_manual_import
 
 logger = logging.getLogger("pipeline.cli")
 
@@ -23,7 +24,9 @@ SUBCOMMANDS = (
     ("run-fixtures", "Run the pipeline against local fixture PDFs."),
 )
 
-IMPLEMENTED_COMMANDS = frozenset({"evaluate-extractors", "extract-text"})
+IMPLEMENTED_COMMANDS = frozenset(
+    {"evaluate-extractors", "extract-text", "import-manual"}
+)
 
 PLACEHOLDER_COMMANDS = frozenset(
     name for name, _ in SUBCOMMANDS if name not in IMPLEMENTED_COMMANDS
@@ -49,6 +52,23 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     for name, help_text in SUBCOMMANDS:
         subparser = subparsers.add_parser(name, help=help_text, description=help_text)
+        if name == "import-manual":
+            subparser.add_argument(
+                "input_dir",
+                type=Path,
+                help="A directory of docket PDFs (scanned non-recursively).",
+            )
+            subparser.add_argument(
+                "--metadata-root",
+                type=Path,
+                # Resolved here, at the CLI/run boundary — never at import.
+                default=Path.home() / "court-data" / "imports",
+                help=(
+                    "Where hash-keyed import metadata records are written "
+                    "(created if needed); must be outside any git working "
+                    "tree. Default: ~/court-data/imports/."
+                ),
+            )
         if name == "extract-text":
             subparser.add_argument(
                 "path",
@@ -125,6 +145,8 @@ def main(argv: list[str] | None = None) -> int:
             extractor_names=args.extractors,
             dump_text=args.dump_text,
         )
+    if args.command == "import-manual":
+        return run_manual_import(args.input_dir, args.metadata_root)
     if args.command == "extract-text":
         return run_extraction(
             args.path,

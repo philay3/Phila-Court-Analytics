@@ -14,7 +14,12 @@ from pathlib import Path
 
 import pytest
 
-MODULES = ["pipeline.helpers", "pipeline.identity", "pipeline.extraction"]
+MODULES = [
+    "pipeline.helpers",
+    "pipeline.identity",
+    "pipeline.extraction",
+    "pipeline.manual_import",
+]
 
 
 @pytest.mark.parametrize("module_name", MODULES)
