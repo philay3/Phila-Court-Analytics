@@ -14,18 +14,20 @@ from pipeline.evaluation.harness import run_evaluation
 from pipeline.extraction import DEFAULT_LOW_TEXT_THRESHOLD, run_extraction
 from pipeline.logging_utils import configure_logging
 from pipeline.manual_import import run_manual_import
+from pipeline.seam_check import run_seam_check, running_in_ci
 
 logger = logging.getLogger("pipeline.cli")
 
 SUBCOMMANDS = (
     ("import-manual", "Import manually collected docket PDFs."),
     ("extract-text", "Extract text from imported docket PDFs."),
+    ("seam-check", "Compare production extraction against Capstone reference text."),
     ("evaluate-extractors", "Compare candidate PDF text extractors."),
     ("run-fixtures", "Run the pipeline against local fixture PDFs."),
 )
 
 IMPLEMENTED_COMMANDS = frozenset(
-    {"evaluate-extractors", "extract-text", "import-manual"}
+    {"evaluate-extractors", "extract-text", "import-manual", "seam-check"}
 )
 
 PLACEHOLDER_COMMANDS = frozenset(
@@ -96,6 +98,37 @@ def build_parser() -> argparse.ArgumentParser:
                     f"{DEFAULT_LOW_TEXT_THRESHOLD}."
                 ),
             )
+        if name == "seam-check":
+            subparser.add_argument(
+                "--corpus-dir",
+                type=Path,
+                # Resolved here, at the CLI/run boundary — never at import.
+                default=Path.home() / "court-data" / "fixtures",
+                help=(
+                    "Directory of fixture PDFs to check (searched "
+                    "non-recursively). Default: ~/court-data/fixtures/."
+                ),
+            )
+            subparser.add_argument(
+                "--reference-dir",
+                type=Path,
+                default=Path.home() / "court-data" / "capstone-reference-text",
+                help=(
+                    "Directory of Capstone reference JSON files, one "
+                    "{stem}.json per PDF. Default: "
+                    "~/court-data/capstone-reference-text/."
+                ),
+            )
+            subparser.add_argument(
+                "--report-dir",
+                type=Path,
+                default=Path.home() / "court-data" / "seam-report",
+                help=(
+                    "Where the seam-check report artifacts are written "
+                    "(created if needed); must be outside any git working "
+                    "tree. Default: ~/court-data/seam-report/."
+                ),
+            )
         if name == "evaluate-extractors":
             subparser.add_argument(
                 "--fixtures-dir",
@@ -147,6 +180,15 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "import-manual":
         return run_manual_import(args.input_dir, args.metadata_root)
+    if args.command == "seam-check":
+        if running_in_ci():
+            logger.error(
+                "seam-check runs over local court data and must never run in "
+                "a CI environment; refusing",
+                extra={"command": args.command},
+            )
+            return 2
+        return run_seam_check(args.corpus_dir, args.reference_dir, args.report_dir)
     if args.command == "extract-text":
         return run_extraction(
             args.path,

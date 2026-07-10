@@ -1685,3 +1685,61 @@
   codes are import-stage-local; 18.1's unified warning/error vocabulary may
   absorb them. `python -m pipeline.cli` is a no-op (no `__main__` block); use
   the `pipeline` console script or `pipeline.cli:main`.
+
+## Task 17.1 — Extraction-Seam Equivalence Check
+
+- **Date:** 2026-07-10
+- **What was built:** A `seam-check` CLI command plus a `seam_check` comparator
+  module that proves the Task 16.2 production extraction reproduces Capstone's
+  pdfplumber reference text line-for-line. The comparator imports and calls the
+  *same* production function (`pipeline.extraction.extract`) — no
+  reimplementation. Per docket it runs the decision-4 order: (a) source-hash
+  gate (mismatch → `failed`/`hash_mismatch`, no diff), (b) page-count equality
+  (→ `divergent` with a `page_count` divergence), (c) per-page line-level exact
+  compare (`split("\n")`, no normalization). Outcome vocabulary: exactly one of
+  `equivalent` / `divergent` / `failed` / `missing_reference` per PDF, with
+  `failed` reasons `hash_mismatch` / `malformed_reference` / `extraction_failed`
+  / `exception`. Reference files are shape-validated (`source_file`, `sha256`,
+  `pdfplumber_version`, `pages`); malformed ones are loud per-docket failures,
+  not run-aborting. Both pdfplumber versions (ours from the installed package,
+  Capstone's from the reference files) are captured in the report header with a
+  `version_mismatch` flag. Two out-of-repo artifacts are written under
+  `--report-dir`: `seam-report.json` (machine-readable, includes differing line
+  content) and `seam-report.txt` (human summary, positions only). CI runs unit
+  tests only; a `seam-check` invocation in a CI environment refuses loudly.
+- **Files touched:** `services/pipeline/src/pipeline/seam_check.py` (new),
+  `services/pipeline/src/pipeline/cli.py` (subcommand wiring + CI guard),
+  `services/pipeline/tests/test_seam_check.py` (new, 14 tests),
+  `services/pipeline/tests/test_import_side_effects.py` (added
+  `pipeline.seam_check` to the fresh-import guard). No dependency changes; no
+  `pyproject.toml`/`uv.lock` edit.
+- **Privacy decision (approved amendment to task decision 7):** the spec's
+  "docket stems allowed in console/log" wording was a defect — docket numbers
+  are defendant-identifying. Console/logs carry only counts, statuses,
+  hash-prefix ids, and page/line numbers (matching the `extraction.py` /
+  `harness.py` precedent). Docket stems and divergence content live only in the
+  out-of-repo report artifacts; `seam-report.txt` keeps stems (out-of-repo) with
+  hash-prefix ids alongside for cross-referencing logs. Asserted by a test that
+  a synthetic sentinel *and* the docket stem never reach stdout/stderr, while the
+  sentinel does reach `seam-report.json` (and not `seam-report.txt`).
+- **CI guard placement:** the guard lives in the CLI handler (the actual corpus
+  run), not in `run_seam_check`, so unit tests that call `run_seam_check`
+  directly on synthetic tmp dirs still pass under CI (`CI=true`). Detects `CI`
+  or `GITHUB_ACTIONS`, read at the run boundary (never at import). A dedicated
+  test drives `cli.main` with `CI=true` and asserts exit 2 with nothing written.
+- **Deviations from plan:** none. CP/MC classification reuses the canonical
+  `DOCKET_NUMBER_RE` from `manual_import` (single source of truth); non-matching
+  stems bucket as `unknown`. Exit code is 0 on any completed run regardless of
+  divergences (decision 9 — the tool reports, does not decide).
+- **Verification:** all three pipeline gates green — `ruff check src tests`
+  clean, `ruff format --check .` clean, `pytest -q` 100 passed (14 new). No real
+  docket content, PDFs, or reference text in the repo; tests use synthetic
+  pymupdf PDFs and hand-built reference JSON in `tmp_path` only.
+- **Notes for next task (17.2 parser port):** the comparator's exit is a
+  recorded outcome, not a decision — triage of any divergence class (accept /
+  re-pin pdfplumber / adjust) is human work and, if the pin changes, lands in
+  `uv` deps. The reference dir may contain a `_failures.txt` written by the
+  reference-dump script; the per-PDF `{stem}.json` lookup never touches it, so
+  its presence is harmless. If a corpus run reports zero divergences, the
+  extraction seam is proven stable and 17.2 can port parser heuristics against
+  16.2 output with confidence.
