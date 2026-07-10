@@ -1750,3 +1750,125 @@
   re-pin, no adjustment. The extraction seam is proven equivalent over the full
   working corpus; 17.3 divergences, if any, are attributable to parser logic
   only. Report artifacts at `~/court-data/seam-report/` (out-of-repo).
+
+## Task 17.2 — Faithful Parser Port (`parse_docket_text` + `parse_docket`)
+
+- **Date:** 2026-07-10
+- **What was built:** A behavior-preserving port of Capstone's
+  `src/parse/docket_parser.py` (626 LOC) into the pipeline package. The pure
+  parsing surface — `parse_docket_text`, plus `is_statute_token`,
+  `match_association_reason`, `parse_related_cases`, `detect_court_type`, and
+  the module constants — lives in `pipeline.docket_parser` (stdlib only, no
+  pdfplumber anywhere in its module path, per acceptance criterion 1). The
+  PDF-opening wrapper `parse_docket` lives in `pipeline.docket_parser_pdf`.
+  Every quirk ported UNCHANGED (defect inventory below). The parser imports the
+  16.1 ported `pipeline.helpers` (GRADES, ParseError, parse_date, to_days) and
+  `pipeline.identity` (hash_defendant, assert_no_leak,
+  assert_related_cases_clean); it re-declares none of them.
+- **Files touched:**
+  - `services/pipeline/src/pipeline/docket_parser.py` (new, pure stdlib) —
+    `parse_docket_text` + pure helpers + `parse_docket_checked` boundary.
+  - `services/pipeline/src/pipeline/docket_parser_pdf.py` (new) — `parse_docket`
+    with Capstone's plain pdfplumber loop.
+  - `services/pipeline/tests/test_docket_parser.py` (new) — 8 ported tests + 3
+    added (2 boundary, 1 ParseError-content).
+  - `services/pipeline/tests/test_import_side_effects.py` — added
+    `pipeline.docket_parser` and `pipeline.docket_parser_pdf` to the guard.
+  - No dependency changes; no `pyproject.toml` / `uv.lock` edit.
+- **Approved design decisions (from the plan):**
+  - **Salt threading.** Capstone's `hash_defendant(name, birth_year)` read
+    `DEFENDANT_HASH_SALT` from `config.py` at import; the 16.1 port severed that
+    and made `salt` a required keyword-only parameter with no env read. So the
+    port threads a caller-supplied keyword-only `salt` through both entry points
+    (`parse_docket_text(docket_number, pages_text, *, salt)` and
+    `parse_docket(pdf_path, docket_number, *, salt)`) straight to
+    `hash_defendant`. The positional signature in criterion 1 is preserved. The
+    parser does NO salt validation of its own — `hash_defendant`'s own
+    required-salt check fires instead.
+  - **`docket_number` is an explicit parameter** on `parse_docket`, never
+    derived from `pdf_path.stem` (task decision 4). Filename provenance is the
+    import stage's business.
+  - **Module split.** `parse_docket` sits in its own module so
+    `docket_parser.py` stays pdfplumber-free. `parse_docket` uses Capstone's
+    plain `pdfplumber.open` → per-page `extract_text() or ""` loop and is
+    deliberately NOT routed through `pipeline.extraction`: the 16.2 stage
+    carries threshold/status logic Capstone never had, so fidelity means
+    porting Capstone's own loop even though 17.1 proved the extraction seams
+    equivalent. Both new modules are in the fresh-import side-effect guard.
+  - **Sentinel boundary.** Capstone wires it in `scripts/parse_fixtures.py`
+    (lines 26–29: `parse_docket` → `assert_no_leak` → `assert_related_cases_clean`
+    → write), a script bound to config/db and outside this task's allowed files.
+    Ported as `parse_docket_checked` in `docket_parser.py`: the same three
+    calls minus IO. The assertions stay OUT of `parse_docket_text` so parse
+    behavior is unchanged; `parse_docket_checked` is the seam a writer (17.3
+    comparator, later loader) calls pre-persist.
+- **Defect inventory — ported UNCHANGED, flagged for Phase 18 (line refs are
+  in `pipeline/docket_parser.py`):**
+  - Disposition truncation via offense/statute/grade prefix-strip
+    (`parse_docket_text`, the `charge_match` block) → 18.2.
+  - min-days filled from max/flat value with NO annotation (`save_current_sentence`,
+    the `min_days is None` branches) → 18.3.
+  - Judge capture accepts any name-shaped span with zero judge validation
+    (the `expecting_judge_line` block) → 18.2 (junk-judge guard) / Sprint 5.
+  - Held / non-terminal events → null disposition dates, no event-date capture
+    → 18.3.
+  - **KeyError crash** on one unsupported disposition layout: `disposition_raw`
+    is guarded by `if seq in parsed_charges`, but the sentence-type branch does
+    `charge = parsed_charges[current_charge_seq]` unconditionally, so a dispo
+    section referencing an uncaptured charge sequence crashes. Ported as-is (task
+    decision 8); per-docket exception capture is the 17.3 comparator's job.
+  - `"Unknown Statute"` void-placeholder drop and leading-`IC` marker drop:
+    preserved verbatim.
+- **NOTE A — deliberate test duplication:** `test_privacy_guard_rejects_extra_field`
+  and `test_privacy_guard_passes_clean_record` are byte-identical to two tests
+  16.1 already ported into `test_identity.py`. Re-ported here per the task note
+  because at parser level they belong to the parser's ported suite. A future
+  cleanup must NOT "deduplicate" by deleting the `test_identity.py` copies (those
+  assert the guard as a standalone identity unit). The through-the-parse-path
+  exercise of the guard is the two new `parse_docket_checked` tests: a clean MC
+  sheet passes; the rich MC sheet raises because its captured judge
+  ("Example, Judge A.") shares the defendant surname, putting a sentinel into a
+  record VALUE — a collision Capstone's `assert_no_leak` treats as a hard stop.
+- **Capstone tests ported (8, all from `tests/test_mc_parser.py`, the sole
+  parser test file):** `test_record_key_set_is_fixed_allowlist`,
+  `test_court_type_detection_both_prefixes`,
+  `test_mc_record_court_type_and_dc_number`,
+  `test_cp_record_court_type_and_dc_number`, `test_related_cases_drops_caption`,
+  `test_related_cases_parser_ignores_header_and_free_text`,
+  `test_privacy_guard_rejects_extra_field`, `test_privacy_guard_passes_clean_record`.
+  Adaptations: `src.*` imports → `pipeline.*`; `parse_docket_text(...)` calls
+  gain `salt=TEST_SALT`; fixtures copied verbatim (already fictional). Tests
+  deemed inapplicable: `test_helpers.py` (helpers/identity, ported in 16.1),
+  `test_load_helpers.py` / `test_mc_loader.py` (DB loader, Sprint 5),
+  `test_abort_guard.py` / `test_windows.py` (acquire stage, not this phase).
+- **Lint adaptations (behavior-neutral, required by criterion 10):** B904 on the
+  read-failure raise handled with `from exc` (matches the repo convention in
+  `seam_check.py`); the two Capstone-verbatim dead assignments
+  (`offense_date`, `otn_val`) and the unused `enumerate` index kept in place and
+  suppressed with `# noqa: F841` / `# noqa: B007` (matches the `# noqa: BLE001`
+  precedent in `extraction.py` / `seam_check.py`) rather than deleted, to keep
+  the port byte-faithful. Two long lines wrapped and imports reordered by ruff;
+  no tokens changed.
+- **Couplings / surprises during the port:** the only real coupling was the
+  severed-salt signature (above) — no other unported Capstone surface was
+  reachable. `SKIP_SECTIONS` is ported as a constant but, as in Capstone, is
+  never referenced in `parse_docket_text` (the section loop uses the `HEADERS`
+  membership test directly); kept for fidelity and Phase-18 reference.
+- **Deviations from plan:** none.
+- **Verification (all three pipeline CI gates green):**
+  - `.venv/bin/ruff check src tests` — All checks passed.
+  - `.venv/bin/ruff format --check .` — 24 files already formatted.
+  - `.venv/bin/python -m pytest -q` — 113 passed (11 new in
+    `test_docket_parser.py`, 2 new guard params). No real docket text, PDFs, or
+    Capstone raw data in the repo; all fixtures use fictional `Example` names and
+    placeholder dockets.
+- **Notes for next task (17.3 baseline equivalence):** diff the port's record
+  against the regenerated Capstone baseline field-by-field, excluding
+  `parsed_at` and `parser_version` (both are constant/timestamp, not parse
+  output). `defendant_hash` IS compared, so 17.3 must supply the SAME salt
+  Capstone used to regenerate the baseline. Per-docket exception capture belongs
+  to the comparator: the one KeyError-crashing quarantined docket should crash
+  identically and be recorded as a per-docket failure, not guarded. Feed the
+  comparator 16.2 extraction output through `parse_docket_text` (seam proven
+  equivalent in 17.1); use `parse_docket_checked` where the privacy assertions
+  should gate a write.

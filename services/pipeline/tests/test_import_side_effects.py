@@ -20,6 +20,8 @@ MODULES = [
     "pipeline.extraction",
     "pipeline.manual_import",
     "pipeline.seam_check",
+    "pipeline.docket_parser",
+    "pipeline.docket_parser_pdf",
 ]
 
 
