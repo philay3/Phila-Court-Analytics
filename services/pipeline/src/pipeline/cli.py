@@ -6,9 +6,11 @@ placeholders arriving in later tasks.
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
+from pipeline.equivalence_check import SALT_ENV_VAR, run_equivalence_check
 from pipeline.evaluation.extractors import EXTRACTORS
 from pipeline.evaluation.harness import run_evaluation
 from pipeline.extraction import DEFAULT_LOW_TEXT_THRESHOLD, run_extraction
@@ -22,12 +24,22 @@ SUBCOMMANDS = (
     ("import-manual", "Import manually collected docket PDFs."),
     ("extract-text", "Extract text from imported docket PDFs."),
     ("seam-check", "Compare production extraction against Capstone reference text."),
+    (
+        "equivalence-check",
+        "Diff ported extraction+parse output against the Capstone baseline.",
+    ),
     ("evaluate-extractors", "Compare candidate PDF text extractors."),
     ("run-fixtures", "Run the pipeline against local fixture PDFs."),
 )
 
 IMPLEMENTED_COMMANDS = frozenset(
-    {"evaluate-extractors", "extract-text", "import-manual", "seam-check"}
+    {
+        "evaluate-extractors",
+        "extract-text",
+        "import-manual",
+        "seam-check",
+        "equivalence-check",
+    }
 )
 
 PLACEHOLDER_COMMANDS = frozenset(
@@ -129,6 +141,59 @@ def build_parser() -> argparse.ArgumentParser:
                     "tree. Default: ~/court-data/seam-report/."
                 ),
             )
+        if name == "equivalence-check":
+            subparser.add_argument(
+                "--corpus-dir",
+                type=Path,
+                # Resolved here, at the CLI/run boundary — never at import.
+                default=Path.home() / "court-data" / "fixtures",
+                help=(
+                    "Directory of fixture PDFs to compare (searched "
+                    "non-recursively). Default: ~/court-data/fixtures/."
+                ),
+            )
+            subparser.add_argument(
+                "--baseline-dir",
+                type=Path,
+                default=Path.home() / "court-data" / "capstone-baseline",
+                help=(
+                    "Directory of Capstone baseline interim JSON, indexed by "
+                    "each record's docket_number. Default: "
+                    "~/court-data/capstone-baseline/."
+                ),
+            )
+            subparser.add_argument(
+                "--output-dir",
+                type=Path,
+                default=Path.home() / "court-data" / "equivalence",
+                help=(
+                    "Where the equivalence report artifacts are written "
+                    "(created if needed); must be outside any git working "
+                    "tree. Default: ~/court-data/equivalence/."
+                ),
+            )
+            subparser.add_argument(
+                "--exclude-field",
+                action="append",
+                default=[],
+                dest="exclude_fields",
+                metavar="FIELD_PATH",
+                help=(
+                    "Additional field path to exclude from the diff (e.g. "
+                    "'case.otn'); repeatable. parsed_at and parser_version are "
+                    "always excluded."
+                ),
+            )
+            subparser.add_argument(
+                "--salt-parity-confirmed",
+                action="store_true",
+                help=(
+                    "Compare case.defendant_hash. Pass ONLY when the baseline "
+                    "was regenerated with the SAME salt as this run "
+                    "(human-verified). Omitted (default): the hash field is "
+                    "excluded and every artifact says so."
+                ),
+            )
         if name == "evaluate-extractors":
             subparser.add_argument(
                 "--fixtures-dir",
@@ -189,6 +254,31 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         return run_seam_check(args.corpus_dir, args.reference_dir, args.report_dir)
+    if args.command == "equivalence-check":
+        if running_in_ci():
+            logger.error(
+                "equivalence-check runs over local court data and must never "
+                "run in a CI environment; refusing",
+                extra={"command": args.command},
+            )
+            return 2
+        # Salt read at the run boundary (never at import); value never logged.
+        salt = os.environ.get(SALT_ENV_VAR, "")
+        if not salt.strip():
+            logger.error(
+                "DEFENDANT_HASH_SALT is required to run the parser; set it in "
+                "the environment (its value is never printed or written)",
+                extra={"command": args.command},
+            )
+            return 2
+        return run_equivalence_check(
+            args.corpus_dir,
+            args.baseline_dir,
+            args.output_dir,
+            salt=salt,
+            salt_parity_confirmed=args.salt_parity_confirmed,
+            extra_exclusions=args.exclude_fields,
+        )
     if args.command == "extract-text":
         return run_extraction(
             args.path,
