@@ -24,6 +24,7 @@ interface ResultNotFoundViewProps {
 export function ResultNotFoundView({ message }: ResultNotFoundViewProps) {
   return (
     <div className="space-y-4">
+      <h1>{CHARGE_RESULT_COPY.notFoundHeading}</h1>
       <p className="text-muted">{message}</p>
       <Link
         href="/"

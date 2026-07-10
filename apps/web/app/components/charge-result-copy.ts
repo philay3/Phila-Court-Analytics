@@ -38,8 +38,18 @@ export const CHARGE_RESULT_COPY = {
   loadingMessage: 'Loading historical results…',
 
   // not-found.tsx chrome. The message itself is the imported
-  // CHARGE_NOT_FOUND_MESSAGE; this is only the link back to search.
+  // CHARGE_NOT_FOUND_MESSAGE; this is the page heading (task 15.1 a11y pass —
+  // every terminal state carries an h1 for heading navigation) and the link
+  // back to search.
+  notFoundHeading: 'Result not found',
   notFoundHomeLinkText: 'Return to search',
+
+  // Heading for the charge-result-unavailable state on the JUDGE route (task
+  // 15.1 walkthrough Finding 1). The judge endpoint returns this case as a 404
+  // error envelope carrying only the pinned CHARGE_RESULT_UNAVAILABLE_MESSAGE —
+  // no charge identity — so this generic heading stands in for the charge name
+  // the charge-only route's unavailable view shows as its h1.
+  chargeUnavailableHeading: 'Results not available',
 
   // error.tsx generic, internal-detail-free copy (pinned decision 2).
   errorHeading: 'Something went wrong',

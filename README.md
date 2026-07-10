@@ -29,6 +29,18 @@ pnpm typecheck
 pnpm test
 ```
 
+### Environment files
+
+Each app documents its own environment in a committed `.env.example`. For local
+development the defaults are chosen so a fresh clone runs without any `.env`:
+
+- Database / Docker Compose: see the root [`.env.example`](.env.example) — copy
+  to `.env` (`cp .env.example .env`) for the local Postgres credentials.
+- Web app (`apps/web`): `API_BASE_URL` is **optional** and defaults to
+  `http://localhost:3001`; copy `apps/web/.env.example` to `apps/web/.env` only
+  to point the web app at an API on a different host/port. See
+  [apps/web/README.md](apps/web/README.md).
+
 ## Workspace layout
 
 | Path                 | Purpose                                          |

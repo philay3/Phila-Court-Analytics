@@ -99,6 +99,15 @@ describe('resolveJudgeResultState', () => {
     expect(resolveJudgeResultState(result)).toEqual({ kind: 'not-found', reason: 'judge' });
   });
 
+  it('maps a CHARGE_RESULT_UNAVAILABLE 404 api_error to the charge-unavailable state', () => {
+    // The judge endpoint delivers "charge resolves but has no publishable
+    // aggregate" as a 404 error envelope (not a 200 arm). Task 15.1 walkthrough
+    // Finding 1: this must render a designed friendly state, not the generic
+    // error boundary.
+    const result = apiError(PUBLIC_ERROR_CODES.CHARGE_RESULT_UNAVAILABLE, 404);
+    expect(resolveJudgeResultState(result)).toEqual({ kind: 'charge-unavailable' });
+  });
+
   it('maps any other api_error code to the generic error state', () => {
     expect(resolveJudgeResultState(apiError(PUBLIC_ERROR_CODES.INTERNAL_ERROR, 500))).toEqual({
       kind: 'error',
