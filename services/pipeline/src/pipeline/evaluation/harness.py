@@ -21,6 +21,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from pipeline.evaluation.extractors import EXTRACTORS
+from pipeline.paths import inside_git_worktree
 
 logger = logging.getLogger("pipeline.evaluation")
 
@@ -49,18 +50,6 @@ _LIBRARY_LOGGERS = ("pypdf", "pdfminer", "pdfplumber", "pymupdf", "fitz")
 def _silence_library_loggers() -> None:
     for name in _LIBRARY_LOGGERS:
         logging.getLogger(name).propagate = False
-
-
-def inside_git_worktree(path: Path) -> bool:
-    """True if ``path`` or any ancestor contains a ``.git`` entry.
-
-    ``.git`` may be a plain file rather than a directory (linked worktrees,
-    submodules), so this checks for any filesystem entry, not just a dir.
-    """
-    resolved = path.resolve()
-    return any(
-        (candidate / ".git").exists() for candidate in (resolved, *resolved.parents)
-    )
 
 
 def _sanitize_error(exc: BaseException, path: Path) -> dict[str, str]:
