@@ -1,10 +1,18 @@
-"""Faithful port of Capstone's ``src/parse/docket_parser.py`` (Task 17.2).
+"""Docket parser — ported from Capstone (17.2), hardened in 18.2.
 
-This is a behavior-preserving PORT, not a rewrite or a hardening pass. Known
-defects (disposition truncation, un-annotated min-days fill, unvalidated judge
-capture, the KeyError crash on one unsupported disposition layout) are carried
-UNCHANGED here; each is a named Phase 18 deliverable. See tasks/worklog.md for
-the defect inventory with line references.
+This began as a behavior-preserving PORT (Task 17.2). Task 18.2 lands the first
+targeted hardening changes on top of that port: a junk-judge guard (Item 1), a
+disposition line-wrap capture fix (Item 2), and an amended/downgraded/replaced
+charge warning signal (Item 3). Output VALUES now deliberately diverge from the
+Capstone baseline for those three cases; the record SCHEMA/shape is unchanged
+(values-diverge, schema-unchanged). Remaining known defects (un-annotated
+min-days fill, the KeyError crash on one unsupported disposition layout) are
+still carried unchanged; each is a named Phase 18 deliverable. See
+tasks/worklog.md for the defect inventory with line references.
+
+The three hardening items emit structural-only warnings (18.1 vocabulary, no new
+codes) surfaced as the third element of ``parse_docket_text``'s return tuple;
+they NEVER carry docket text.
 
 Pure stdlib only: no pdfplumber import anywhere in this module's path. The
 PDF-opening wrapper ``parse_docket`` lives in ``docket_parser_pdf``. The
@@ -23,6 +31,11 @@ from pipeline.identity import (
     assert_no_leak,
     assert_related_cases_clean,
     hash_defendant,
+)
+from pipeline.warning_codes import (
+    SUSPECT_JUDGE_LINE,
+    SUSPECTED_AMENDED_CHARGE,
+    make_warning,
 )
 
 HEADERS = [
@@ -66,6 +79,76 @@ DISPO_SKIP_HEADERS = {
     "Sentence/Diversion Program Type Incarceration/Diversionary Period Start Date",
     "Sentence Conditions",
 }
+
+
+# --- Item 1: junk judge guard (Task 18.2) -----------------------------------
+# A judge slot sometimes captures a sentence fragment instead of a name (the
+# Capstone artifact). This guard rejects captures matching sentence-component
+# patterns. It performs NO judge-identity or name-shape validation ("is this
+# value actually a judge" is Sprint 5 normalization). Scope is settled and must
+# not expand: the sentence-component keywords (Confinement / Probation / IPP),
+# the Min/Max-of slot, duration expressions (number + day/month/year unit), and
+# currency amounts. ARD / No Further Penalty / Fines and Costs are deliberately
+# excluded because "Ard" is a name-shaped surname.
+_JUNK_JUDGE_PATTERNS = (
+    re.compile(r"\b(?:Confinement|Probation|IPP)\b", re.IGNORECASE),
+    re.compile(r"\b(?:Min|Max)\s+of\b", re.IGNORECASE),
+    re.compile(
+        r"\b\d+(?:\.\d+)?\s*(?:½|1/2)?\s*(?:years?|months?|days?)\b", re.IGNORECASE
+    ),
+    re.compile(r"\$|\b\d[\d,]*\.\d{2}\b"),
+)
+
+
+def _is_junk_judge(value: str) -> bool:
+    """True if a judge-slot capture matches a sentence-component pattern.
+
+    Sentence-component keyword, Min/Max-of slot, duration expression, or currency
+    amount => reject. No name-shape validation (Sprint 5). Empty or name-shaped
+    values (including comma-formatted and initialed forms) return False and are
+    captured unchanged.
+    """
+    return any(pattern.search(value) for pattern in _JUNK_JUDGE_PATTERNS)
+
+
+# --- Item 2: disposition line-wrap continuation (Task 18.2) ------------------
+# A disposition value that wraps to a second physical line (e.g. "Transferred to
+# Another Jurisdiction") leaves its tail on the next line, which the parser
+# otherwise drops. A pure-prose tail — letters and spaces only, at least one
+# letter — is treated as a wrap of the disposition. Digits, currency, and
+# punctuation are excluded so only disposition prose is appended; sentence-type
+# and judge/date lines are handled before this check is reached.
+_DISPOSITION_CONTINUATION_RE = re.compile(r"[A-Za-z][A-Za-z ]*")
+
+
+def _is_disposition_continuation(line_str: str) -> bool:
+    return _DISPOSITION_CONTINUATION_RE.fullmatch(line_str) is not None
+
+
+# --- Item 3: amended/downgraded/replaced charge signal (Task 18.2) ----------
+# Warning-only: scans the already-parsed disposition_raw for renderings that
+# suggest a charge was amended, downgraded, or replaced. Zero parsed-field
+# change; charges are never merged, collapsed, or re-keyed. The pattern basis is
+# SPECULATIVE-CONSERVATIVE, not documented — it is not backed by a cited CPCMS
+# document nor by a corpus observation the agent can read. The patterns are
+# retained because the signal is warning-only, zero-field-change, and
+# false-positive-improbable inside a disposition_raw value; the completion
+# report records the real per-pattern corpus hit counts so the basis becomes
+# actual data. False negatives are acceptable; false positives on ordinary
+# dockets are a stop-and-report.
+_AMENDED_CHARGE_PATTERNS = (
+    re.compile(r"\bamended\b", re.IGNORECASE),
+    re.compile(r"\bdowngraded\b", re.IGNORECASE),
+    re.compile(r"\breplaced\s+by\b", re.IGNORECASE),
+    re.compile(r"\bcharge\s+changed\b", re.IGNORECASE),
+)
+
+
+def _matches_amended_charge(disposition_raw: str) -> bool:
+    """True if a parsed disposition_raw suggests an amended/downgraded/replaced
+    charge. Reads a parsed field only — never page text — so it cannot change any
+    parsed value."""
+    return any(pattern.search(disposition_raw) for pattern in _AMENDED_CHARGE_PATTERNS)
 
 
 def is_statute_token(tok: str) -> bool:
@@ -179,15 +262,22 @@ def detect_court_type(docket_number: str) -> str:
 
 def parse_docket_text(
     docket_number: str, pages_text: list[str], *, salt: str
-) -> tuple[dict, list[str]]:
-    """Parse already-extracted page text into the record and sentinels.
+) -> tuple[dict, list[str], list[dict[str, object]]]:
+    """Parse already-extracted page text into the record, sentinels, warnings.
 
     Split out from parse_docket so the section logic can be exercised on
     synthetic text fixtures without a PDF. ``salt`` is caller-supplied and
     threaded straight to ``hash_defendant``; this module never reads the
     environment and does no salt validation of its own (hash_defendant's own
     required-salt check fires instead).
+
+    The third return element is the list of structural-only parse-time warnings
+    (18.2 Items 1 and 3: SUSPECT_JUDGE_LINE, SUSPECTED_AMENDED_CHARGE). Each is
+    built via ``warning_codes.make_warning`` and carries only structural context
+    (section name, charge sequence) — never docket text.
     """
+    warnings: list[dict[str, object]] = []
+
     # Gather transient names from page headers (under "v.")
     v_names = set()
     raw_lines = []
@@ -331,7 +421,16 @@ def parse_docket_text(
                 r"Judge\s+Assigned:\s*(.*?)\s+Date\s+Filed:", line, re.IGNORECASE
             )
             if m_judge:
-                assigned_judge_raw = m_judge.group(1).strip()
+                candidate = m_judge.group(1).strip()
+                # Item 1 guard: a sentence fragment in the judge slot is rejected
+                # (field left null); an empty or name-shaped capture is kept as
+                # before. Only the judge field is affected.
+                if candidate and _is_junk_judge(candidate):
+                    warnings.append(
+                        make_warning(SUSPECT_JUDGE_LINE, section="CASE INFORMATION")
+                    )
+                else:
+                    assigned_judge_raw = candidate
             m_date = re.search(r"Date\s+Filed:\s*([\d/]+)", line, re.IGNORECASE)
             if m_date:
                 filed_date = parse_date(m_date.group(1))
@@ -569,9 +668,22 @@ def parse_docket_text(
                     judge_name = judge_match.group(1).strip()
                     disp_date = parse_date(judge_match.group(2))
                     if current_charge_seq in parsed_charges:
-                        parsed_charges[current_charge_seq]["disposition_judge_raw"] = (
-                            judge_name
-                        )
+                        # Item 1 guard: reject a sentence fragment in the judge
+                        # slot (leave disposition_judge_raw null). Only the judge
+                        # field is affected — the disposition_date on this line is
+                        # still recorded and control flow is unchanged.
+                        if _is_junk_judge(judge_name):
+                            warnings.append(
+                                make_warning(
+                                    SUSPECT_JUDGE_LINE,
+                                    section="DISPOSITION SENTENCING/PENALTIES",
+                                    charge_sequence=current_charge_seq,
+                                )
+                            )
+                        else:
+                            parsed_charges[current_charge_seq][
+                                "disposition_judge_raw"
+                            ] = judge_name
                         parsed_charges[current_charge_seq]["disposition_date"] = (
                             disp_date
                         )
@@ -593,6 +705,21 @@ def parse_docket_text(
                 if is_sent_type:
                     expecting_judge_line = False
                 else:
+                    # Item 2: a pure-prose line in the judge-expectation slot is
+                    # the wrapped tail of the disposition value (line-wrap in the
+                    # source PDF). Append it to disposition_raw so the full string
+                    # (e.g. "Transferred to Another Jurisdiction") is captured
+                    # where the sheet prints it. Still expecting the judge line,
+                    # so it falls through to the next iteration unchanged.
+                    charge = parsed_charges.get(current_charge_seq)
+                    if (
+                        charge is not None
+                        and charge["disposition_raw"] is not None
+                        and _is_disposition_continuation(line_str)
+                    ):
+                        charge["disposition_raw"] = (
+                            charge["disposition_raw"] + " " + line_str
+                        )
                     continue
 
         if current_charge_seq is not None and not expecting_judge_line:
@@ -656,6 +783,20 @@ def parse_docket_text(
     # Related cases (MC sheets only; CP sheets have no such section).
     related_cases = parse_related_cases(sections.get("RELATED CASES", []))
 
+    # Item 3: amended/downgraded/replaced charge signal. Warning-only; reads the
+    # already-parsed disposition_raw and changes no field. Emitted in charge
+    # sequence order for a stable warning list.
+    for charge in charges_list:
+        disposition_raw = charge["disposition_raw"]
+        if disposition_raw and _matches_amended_charge(disposition_raw):
+            warnings.append(
+                make_warning(
+                    SUSPECTED_AMENDED_CHARGE,
+                    section="CHARGES",
+                    charge_sequence=charge["sequence"],
+                )
+            )
+
     record = {
         "docket_number": docket_number,
         "parser_version": 1,
@@ -676,12 +817,12 @@ def parse_docket_text(
         "notes": [],
     }
 
-    return record, sentinels
+    return record, sentinels, warnings
 
 
 def parse_docket_checked(
     docket_number: str, pages_text: list[str], *, salt: str
-) -> tuple[dict, list[str]]:
+) -> tuple[dict, list[str], list[dict[str, object]]]:
     """Parse and run the privacy assertions at the Capstone post-parse boundary.
 
     Mirrors ``scripts/parse_fixtures.py`` lines 26-29 in Capstone (parse ->
@@ -692,7 +833,9 @@ def parse_docket_checked(
     identifying string reached a value or a related-cases entry carries an
     unexpected field.
     """
-    record, sentinels = parse_docket_text(docket_number, pages_text, salt=salt)
+    record, sentinels, warnings = parse_docket_text(
+        docket_number, pages_text, salt=salt
+    )
     assert_no_leak(sentinels, record)
     assert_related_cases_clean(record)
-    return record, sentinels
+    return record, sentinels, warnings
