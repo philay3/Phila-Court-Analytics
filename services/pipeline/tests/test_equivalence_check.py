@@ -131,12 +131,12 @@ class _Harness:
 
     def _fake_parse(
         self, docket_number: str, pages_text: list[str], *, salt: str
-    ) -> tuple[dict, list[str]]:
+    ) -> tuple[dict, list[str], list[dict[str, object]]]:
         assert salt == TEST_SALT
         outcome = self._parsed[docket_number]
         if isinstance(outcome, Exception):
             raise outcome
-        return outcome, []
+        return outcome, [], []
 
     def run(self, *, salt_parity_confirmed: bool = False, extra=None) -> int:
         return run_equivalence_check(

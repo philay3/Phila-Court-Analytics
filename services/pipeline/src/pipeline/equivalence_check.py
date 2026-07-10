@@ -310,7 +310,7 @@ def compare_one(
         )
 
     try:
-        record, _sentinels = parse_docket_checked(
+        record, _sentinels, _warnings = parse_docket_checked(
             docket_number, result.page_texts, salt=salt
         )
     except ParseError as exc:
