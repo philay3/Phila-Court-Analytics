@@ -707,3 +707,81 @@
   its mount point intact. Reuse the `ChargeSearchInput` combobox pattern
   (useId-based ids already prevent collision) for `JudgeSearchInput`. The
   jsdom Vitest project already covers `app/**/*.test.tsx`.
+
+## Task 12.3 — Judge Autocomplete + Submission Flows
+
+- **Date:** 2026-07-09
+- **What was built:** The disabled `#judge-search` placeholder is replaced by a
+  functional, accessible, clearly-optional WAI-ARIA judge combobox, and the
+  homepage form's submission routing is completed: charge-only →
+  `/charges/[chargeSlug]`, charge + judge → `/charges/[chargeSlug]/judge/[judgeSlug]`.
+  This closes Phase 12. The generic combobox mechanics were extracted from the
+  12.2 `ChargeSearchInput` into a shared hook that both inputs now consume.
+  - **`apps/web/app/components/combobox-search.ts`** (new): `useComboboxSearch<T>`,
+    a generic hook owning every piece of the shared mechanics — 250 ms debounce,
+    `SEARCH_Q_MIN_LENGTH` gate, monotonic sequence guard (incl. the
+    late-response-never-reopens-a-closed-list hardening: `commit`/`clear`/
+    sub-min-length all bump the sequence), ArrowDown/Up/Enter/Escape/Tab
+    handling, staged commit-on-select, edit-after-commit clears, second-Escape
+    clears, `useId`-based ARIA id wiring, and the derived
+    `showList/showLoading/showNoResult/showError` flags. It imports no copy
+    modules and contains no user-visible string literals (pin 2); error text
+    surfaces only via the `@pca/shared` constants it passes through to the
+    rendering components. Consumers keep their own JSX, so rendering differences
+    (charge shows `statuteCode`; judge does not) stay in the components.
+  - **`ChargeSearchInput.tsx`**: mechanics deleted and replaced by a single
+    `useComboboxSearch<ChargeSearchResult>` call; JSX unchanged. Rendered output
+    and behavior are byte-identical (its whole 12.2 test suite passes unchanged).
+  - **`JudgeSearchInput.tsx`** (new client component): mirrors the charge JSX
+    minus the statute line, consumes `useComboboxSearch<JudgeSearchResult>` and
+    the `searchJudges` typed client, renders display name + `matched: <alias>`
+    where served, and keeps the 12.1 secondary layout (`py-2.5`). Its own `useId`
+    base gives the second combobox collision-proof ids in the shared form.
+  - **`judge-search-copy.ts`** (new): `JUDGE_SEARCH_COPY` (loading, no-result,
+    list instructions, matched-alias prefix). The no-result copy points at
+    spelling / a different form of the name and reaffirms Philadelphia-wide
+    charge results remain available — it never asserts the judge does not exist.
+    Direct `scanPublicCopy` assertion test added; the app/-walking copy guard
+    covers the file automatically. Judge label/placeholder/help stay in
+    `HOME_COPY`; submit button/hint reuse `CHARGE_SEARCH_COPY`; API failures
+    reuse the `@pca/shared` error constants — no new form-level copy.
+  - **`SearchForm.tsx`**: mounts `JudgeSearchInput`, adds `committedJudge` state,
+    and implements the four-state submission matrix in the single `handleSubmit`
+    (no charge → hint, no nav; charge-only → charge route; charge + judge →
+    combined route; judge-only → hint, no nav, judge commit preserved). The judge
+    input never blocks or invalidates submission.
+- **Tests:** new `combobox-search.test.tsx` (hook harness: min-length gate,
+  debounce, sequence-guard staleness, ArrowDown+Enter commit, Escape
+  close/clear), `JudgeSearchInput.test.tsx` (11: optional/non-disabled, min-len
+  gate, loading, alias render, keyboard select, Escape close/clear,
+  edit-after-commit clears, no-result, API error + transport failure via shared
+  constants, stale-response guard), and a new `SearchForm` "judge submission
+  matrix" describe (combined route; judge-only preserved then combined; pin-1
+  edit-after-commit clears judge → later charge-only submit routes charge-only).
+- **How to verify:** `pnpm run build:packages` (dist prereq for `@pca/*`), then
+  from root `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, and
+  `pnpm --filter @pca/web test`. Combined submission lands on Next's 404 in dev
+  until 13.3 — expected; tests assert the `router.push` path, not a rendered page.
+- **Gates — all green:** lint 0; format:check clean; typecheck 0; web tests 70
+  (node + jsdom projects); shared/taxonomy suites untouched. No api/db/shared/
+  taxonomy files were touched.
+- **Deviations from plan:** one, approved at review. Mounting the judge combobox
+  puts a second `role="combobox"` in the form, so the pre-existing charge-path
+  `SearchForm` tests' bare `screen.getByRole('combobox')` became ambiguous
+  ("Found multiple elements"). Per the pinned byte-identical constraint I stopped
+  and reported; the human amended the constraint to its precise intent and
+  approved scoping the shared `combobox()` test helper by accessible name
+  (`{ name: HOME_COPY.chargeLabel }`) — the correct testing-library pattern,
+  which also locks the charge label association. The full pre-existing-test diff
+  for this task is therefore exactly: (a) that one helper line, and (b) deletion
+  of the now-obsolete "keeps the judge placeholder disabled and unchanged" test.
+  The three charge-path `it()` bodies and all of `ChargeSearchInput.test.tsx`
+  remain byte-identical. Also trivial: reworded a doc comment in
+  `judge-search-copy.ts` ("promises" not "guarantees") so the whole-file copy
+  guard, which scans comments too, stays green.
+- **Notes for next task (13.x):** `/charges/[chargeSlug]` (13.2) and
+  `/charges/[chargeSlug]/judge/[judgeSlug]` (13.3) still 404 in dev; the form
+  already routes to both. Any future combobox reuses `useComboboxSearch<T>` —
+  give the parent-owned committed selection, an `onCommitChange`, and a typed
+  `search` function returning `PublicApiResult<{ results: T[] }>`. When a form
+  hosts multiple comboboxes, query inputs by accessible name, not bare role.
