@@ -961,3 +961,67 @@
   A `validChargeOnlyResultUnavailable()` fixture is available in
   `@pca/shared` test-support. `CHARGE_NOT_FOUND` remains the 404 → `notFound()`
   path.
+
+## Task 13.2 — Charge-Only Result Page
+
+- **Date:** 2026-07-09
+- **What was built:** the public charge-only result route at
+  `/charges/[chargeSlug]` — a thin async server component that fetches via the
+  11.2 client and branches into four states, composing the 13.1 display
+  components, with a judge-filter entry point and route-level
+  loading/not-found/error states. Built against the 13.2a-corrected contract
+  (`ChargeOnlyResultResponse` is now a `resultType` union of `charge_only` and
+  the HTTP 200 `charge_only_unavailable` arm).
+- **Files created:**
+  - **Route** `apps/web/app/charges/[chargeSlug]/`:
+    - `page.tsx` — async server component; `React.cache`-memoized loader shared
+      between `generateMetadata` (dynamic `<title>` = charge display name on
+      both 200 arms) and the body; dispatches via the pure state helper:
+      success → `ChargeOnlyResultView`, unavailable → `ChargeUnavailableView`,
+      not-found → `notFound()`, error → generic `throw` (→ `error.tsx`).
+    - `loading.tsx`, `not-found.tsx` (imports `CHARGE_NOT_FOUND_MESSAGE` +
+      homepage link), `error.tsx` (`'use client'` boundary, generic copy, never
+      renders the thrown error).
+    - `charge-result-state.ts` + `.test.ts` — pure `resolveChargeResultState`
+      mapping the client's typed result to the four states (node-tested; page.tsx
+      itself is exempt from direct tests per pinned decision 1).
+  - **Components** `apps/web/app/components/`:
+    - `ChargeOnlyResultView.tsx` — presentational success render in the pinned
+      mobile DOM order (summary → responsible-use → thin-data callout →
+      outcome → sentencing → links → judge-filter), each block tagged
+      `data-testid="section-*"` for the order assertion; distributions wrapped
+      in `overflow-x-auto` so tables never scroll the page body.
+    - `ChargeUnavailableView.tsx` — in-page 200 unavailable arm: charge
+      identity + imported `CHARGE_RESULT_UNAVAILABLE_MESSAGE` + methodology and
+      definitions links from `data.links`.
+    - `SentencingUnavailableNotice.tsx` — in-payload sentencing-unavailable arm:
+      imported `CHARGE_SENTENCING_UNAVAILABLE_MESSAGE` + methodology link.
+    - `JudgeFilterEntry.tsx` (`'use client'`) — reuses `JudgeSearchInput`;
+      routes to `/charges/[chargeSlug]/judge/[judgeSlug]` on judge commit.
+    - `charge-result-copy.ts` + `.test.ts` — all new incidental page copy under
+      `scanPublicCopy`; pinned `@pca/shared` message literals imported, not
+      duplicated.
+  - **Tests:** `ChargeOnlyResultView.test.tsx` (full metadata, thin-data,
+    sentencing-unavailable, DOM-order), `ChargeUnavailableView.test.tsx`,
+    `JudgeFilterEntry.test.tsx` (routing target), and co-located state-file
+    tests `loading/not-found/error.test.tsx`.
+- **Pinned-decision conformance:** thin-data callout shows when EITHER
+  distribution is thin (`outcomes.thinData || (sentencing.available &&
+  sentencing.thinData)`) — ruled at review; per-distribution `ThinDataBadge`
+  still shows each precise state. Unavailable view renders BOTH methodology and
+  definitions links — ruled at review. Judge-filter placed after the links
+  block (decision 6 permits). Copy decision 5's "not guaranteed" reworded to
+  "not available for every charge and judge" (the `guarantee` stem is a
+  forbidden copy term).
+- **How to verify:** `pnpm run build:packages`, then in `apps/web`:
+  `pnpm typecheck`, `pnpm test`; from root `pnpm lint`, `pnpm exec prettier
+  --check`.
+- **Gates — all green:** typecheck 0; web tests 107 passed (26 files, +23 new);
+  eslint 0; prettier clean; copy guard green.
+- **Deviations from plan:** none. No 13.1 components or `@pca/shared`/API files
+  modified.
+- **Notes for next task (13.3):** the judge-specific route target
+  `/charges/[chargeSlug]/judge/[judgeSlug]` is now linked from both the homepage
+  submit and the charge page's `JudgeFilterEntry`; it does not yet exist. The
+  `resolveChargeResultState` pattern and the `section-*` DOM-order test approach
+  are reusable for the judge-specific page.
