@@ -1872,3 +1872,70 @@
   comparator 16.2 extraction output through `parse_docket_text` (seam proven
   equivalent in 17.1); use `parse_docket_checked` where the privacy assertions
   should gate a write.
+
+## Task 17.3 — Baseline Equivalence Run (Port-Correctness Gate)
+
+- **Date:** 2026-07-10
+- **What was built:** A corpus comparator (`equivalence-check`) that runs the
+  ported 16.2 extraction + 17.2 parser over the fixture corpus and diffs each
+  parsed record field-by-field against the regenerated Capstone baseline JSON.
+  New module `equivalence_check.py`: layout-robust baseline loader (`*.json`,
+  single-record-object OR list-of-records, indexed by each record's
+  `docket_number` field, never filename; loud `BaselineError` on a non-record
+  root or unreadable JSON; refuses to run on zero records; flags duplicate
+  docket numbers; records loaded/skipped counts in the header). Deep field diff
+  (`diff_records`) producing dotted/bracketed paths (`charges[0].sentences[0].min_days`)
+  with per-path divergence kinds (`value`, `key_missing_in_corpus/baseline`,
+  `list_length`); list-length mismatches record surplus/missing elements *with
+  values* in the JSON report (out-of-repo), paths+counts only in the TXT and
+  console. Per-docket pipeline: `extraction.extract` → `parse_docket_checked`
+  (parser + 16.1 privacy assertions), classifying each docket into exactly one
+  of `equivalent`/`divergent`/`parse_failed`/`extraction_failed`/`baseline_missing`,
+  plus `corpus_missing` for baseline records with no corpus PDF. Per-docket
+  exception capture: extraction returns a failed result, the parse is wrapped
+  (ParseError → `parse_error`; privacy-assertion RuntimeError → distinct
+  `privacy_assertion` reason so a sentinel block is distinguishable; anything
+  else → `unexpected_exception`), and an outer loop guard catches the rest — one
+  bad docket never aborts the run. Reconciliation is *asserted*, not just
+  reported: corpus statuses must sum to the corpus PDF count and matched +
+  `corpus_missing` must equal the unique baseline docket count; on failure the
+  run returns nonzero and `reconciled=false` in the header. Reports land under
+  `--output-dir` (default `~/court-data/equivalence/`, refused inside a git
+  worktree): machine-readable `equivalence-report.json` (per-docket statuses,
+  field-path divergences with values, exception details) and human-readable
+  `equivalence-report.txt` (per-court CP/MC totals, status breakdown, top
+  divergent field paths, active exclusion list, gate verdict). CLI wiring in
+  `cli.py`: `equivalence-check` subcommand (`--corpus-dir`, `--baseline-dir`,
+  `--output-dir`, repeatable `--exclude-field`, `--salt-parity-confirmed`),
+  reads `DEFENDANT_HASH_SALT` from the env at the run boundary (loud refusal if
+  unset; value never printed/written), refuses to run under CI.
+- **Salt parity mode:** default is parity-UNCONFIRMED → `case.defendant_hash`
+  (verified as the sole hash path in the 17.2 record contract) is added to the
+  exclusion set and the mode `hash_excluded_parity_unconfirmed` is stated in the
+  JSON header, the TXT summary, and the console. `--salt-parity-confirmed`
+  switches to `hash_compared` and drops the exclusion. The exclusion base is one
+  documented constant `EXCLUDED_FIELDS = {parsed_at, parser_version}`.
+- **Files touched:** `services/pipeline/src/pipeline/equivalence_check.py` (new),
+  `services/pipeline/src/pipeline/cli.py` (subcommand wiring + salt-from-env),
+  `services/pipeline/tests/test_equivalence_check.py` (new, 24 synthetic tests),
+  `tasks/worklog.md`.
+- **Deviations from plan:** none. Console/log privacy follows the 17.1
+  hash-prefix precedent (CLAUDE.md hard rule overrides the task's "docket IDs"
+  wording — docket numbers are defendant-identifying, so they stay in the
+  out-of-repo report; stdout carries counts/statuses/salt-mode only, logs carry
+  hash-prefix ids).
+- **Verification (all three pipeline CI gates green):**
+  - `.venv/bin/ruff check src tests` — All checks passed.
+  - `.venv/bin/ruff format --check .` — 26 files already formatted.
+  - `.venv/bin/python -m pytest -q` — 137 passed (24 new). Tests are synthetic
+    only: extraction and parse are monkeypatched, no real PDF/docket/baseline is
+    touched, all output goes to `tmp_path`.
+- **Notes for next task:** the actual gate RUN over the real 1,596-docket corpus
+  is a LOCAL human step (tier-2, never CI): with `DEFENDANT_HASH_SALT` set,
+  `pipeline equivalence-check` (defaults point at `~/court-data/fixtures/` and
+  `~/court-data/capstone-baseline/`, output to `~/court-data/equivalence/`). Pass
+  `--salt-parity-confirmed` ONLY after human-verifying the baseline was
+  regenerated with the same salt; otherwise the hash is excluded and the report
+  says so. The summary counts and PASS/REVIEW verdict from that run — never
+  docket content — are what closes the gate in the planning chat before Phase 18.
+  Any divergence found is triaged there, not fixed here.
