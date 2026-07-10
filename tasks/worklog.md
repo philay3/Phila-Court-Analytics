@@ -1106,3 +1106,66 @@
   per-row `Definition` links point at (`/definitions#...`) are still Phase 14
   pages; the judge page renders four sets of those anchors (judge + baseline ×
   outcome + sentencing). E2E coverage of the route is task 15.2.
+
+## Task 14.1 — Definitions Page (API-backed)
+
+- **Date:** 2026-07-09
+- **What was built:** Replaced the static `/definitions` placeholder with an
+  async server component that fetches `GET /api/v1/public/definitions` via the
+  11.2 typed client (server-side, absolute base URL — the standing 13.2/13.3
+  pattern) and renders every public outcome and sentencing category definition
+  in served (taxonomy) order, each with a stable per-category anchor id, plus
+  the taxonomy version near the footer. Loading and error states included.
+  - `apps/web/app/definitions/page.tsx` — rewritten: fetch + dispatch only.
+    `ok` → `<DefinitionsView>`; `!ok` → inline `<DefinitionsErrorState>` with a
+    per-arm `@pca/shared` message (no error.tsx boundary — approved, because
+    the client returns `ok:false` with a discriminated failure arm rather than
+    throwing, and the page must pick the correct message per arm). No internal
+    detail is ever surfaced.
+  - `DefinitionsView.tsx` — presentational; exports `DefinitionsView` (success)
+    and `DefinitionsErrorState` (message). Semantic h1 → h2 per section → h3 per
+    category; each h3 carries `id={definitionAnchorId(kind, entry.code)}` (ids
+    present in the server-rendered markup). Renders in served order — no sort.
+  - `definitions-copy.ts` (+ `.test.ts`) — all page framing copy as flat
+    constants under `scanPublicCopy`; category names/definitions come live from
+    the API, error body comes from `@pca/shared`.
+  - `definitions-failure.ts` (+ `.test.ts`) — pure `definitionsFailureMessage`:
+    `api_error` → `PUBLIC_ERROR_MESSAGES[code]`, `fetch_failed` →
+    `FETCH_FAILURE_MESSAGE`; never the API `message` or request id.
+  - `loading.tsx` — route-level neutral loading copy.
+  - `DefinitionsView.test.tsx` — categories + names + definitions, served order,
+    h1/h2/h3 hierarchy, anchor-id presence, taxonomy version, error render, and
+    AC 4 link-target resolution: the fragment from `definitionAnchor(kind, code)`
+    resolves to a live element on the page, one assertion per distribution type.
+- **Anchor scheme (task item 2):** the pinned convention, unchanged. Added
+  `definitionAnchorId(kind, code)` → `<kind>-<code>` to
+  `apps/web/app/lib/definition-anchor.ts` as the single source of the fragment
+  format; refactored `definitionAnchor` to compose it so link and target are
+  minted from one place. `definitionAnchor`'s output string is byte-identical —
+  the existing `DistributionSection` href test is the regression lock and stayed
+  green.
+- **13.1 component changes (task item 3):** NONE. The 13.1 links already emit
+  the exact target scheme via `definitionAnchor`; no `app/components/**` edits.
+- **Files touched:** `apps/web/app/definitions/page.tsx` (rewrite),
+  `apps/web/app/definitions/DefinitionsView.tsx` (new),
+  `apps/web/app/definitions/DefinitionsView.test.tsx` (new),
+  `apps/web/app/definitions/definitions-copy.ts` (new),
+  `apps/web/app/definitions/definitions-copy.test.ts` (new),
+  `apps/web/app/definitions/definitions-failure.ts` (new),
+  `apps/web/app/definitions/definitions-failure.test.ts` (new),
+  `apps/web/app/definitions/loading.tsx` (new),
+  `apps/web/app/lib/definition-anchor.ts` (add `definitionAnchorId`),
+  `apps/web/app/lib/definition-anchor.test.ts` (add cases).
+- **How to verify:** `pnpm run build:packages`, then from root `pnpm typecheck`,
+  `pnpm lint`, `pnpm format:check`, `pnpm test`.
+- **Gates — all green:** typecheck 0; web tests 143 passed (36 files); api 198;
+  eslint 0; prettier clean; copy guard + forbidden-field suites green.
+- **Deviations from plan:** none. No `@pca/shared`, API, `@pca/taxonomy`, or
+  13.1 component-contract changes. Copy-guard note: one source comment was
+  reworded to avoid the `predict` forbidden stem (the guard scans raw file text,
+  comments included).
+- **Notes for next task:** Methodology (14.2) and About (14.3) pages follow the
+  same server-fetch + presentational-view + per-arm-error-message shape; the
+  data-coverage/methodology clients already exist in `public-api-client.ts`.
+  E2E coverage of the definitions route (including real fragment navigation from
+  a result page on first load) is task 15.2.
