@@ -1438,3 +1438,42 @@
   `○ (Static)` in the `next build` summary but serve live content at runtime;
   if a future change makes them truly static, the E2E content assertions would
   catch a baked error state.
+
+## Task 15.2 (follow-up) — Content pages render dynamically (build-time prerender fix)
+
+- **Date:** 2026-07-10
+- **CI failure:** the CI `e2e` job failed — `/definitions`, `/methodology`, and
+  `/data-coverage` rendered their ERROR states. Root cause: these are async
+  server components that fetch the API, and with no route-segment override Next
+  statically prerendered them during `next build` (which runs before any API
+  exists in the CI job), baking the error state into the static HTML.
+- **Clean reproduction:** killed all servers, `rm -rf apps/web/.next`, ran
+  `next build` with the API down. Route table showed the three pages as `○`
+  (Static); the prerendered HTML (`.next/server/app/{definitions,methodology,
+  data-coverage}.html`) contained `<h1>… is unavailable</h1>` — confirmed baked
+  error states.
+- **F4 correction (supersedes the "resolved favorably" claim):** the original
+  15.2 F4 verification was a FALSE POSITIVE. A leftover API server from a prior
+  `pnpm test:e2e` run was still listening on :3001 during that build, so the
+  build-time prerender fetch SUCCEEDED and baked real content. Local `next build`
+  can also serve cached fetch data from `.next/cache`. **Any claim about
+  build-time behavior requires a clean build (`rm -rf apps/web/.next`) with all
+  servers stopped.** The CI `e2e` job is the authority on production-build
+  behavior precisely because it always builds clean.
+- **Fix (authorized):** added `export const dynamic = 'force-dynamic'` to
+  `apps/web/app/{definitions,methodology,data-coverage}/page.tsx`. Chose
+  force-dynamic over a no-store fetch because the pages were being statically
+  prerendered regardless, and force-dynamic unambiguously forces per-request
+  rendering. Rationale: the publication model separates deploys from data
+  publication; these pages carry live published-run metadata (lastRefreshed,
+  coverage dates) and must never be baked at build time. Updated the now-stale
+  "no route-segment dynamic/revalidate override" comments in the methodology and
+  data-coverage pages accordingly.
+- **Audit (route table after fix):** `/definitions`, `/methodology`,
+  `/data-coverage` now `ƒ` (Dynamic); `/charges/*` already dynamic via params.
+  Remaining static routes (`/`, `/about`, `/admin`, `/_not-found`) make NO
+  server-side API fetch (verified by grep), so static prerender is correct for
+  them. No static route prerenders an API fetch.
+- **Files touched:** `apps/web/app/definitions/page.tsx`,
+  `apps/web/app/methodology/page.tsx`, `apps/web/app/data-coverage/page.tsx`,
+  `tasks/worklog.md`.
