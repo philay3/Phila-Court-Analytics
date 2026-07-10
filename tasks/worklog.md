@@ -1743,3 +1743,10 @@
   its presence is harmless. If a corpus run reports zero divergences, the
   extraction seam is proven stable and 17.2 can port parser heuristics against
   16.2 output with confidence.
+- **17.1 corpus run result (human-executed, 2026-07-10):** full corpus seam
+  check over 1,596 fixtures (1,556 CP + 40 MC). Result: 1596 equivalent, 0
+  divergent, 0 failed, 0 missing_reference. pdfplumber 0.11.10 on both sides;
+  version_mismatch: False. Triage decision: zero divergences — accepted, no
+  re-pin, no adjustment. The extraction seam is proven equivalent over the full
+  working corpus; 17.3 divergences, if any, are attributable to parser logic
+  only. Report artifacts at `~/court-data/seam-report/` (out-of-repo).
