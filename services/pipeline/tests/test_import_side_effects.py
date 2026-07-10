@@ -19,6 +19,7 @@ MODULES = [
     "pipeline.identity",
     "pipeline.extraction",
     "pipeline.manual_import",
+    "pipeline.seam_check",
 ]
 
 
