@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import type { ChargeSearchResult } from '@pca/shared';
+import type { ChargeSearchResult, JudgeSearchResult } from '@pca/shared';
 import { HOME_COPY } from './home-copy.js';
 import { CHARGE_SEARCH_COPY } from './charge-search-copy.js';
 
@@ -34,7 +34,9 @@ async function settleDebounce(): Promise<void> {
 }
 
 function combobox(): HTMLInputElement {
-  return screen.getByRole('combobox') as HTMLInputElement;
+  // Two comboboxes share this form (charge + judge, task 12.3); scope the
+  // charge query by its label so the bare role query is not ambiguous.
+  return screen.getByRole('combobox', { name: HOME_COPY.chargeLabel }) as HTMLInputElement;
 }
 
 beforeEach(() => {
@@ -106,13 +108,86 @@ describe('SearchForm charge submission', () => {
     expect(push).not.toHaveBeenCalled();
     expect(screen.getByText(CHARGE_SEARCH_COPY.submitHint)).toBeInTheDocument();
   });
+});
 
-  it('keeps the judge placeholder disabled and unchanged', () => {
+describe('SearchForm judge submission matrix', () => {
+  const JUDGE: JudgeSearchResult = {
+    id: '33333333-3333-3333-3333-333333333333',
+    slug: 'judge-x',
+    displayName: 'Judge X',
+  };
+
+  /** Route charge-search to a charge result and judge-search to a judge result. */
+  function branchingFetch() {
+    return vi.fn((url: string) => {
+      const body = String(url).includes('/judges/search')
+        ? { results: [JUDGE] }
+        : { results: [ALPHA] };
+      return Promise.resolve(jsonResponse(body));
+    });
+  }
+
+  function judgeCombobox(): HTMLInputElement {
+    return screen.getByRole('combobox', { name: HOME_COPY.judgeLabel }) as HTMLInputElement;
+  }
+
+  async function commitCharge(): Promise<void> {
+    fireEvent.change(combobox(), { target: { value: 'alpha' } });
+    await settleDebounce();
+    fireEvent.click(screen.getByText(ALPHA.displayName));
+  }
+
+  async function commitJudge(): Promise<void> {
+    fireEvent.change(judgeCombobox(), { target: { value: 'judge' } });
+    await settleDebounce();
+    fireEvent.click(screen.getByText(JUDGE.displayName));
+  }
+
+  function submit(): void {
+    fireEvent.click(screen.getByRole('button', { name: CHARGE_SEARCH_COPY.submitButton }));
+  }
+
+  it('charge + judge committed routes to /charges/[chargeSlug]/judge/[judgeSlug]', async () => {
+    vi.stubGlobal('fetch', branchingFetch());
     render(<SearchForm />);
-    const judge = screen.getByLabelText(HOME_COPY.judgeLabel) as HTMLInputElement;
 
-    expect(judge).toBeDisabled();
-    expect(judge).toHaveAttribute('id', 'judge-search');
-    expect(judge).toHaveAttribute('placeholder', HOME_COPY.judgePlaceholder);
+    await commitCharge();
+    await commitJudge();
+    submit();
+
+    expect(push).toHaveBeenCalledWith(`/charges/${ALPHA.slug}/judge/${JUDGE.slug}`);
+  });
+
+  it('judge committed with no charge shows the hint, does not navigate, and preserves the judge commit', async () => {
+    vi.stubGlobal('fetch', branchingFetch());
+    render(<SearchForm />);
+
+    await commitJudge();
+    submit();
+
+    expect(push).not.toHaveBeenCalled();
+    expect(screen.getByText(CHARGE_SEARCH_COPY.submitHint)).toBeInTheDocument();
+    expect(judgeCombobox().value).toBe(JUDGE.displayName);
+
+    // The judge commit survived the hint path: committing a charge and
+    // submitting now routes to the combined path, not charge-only.
+    await commitCharge();
+    submit();
+    expect(push).toHaveBeenCalledWith(`/charges/${ALPHA.slug}/judge/${JUDGE.slug}`);
+  });
+
+  it('editing the judge after a commit clears it; a later charge-only submit routes charge-only', async () => {
+    vi.stubGlobal('fetch', branchingFetch());
+    render(<SearchForm />);
+
+    await commitJudge();
+    // Edit after commit clears the judge commit (shared combobox behavior).
+    fireEvent.change(judgeCombobox(), { target: { value: `${JUDGE.displayName} extra` } });
+
+    await commitCharge();
+    submit();
+
+    expect(push).toHaveBeenCalledWith(`/charges/${ALPHA.slug}`);
+    expect(push).not.toHaveBeenCalledWith(`/charges/${ALPHA.slug}/judge/${JUDGE.slug}`);
   });
 });
