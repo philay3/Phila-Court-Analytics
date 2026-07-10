@@ -1939,3 +1939,86 @@
   says so. The summary counts and PASS/REVIEW verdict from that run — never
   docket content — are what closes the gate in the planning chat before Phase 18.
   Any divergence found is triaged there, not fixed here.
+- 1,596/1,596 equivalent, CP 1,556 / MC 40, zero divergent/failed/missing, salt parity confirmed, hash compared, verdict PASS. 
+## Task 18.1 — Warning Framework + review_needed + Parser Output Envelope
+
+- **Date:** 2026-07-10
+- **What was built:** The 18.1 observability layer over the proven-equivalent
+  17.2 parser — a closed warning vocabulary, a derived `review_needed` boolean,
+  and a per-document envelope wrapping the UNCHANGED record — plus per-docket
+  failure capture and a `parse` CLI stage. Emission is observation-only; the
+  parsed record is not touched (criterion 5).
+  - **`warning_codes.py` (new, single source of truth):** the nine locked codes,
+    the `SEVERITY` map (code → `review`/`info`), `WARNING_CODES` closed set,
+    `make_warning(code, *, section, charge_sequence, page, field)` — the ONLY
+    constructor, accepting solely those four optional structural fields so a
+    text-carrying warning is unrepresentable by construction (decision 2), and
+    `derive_review_needed(codes)` = any code with `review` severity. Severity map
+    documented in the module docstring, including the MISSING_SENTENCE_DATE=info
+    rationale (undated sentence facts are mechanically excluded by the Sprint 7
+    date-range gate; review cannot recover a date the sheet never printed).
+  - **`envelope.py` (new):** `parse_document(...)` → envelope with exactly the
+    pinned fields (`source_sha256`, `parser_version`, `extraction_artifact`,
+    `record`, `warnings`, `review_needed`, `status`, `created_at`, `error`); no
+    numeric-confidence field anywhere. Embeds the parser's exact record object by
+    reference (proven by a monkeypatch identity test). `observe(record, status)`
+    derives the observation-only warnings from the record + extraction status
+    only — never page text. `run_parse(...)` is the CLI driver: reads 16.2
+    extraction artifacts, writes one `{source_sha256}.json` envelope per doc,
+    refuses an output dir inside a git worktree, one bad artifact never aborts
+    the run.
+  - **`cli.py`:** new `parse` subcommand (`--artifacts-dir` default
+    `~/court-data/extracted/`, `--output-dir` default `~/court-data/envelopes/`),
+    salt read from `DEFENDANT_HASH_SALT` at the run boundary (loud refusal if
+    unset; value never printed), refuses to run under CI — same convention as
+    seam-check / equivalence-check.
+- **NON_TERMINAL_CASE — path (a), record-derived (per reviewer preference).** The
+  ported MC path records a charge's disposition (`disposition_raw` /
+  `disposition_date` / `sentences`) ONLY inside an event its gating accepts as
+  terminal (Final Disposition, or an event name containing "ard"); a held /
+  "Not Final" event sets `in_valid_event=False` and writes nothing, and the
+  parser writes no "held" text anywhere. So "no terminal event present" is
+  faithfully visible in the record as: the record has charges and NONE exposes
+  any disposition or sentence. Detection reads only the parsed record — no page
+  text, no regex hoist, no parser change — so criterion 5 is trivially safe. The
+  corrected predicate holds: a docket with interim non-final events plus a
+  genuine final disposition has ≥1 disposed charge and does NOT flag (tested).
+- **Exception mapping (per approved FIX 1):** ALL parse-time exceptions
+  (ParseError, KeyError, anything) → `failed` envelope with
+  `error.code = UNSUPPORTED_FORMAT` and structural context (`exception_class`
+  only — no free-text message, no raw docket text). MISSING_CHARGE_SECTION is now
+  the third defined-but-unemitted code, alongside SUSPECT_JUDGE_LINE and
+  SUSPECTED_AMENDED_CHARGE; the closure test asserts the unemitted set is exactly
+  those three. (The quarantined KeyError specimen and a name/DOB ParseError both
+  verified to land as UNSUPPORTED_FORMAT failed envelopes.)
+- **Two-version design (decision 4 + 7):** the ENVELOPE carries
+  `parser_version = 2`; the wrapped record keeps its internal `parser_version = 1`
+  untouched. Documented in the envelope module docstring.
+- **Severity map:** implemented exactly as approved. review = LOW_TEXT_EXTRACTION,
+  MISSING_CHARGE_SECTION, UNSUPPORTED_FORMAT, MISSING_DISPOSITION_DATE,
+  SUSPECT_JUDGE_LINE, SUSPECTED_AMENDED_CHARGE; info = UNPARSEABLE_DURATION,
+  MISSING_SENTENCE_DATE, NON_TERMINAL_CASE.
+- **Files touched:** `services/pipeline/src/pipeline/warning_codes.py` (new),
+  `services/pipeline/src/pipeline/envelope.py` (new),
+  `services/pipeline/src/pipeline/cli.py` (subcommand wiring),
+  `services/pipeline/tests/test_warning_codes.py` (new),
+  `services/pipeline/tests/test_envelope.py` (new),
+  `services/pipeline/tests/test_cli.py` (parse CI/salt guard tests),
+  `tasks/worklog.md`. No `.env.example` change (salt already exists; output dir
+  is a flag). No apps/packages/db touched.
+- **Deviations from plan:** none beyond the two approved fixes (ParseError →
+  UNSUPPORTED_FORMAT, MISSING_CHARGE_SECTION unemitted; NON_TERMINAL_CASE path a).
+- **Verification (all three pipeline CI gates green):**
+  - `.venv/bin/ruff check src tests` — All checks passed.
+  - `.venv/bin/ruff format --check .` — 30 files already formatted.
+  - `.venv/bin/python -m pytest -q` — 172 passed (35 new: warning_codes 11,
+    envelope 22, cli 2). Synthetic fixtures only (fictional `Example` / placeholder
+    docket); no real PDF/docket/baseline touched; envelope artifacts written to
+    `tmp_path` in tests.
+- **Notes for next task:** the record-shape-neutrality guarantee is by test
+  (criterion 5); the actual 17.3 comparator RE-RUN over the real corpus to
+  reconfirm zero divergences is the standing LOCAL human step (Chops). 18.2 wires
+  the SUSPECT_JUDGE_LINE / SUSPECTED_AMENDED_CHARGE detectors and MISSING_CHARGE_SECTION;
+  each becomes a golden delta then. The `parse` stage consumes 16.2 extraction
+  artifacts (`~/court-data/extracted/`) and emits envelopes to
+  `~/court-data/envelopes/`.
