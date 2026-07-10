@@ -153,8 +153,13 @@ const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
  * into calendar parts and rebuilt with `Date.UTC`, then rendered by a
  * UTC-pinned formatter — the naive `new Date("2025-01-01")` UTC-midnight shift
  * never applies (locked decision 3).
+ *
+ * Exported for task 14.2: the data-coverage page renders lone date-only fields
+ * (`plannedDataStart`) that are not part of a `{ start, end }` range, so they
+ * need this single-value path directly. {@link formatDateRange} composes it for
+ * the two-bound case; neither caller reimplements the calendar math.
  */
-function formatDateOnly(dateOnly: string): string {
+export function formatDateOnly(dateOnly: string): string {
   const match = DATE_ONLY_PATTERN.exec(dateOnly);
   const [, yearPart, monthPart, dayPart] = match ?? [];
   if (yearPart === undefined || monthPart === undefined || dayPart === undefined) {
