@@ -1169,3 +1169,85 @@
   data-coverage/methodology clients already exist in `public-api-client.ts`.
   E2E coverage of the definitions route (including real fragment navigation from
   a result page on first load) is task 15.2.
+
+## Task 14.2 — Methodology + Data Coverage Pages (API-backed)
+
+- **Date:** 2026-07-09
+- **What was built:** Replaced the static placeholder copy on `/methodology`
+  and `/data-coverage` with API-backed pages, following the 14.1 definitions
+  shape exactly (thin async server component → presentational view + page-local
+  copy/failure modules, per-arm @pca/shared error message, route-level loading).
+  - **Methodology:** `page.tsx` (rewrite) fetches `getMethodology()`; on failure
+    renders `MethodologyErrorState` with `methodologyFailureMessage`. `MethodologyView`
+    iterates the shared `METHODOLOGY_SECTION_KEYS` in pinned presentation order,
+    rendering each section's `heading` (h2) and `body` (p) **verbatim as served** —
+    the only page-owned prose is the h1/error/loading chrome in `METHODOLOGY_COPY`.
+  - **Data coverage:** `page.tsx` (rewrite) fetches `getDataCoverage()`. Two
+    distinct not-available cases handled separately: transport/API failure →
+    inline `DataCoverageErrorState`; the endpoint's own HTTP-200 `available:false`
+    arm → a successful render (served `coverage.message` verbatim). `DataCoverageView`
+    always renders top-level `jurisdiction`/`courtScope`/`plannedDataStart` and the
+    `knownLimitations` list in BOTH arms (per approval: the seeded-data disclosure
+    stays visible when unavailable). Available arm additionally renders the
+    `dataStart–dataEnd` window, `lastRefreshed` (UTC suffix), `aggregateRunId` +
+    `taxonomyVersion` (public-safe run metadata), and the three counts.
+  - **Formatting:** all dates/counts route through the 11.4 `app/lib/formatters.ts`
+    exports; nothing inline.
+- **Section-labeling approach (methodology):** section headings come from the API
+  (`section.heading`), not from page copy. The view adds no per-section labels; it
+  only supplies the page h1. Order is the shared `METHODOLOGY_SECTION_KEYS`
+  constant, so a schema/key change is a compile-time break, not silent reorder.
+- **Named lib change (approved):** exported the previously-private `formatDateOnly`
+  from `apps/web/app/lib/formatters.ts` (added `export` + doc note only — no logic
+  change). Needed because `plannedDataStart` is a lone `YYYY-MM-DD` with no existing
+  single-date exported formatter; `formatDateRange` composes it for the two-bound
+  window. Added direct UTC-safe unit coverage in `formatters.test.ts` (long-form
+  render, Jan-1 no off-by-one, spoofed UTC+14 timezone, throw on malformed input).
+- **Required-fix compliance:**
+  - *Limitations order:* `DataCoverageView.test.tsx` collects the rendered
+    `<li>` text into an array (via `getByTestId('known-limitations')`) and asserts
+    deep equality with the fixture's `knownLimitations` — catches paraphrase,
+    truncation, AND reordering. Asserted in both coverage arms.
+  - *Non-circular 2025-01-01:* the expected rendered date is pinned as the string
+    literal `'January 1, 2025'` in the test, not computed via `formatDateOnly`, so
+    a formatter regression cannot keep it green. Same for the window literal.
+  - *`formatDateOnly` direct test:* added to `formatters.test.ts` (above).
+- **Error-state string sourcing:** page-local `*-failure.ts` mappers mirroring
+  14.1's `definitions-failure.ts` — `api_error` → `PUBLIC_ERROR_MESSAGES[code]`,
+  `fetch_failed` → `FETCH_FAILURE_MESSAGE`; never the API `message`/request id.
+  Directly unit-tested. No `@pca/shared` copy constants added (none needed).
+- **Caching/rendering:** identical to 14.1 — no route-segment `dynamic`/`revalidate`
+  override; the 11.2 client's plain `fetch` governs caching. Site stays noindex.
+- **Files touched:**
+  `apps/web/app/methodology/page.tsx` (rewrite),
+  `apps/web/app/methodology/MethodologyView.tsx` (new),
+  `apps/web/app/methodology/MethodologyView.test.tsx` (new),
+  `apps/web/app/methodology/methodology-copy.ts` (new),
+  `apps/web/app/methodology/methodology-copy.test.ts` (new),
+  `apps/web/app/methodology/methodology-failure.ts` (new),
+  `apps/web/app/methodology/methodology-failure.test.ts` (new),
+  `apps/web/app/methodology/loading.tsx` (new),
+  `apps/web/app/data-coverage/page.tsx` (rewrite),
+  `apps/web/app/data-coverage/DataCoverageView.tsx` (new),
+  `apps/web/app/data-coverage/DataCoverageView.test.tsx` (new),
+  `apps/web/app/data-coverage/data-coverage-copy.ts` (new),
+  `apps/web/app/data-coverage/data-coverage-copy.test.ts` (new),
+  `apps/web/app/data-coverage/data-coverage-failure.ts` (new),
+  `apps/web/app/data-coverage/data-coverage-failure.test.ts` (new),
+  `apps/web/app/data-coverage/loading.tsx` (new),
+  `apps/web/app/lib/formatters.ts` (export `formatDateOnly`),
+  `apps/web/app/lib/formatters.test.ts` (add `formatDateOnly` cases),
+  `tasks/worklog.md`.
+- **How to verify:** `pnpm run build:packages`, then `pnpm --filter web run typecheck`,
+  `pnpm run lint`, `pnpm run format:check`, `pnpm --filter web run test`.
+- **Gates — all green:** web typecheck 0; web tests 173 passed (42 files, +30 from
+  the new suites); eslint 0; prettier clean; copy guard + copy-safety suites green.
+- **Deviations from plan:** none. The only non-page/non-test edit is the approved
+  `formatDateOnly` export in `formatters.ts`. No API/payload, `@pca/shared`, or
+  definitions (14.1) changes.
+- **Notes for next task:** About page (14.3) follows the same server-fetch +
+  presentational-view + per-arm-error shape. The failure-mapper logic is now
+  duplicated three ways (definitions/methodology/data-coverage) as identical
+  one-liners, kept page-local per scope discipline; if a fourth consumer appears,
+  a single shared `app/lib` mapper would be worth consolidating. Accessibility
+  sweep + E2E for these routes is Phase 15.

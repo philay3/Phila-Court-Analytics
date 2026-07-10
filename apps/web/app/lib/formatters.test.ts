@@ -5,6 +5,7 @@ import {
   RESULT_TYPE_JUDGE_SPECIFIC_LABEL,
   THIN_DATA_LABEL,
   formatCount,
+  formatDateOnly,
   formatDateRange,
   formatLastRefreshed,
   formatPercentage,
@@ -81,6 +82,39 @@ describe('formatDateRange', () => {
         'January 1, 2025 – January 1, 2025',
       );
     });
+  });
+});
+
+describe('formatDateOnly', () => {
+  it('renders a single YYYY-MM-DD as a long-form calendar date', () => {
+    expect(formatDateOnly('2025-01-01')).toBe('January 1, 2025');
+    expect(formatDateOnly('2026-06-30')).toBe('June 30, 2026');
+  });
+
+  it('renders January 1 as January 1 — no UTC-midnight off-by-one', () => {
+    // Load-bearing timezone proof for the lone-date path: Date.UTC + the
+    // UTC-pinned formatter keep the calendar day stable, so the naive
+    // `new Date("2025-01-01")` midnight shift never rolls it back to Dec 31.
+    expect(formatDateOnly('2025-01-01')).toBe('January 1, 2025');
+    expect(formatDateOnly('2025-12-31')).toBe('December 31, 2025');
+  });
+
+  describe('under a spoofed host timezone (supplementary)', () => {
+    const originalTz = process.env.TZ;
+    afterAll(() => {
+      process.env.TZ = originalTz;
+    });
+
+    it('still renders January 1 as January 1 at UTC+14', () => {
+      // Supplementary only: process.env.TZ mutation is platform-inconsistent in
+      // Node. The UTC-pinned formatter makes the output stable regardless.
+      process.env.TZ = 'Pacific/Kiritimati';
+      expect(formatDateOnly('2025-01-01')).toBe('January 1, 2025');
+    });
+  });
+
+  it('throws on a value that is not YYYY-MM-DD', () => {
+    expect(() => formatDateOnly('2025/01/01')).toThrow();
   });
 });
 
