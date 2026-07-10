@@ -1558,3 +1558,71 @@
   Future Sprint 4 port tasks should reference `~/Desktop/Capstone/`. No
   additional Capstone couplings or quirks surfaced beyond the config
   dependency already removed.
+
+## Task 16.2 — Production Extraction Stage + Text Artifacts
+
+- **Date:** 2026-07-10
+- **What was built:** the real `extract-text` stage replacing the Sprint 1
+  placeholder. PDF → ordered per-page text + one JSON artifact per source PDF
+  written outside the repo, with low-text/image-only detection, the fixed
+  status vocabulary, and no-raw-text logging discipline.
+  - `services/pipeline/src/pipeline/extraction.py` (new): `extract(pdf_path,
+    *, low_text_threshold=100) -> ExtractionResult` using
+    `page.extract_text() or ""` with **default arguments** (fidelity to
+    Capstone for the 17.1 seam — no parameter deviation). `compute_text_hash`
+    (decision 7: sha256 of page texts joined by `\x0c`), `build_artifact`,
+    `artifact_filename` (`<full-sha256>.json`), and the `run_extraction` run
+    boundary (dir resolution/creation + git-worktree refusal here, never at
+    import; counts-by-status to stdout; logs carry ids/counts/status/pages/
+    durations only). Status/warning constants and provisional warning codes
+    (`low_text_page`, `empty_page`) defined here with a docstring note that
+    18.1 owns the unified vocabulary.
+  - `services/pipeline/src/pipeline/paths.py` (new): neutral, dependency-free
+    home for `inside_git_worktree`. Moved out of `evaluation/harness.py`;
+    both the harness and `extraction.py` now import it from here (no
+    duplicated copy — per plan-review fix #1).
+  - `services/pipeline/src/pipeline/evaluation/harness.py`: dropped the local
+    `inside_git_worktree`, imports it from `pipeline.paths`. The name is still
+    re-exported through the harness namespace, so
+    `test_evaluate_extractors`'s import is unaffected.
+  - `services/pipeline/src/pipeline/cli.py`: `extract-text` gains a `path`
+    positional (PDF or dir), `--output-dir` (default
+    `~/court-data/extracted/`, resolved at the run boundary), and
+    `--threshold`; dispatches to `run_extraction`. `PLACEHOLDER_COMMANDS` now
+    derives from a new `IMPLEMENTED_COMMANDS` set (adds `extract-text`).
+  - `services/pipeline/pyproject.toml` + `uv.lock`: pinned
+    `pdfplumber==0.11.10` (lock already resolved 0.11.10; specifier updated to
+    `==`). pymupdf/pypdf ranges unchanged (eval-harness-only, ADR 0001).
+  - Tests: `tests/test_extraction.py` (new, 16 tests) — multi-page success
+    (order/texts/counts/hash), empty-page + low-text warnings, partial and
+    needs_ocr_or_review paths, `--threshold` override, threshold-compares-
+    stripped-not-raw (plan-review fix #2), text-hash determinism + order
+    sensitivity, unreadable→failed artifact with `text_hash: null` and no
+    text/no raise (plan-review fix #3), artifact schema completeness,
+    directory run + counts-by-status summary, git-worktree output refusal,
+    no-raw-text-in-logs/console, and the static AST assertion that no
+    production module (everything under `src/pipeline` except `evaluation/`)
+    imports pymupdf/pypdf/fitz. `test_import_side_effects.py` adds
+    `pipeline.extraction` to its fresh-import guard. Full suite: 70 passed;
+    ruff lint + format clean. Verified end-to-end via a real CLI run into an
+    out-of-repo dir (logs id-only, one artifact per file, version 0.11.10).
+- **Plan-review fixes applied:** (1) worktree guard moved to shared
+  `paths.py`, imported by both callers — no copy, no deferred unify;
+  (2) status/warning decisions compare `len(text.strip())` while the artifact
+  records raw `len(text)` as `per_page_chars` — split documented in the module
+  docstring and covered by a dedicated test; (3) `failed` artifacts carry
+  `text_hash: null` — stated in the module docstring and asserted in the
+  unreadable-file test.
+- **Threshold default:** 100 stripped chars per page, configurable via
+  `--threshold`. Rationale: real docket pages run hundreds–thousands of chars;
+  image-only/near-blank pages yield 0–a-few, so 100 sits far below content
+  pages yet above OCR-needed noise.
+- **Deviations from plan:** none behavioral. Ruff rewrapped a couple of long
+  lines (cosmetic).
+- **Notes for next task:** 17.1 will compare this stage's page text against
+  Capstone reference text on the same PDFs — the extraction call is
+  `page.extract_text() or ""`, default args, pdfplumber `==0.11.10`; re-pin
+  there if the comparison forces it. 18.1 should absorb/align the provisional
+  `low_text_page`/`empty_page`/`unreadable_pdf` codes into the unified
+  vocabulary. `paths.inside_git_worktree` is now the shared output guard for
+  any future stage that writes artifacts.
