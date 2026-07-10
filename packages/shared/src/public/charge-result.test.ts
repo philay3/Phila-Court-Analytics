@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest';
 import {
   validChargeOnlyResult,
   validChargeOnlyResultSentencingUnavailable,
+  validChargeOnlyResultUnavailable,
 } from '../test-support/fixtures.js';
 import {
+  CHARGE_RESULT_UNAVAILABLE_MESSAGE,
   CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
   chargeOnlyResultResponseSchema,
   chargeSentencingSchema,
@@ -126,6 +128,42 @@ describe('chargeOnlyResultResponseSchema', () => {
       rows: [{ ...firstRow, sampleSize: 120 }, ...base.outcomes.rows.slice(1)],
     };
     expect(Value.Check(chargeOnlyResultResponseSchema, withRowExtra)).toBe(false);
+  });
+});
+
+describe('chargeOnlyResultResponseSchema — unavailable arm (task 13.2a)', () => {
+  it('accepts the 200 unavailable arm', () => {
+    expect(Value.Check(chargeOnlyResultResponseSchema, validChargeOnlyResultUnavailable())).toBe(
+      true,
+    );
+  });
+
+  it('pins the message to the shared literal and the code to CHARGE_RESULT_UNAVAILABLE', () => {
+    expect(validChargeOnlyResultUnavailable().message).toBe(CHARGE_RESULT_UNAVAILABLE_MESSAGE);
+    expect(
+      Value.Check(chargeOnlyResultResponseSchema, {
+        ...validChargeOnlyResultUnavailable(),
+        message: 'Aggregation failed parser review.',
+      }),
+    ).toBe(false);
+    expect(
+      Value.Check(chargeOnlyResultResponseSchema, {
+        ...validChargeOnlyResultUnavailable(),
+        code: 'CHARGE_NOT_FOUND',
+      }),
+    ).toBe(false);
+  });
+
+  it('carries no distributions, sample sizes, or run metadata (extra props rejected)', () => {
+    for (const extra of ['outcomes', 'sentencing', 'aggregateRunId', 'dateRange'] as const) {
+      expect(
+        Value.Check(chargeOnlyResultResponseSchema, {
+          ...validChargeOnlyResultUnavailable(),
+          [extra]: validChargeOnlyResult()[extra],
+        }),
+        `unavailable arm must reject ${extra}`,
+      ).toBe(false);
+    }
   });
 });
 

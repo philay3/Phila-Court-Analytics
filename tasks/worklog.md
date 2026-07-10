@@ -856,3 +856,108 @@
   `app/lib/definition-anchor.ts` and emit element ids from the same helper so the
   per-row links resolve. Category codes are served verbatim (e.g. `guilty_plea`,
   `no_further_penalty`).
+
+## Task 13.2a — Charge-Unavailable Contract Fix (API + shared)
+
+- **Date:** 2026-07-09
+- **What was built:** brought the charge-only result endpoint into compliance
+  with the standing "entities exist, data absent → answerable 200, never a 404"
+  decision. `ChargeOnlyResultResponse` is now a top-level `resultType`-tagged
+  union; a resolvable charge with no publishable aggregate returns an HTTP 200
+  unavailable arm carrying charge metadata, mirroring the shipped 8.2
+  judge-unavailable pattern. `CHARGE_NOT_FOUND` (charge entity absent) stays a
+  404, untouched.
+- **The two union shapes, side by side (acceptance criterion 5):**
+  - **8.2 judge-unavailable (shipped, unchanged):**
+    `{ resultType: 'judge_specific_unavailable', code:
+    'JUDGE_SPECIFIC_RESULT_UNAVAILABLE', message: <pinned literal>, charge,
+    judge, fallback: { chargeOnlyResultPath } }`
+  - **13.2a charge-unavailable (new):**
+    `{ resultType: 'charge_only_unavailable', code:
+    'CHARGE_RESULT_UNAVAILABLE', message: CHARGE_RESULT_UNAVAILABLE_MESSAGE,
+    charge, links: { methodology, definitions } }`
+  - The **discriminator mechanism is mirrored exactly** (top-level `resultType`
+    string-literal union, `_unavailable` suffix, `code`+`message` literals,
+    `charge` summary as served). The **one deliberate structural difference**
+    (approved at review): where 8.2 carries a `fallback` pointing *at* the
+    charge-only result, this arm carries `links` instead — the charge-only
+    result is the terminal baseline with nowhere to fall back to, and pinned
+    decision 2 called for methodology/definitions link metadata (also what the
+    paused 13.2 render needs). The `links` object is identical in shape to the
+    success arm's.
+- **Files touched:**
+  - **`packages/shared/src/public/charge-result.ts`**: split the object schema
+    into `chargeOnlyResultSuccessSchema`/`ChargeOnlyResultSuccess`, added
+    `chargeOnlyResultUnavailableSchema`/`ChargeOnlyResultUnavailable`, redefined
+    `chargeOnlyResultResponseSchema`/`ChargeOnlyResultResponse` as the union
+    (same exported names). Shared `resultLinksSchema` between the arms.
+  - **`packages/shared/src/test-support/fixtures.ts`**: pinned
+    `validChargeOnlyResult()`/`…SentencingUnavailable()` return types to
+    `ChargeOnlyResultSuccess` (so `validJudgeSpecificResultSuccess`'s
+    `.sentencing` read still type-checks); added
+    `validChargeOnlyResultUnavailable()`.
+  - **`packages/shared/src/public/charge-result.test.ts`**: added an
+    unavailable-arm describe block (accepts the arm; message = imported literal;
+    code pinned; rejects distributions/run metadata). Success-arm tests
+    unchanged and still green under the union.
+  - **`apps/api/src/services/charge-result.ts`**: extracted a `chargeSummary`
+    helper and a `chargeOnlyResultUnavailable(charge)` arm builder; the two
+    former throw sites (`!run`; zero outcome rows) now `return` the arm. The
+    charge-lookup miss still throws `CHARGE_NOT_FOUND`.
+  - **`apps/api/src/routes/public/results.ts`**: comment updated to the
+    tagged-union note (schema reference unchanged — it is now the union).
+  - **`apps/api/src/services/charge-result.test.ts`**: the two throw-site unit
+    tests became arm-return assertions; added a narrowing `getSuccess` helper for
+    the happy-path mapping-rules tests.
+  - **`apps/api/src/routes/public/results.test.ts`**: added the seeded
+    zero-rows → 200 arm exact-body test (message asserted `===` the imported
+    `CHARGE_RESULT_UNAVAILABLE_MESSAGE`) plus a by-UUID identity test; added
+    `code` to the allowed-keys set and swept the harassment arm.
+  - **`apps/api/src/test-support/public-route-probes.ts`**: added the
+    `200-charge-unavailable` probe (`/results/charge/harassment`). This
+    automatically extended the live forbidden-field and copy-safety suites to
+    scan the new arm — no other edits to those suites.
+  - **`db/seeds/reference-data.ts`**: added the `harassment` charge (active,
+    `18 § 2709`), deliberately absent from every aggregate distribution — the
+    seeded fixture proving the "published run, zero rows" cause end-to-end
+    (acceptance criterion 9). Chosen collision-free with every charge-search
+    test query.
+  - **`apps/web/app/lib/formatters.ts`**: retargeted `LabelableResultType` to
+    `ChargeOnlyResultSuccess['resultType']` so the new `charge_only_unavailable`
+    literal never enters the exhaustive result-type-label switch.
+  - **`apps/web/app/lib/public-api-client.test.ts`**: added a charge-only 200
+    unavailable-arm → `ok:true` passthrough test. No runtime client change (the
+    client already surfaces 200 unavailable arms as data).
+- **Coverage split for the no-published-run cause (accepted at review, recorded
+  here as rationale):** both unavailable causes converge on the same
+  `chargeOnlyResultUnavailable` arm builder, so the no-published-run cause is
+  covered at the unit level only (mocked `findActivePublishedRun → undefined`).
+  It is intentionally NOT tested end-to-end: dropping the globally-seeded
+  published run would break every parallel DB suite. The zero-rows cause is
+  proven end-to-end via the harassment seed + the new probe, plus at the unit
+  level.
+- **Catalog retention:** `CHARGE_RESULT_UNAVAILABLE` stays in the public error
+  catalog (404 default in `PUBLIC_ERROR_CODE_STATUS`, entry in
+  `PUBLIC_ERROR_MESSAGES`) even though it is now only ever emitted as the 200
+  body tag — exactly how 8.2 keeps `JUDGE_SPECIFIC_RESULT_UNAVAILABLE` (pinned
+  decision 4). `PUBLIC_ERROR_CODE_STATUS` values are documented defaults, not
+  invariants, so a 200 body carrying the code is consistent. `errors.ts` /
+  `error-messages.ts` unchanged.
+- **Judge-endpoint entanglement:** none. `getChargeOnlyResult` is called only by
+  the charge-only route; the judge service has its own separate
+  `CHARGE_RESULT_UNAVAILABLE` throw sites, untouched (pinned decision 6).
+- **How to verify:** `pnpm db:up && pnpm db:migrate:latest`, then
+  `pnpm run build:packages`, then from root `pnpm lint`, `pnpm format:check`,
+  `pnpm typecheck`, `pnpm test`.
+- **Gates — all green:** lint 0; format:check clean; typecheck 0; shared 166,
+  web 90, db 6, api 198 (results.test.ts 12, copy-safety 25, forbidden-fields 26
+  — the last two now scanning the new arm). Route-count discovery assertion
+  unchanged at 7 (a probe was added, not a route).
+- **Deviations from plan:** none.
+- **Notes for next task (13.2 resumes):** the client's `getChargeResult` now
+  returns the union — branch on `resultType`: `'charge_only'` renders the full
+  view, `'charge_only_unavailable'` renders the in-page unavailable state
+  (charge metadata + the pinned message + methodology link, NOT `not-found.tsx`).
+  A `validChargeOnlyResultUnavailable()` fixture is available in
+  `@pca/shared` test-support. `CHARGE_NOT_FOUND` remains the 404 → `notFound()`
+  path.

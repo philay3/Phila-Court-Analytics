@@ -14,15 +14,45 @@ import {
   findActivePublishedRun,
   getChargeOutcomeRows,
   getChargeSentencingRows,
+  type ChargeRow,
 } from '../repositories/charge-result.js';
 import { UUID_PATTERN, buildDistributionBlock, buildSentencing } from './result-helpers.js';
+
+function chargeSummary(charge: ChargeRow) {
+  return {
+    id: charge.id,
+    slug: charge.slug,
+    displayName: charge.display_name,
+    ...(charge.statute_code !== null ? { statuteCode: charge.statute_code } : {}),
+    ...(charge.grade !== null ? { grade: charge.grade } : {}),
+  };
+}
+
+/**
+ * The HTTP 200 "entity exists, data absent" arm (task 13.2a). Both
+ * unavailable causes — no published run, and zero aggregate rows for the
+ * charge in the published run — converge here, mirroring the 8.2
+ * judge-unavailable answer. The two causes are publicly indistinguishable by
+ * design, so they carry the identical pinned message.
+ */
+function chargeOnlyResultUnavailable(charge: ChargeRow): ChargeOnlyResultResponse {
+  return {
+    resultType: 'charge_only_unavailable',
+    code: PUBLIC_ERROR_CODES.CHARGE_RESULT_UNAVAILABLE,
+    message: CHARGE_RESULT_UNAVAILABLE_MESSAGE,
+    charge: chargeSummary(charge),
+    links: { methodology: '/methodology', definitions: '/definitions' },
+  };
+}
 
 /**
  * Charge-only public result: resolves the charge (id or slug, no
  * fallthrough), then the single active published run, then both
- * distributions scoped to that run. All misses throw catalog-coded errors;
- * the central handler shapes every response. The distribution machinery
- * lives in result-helpers.ts, shared with the 8.2 judge-specific service.
+ * distributions scoped to that run. An unknown charge throws
+ * CHARGE_NOT_FOUND; a resolvable charge with no publishable aggregate returns
+ * the HTTP 200 unavailable arm instead of an error. The central handler
+ * shapes every error response. The distribution machinery lives in
+ * result-helpers.ts, shared with the 8.2 judge-specific service.
  */
 export async function getChargeOnlyResult(
   getDb: () => Kysely<PublicApiDatabase>,
@@ -41,18 +71,12 @@ export async function getChargeOnlyResult(
 
   const run = await findActivePublishedRun(db);
   if (!run) {
-    throw publicError(
-      PUBLIC_ERROR_CODES.CHARGE_RESULT_UNAVAILABLE,
-      CHARGE_RESULT_UNAVAILABLE_MESSAGE,
-    );
+    return chargeOnlyResultUnavailable(charge);
   }
 
   const outcomeRows = await getChargeOutcomeRows(db, run.id, charge.id);
   if (outcomeRows.length === 0) {
-    throw publicError(
-      PUBLIC_ERROR_CODES.CHARGE_RESULT_UNAVAILABLE,
-      CHARGE_RESULT_UNAVAILABLE_MESSAGE,
-    );
+    return chargeOnlyResultUnavailable(charge);
   }
   const outcomes = buildDistributionBlock<OutcomeCategoryCode>(
     'outcome',
@@ -63,13 +87,7 @@ export async function getChargeOnlyResult(
   const sentencing = buildSentencing(await getChargeSentencingRows(db, run.id, charge.id));
 
   return {
-    charge: {
-      id: charge.id,
-      slug: charge.slug,
-      displayName: charge.display_name,
-      ...(charge.statute_code !== null ? { statuteCode: charge.statute_code } : {}),
-      ...(charge.grade !== null ? { grade: charge.grade } : {}),
-    },
+    charge: chargeSummary(charge),
     resultType: 'charge_only',
     geography: 'philadelphia',
     dateRange: { start: run.data_range_start, end: run.data_range_end },

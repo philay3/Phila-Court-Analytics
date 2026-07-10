@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { PUBLIC_ERROR_CODES } from '../errors.js';
 import {
   dateRangeSchema,
   outcomeDistributionEntrySchema,
@@ -84,7 +85,15 @@ export const chargeSentencingSchema = Type.Union([
 ]);
 export type ChargeSentencing = Static<typeof chargeSentencingSchema>;
 
-export const chargeOnlyResultResponseSchema = Type.Object(
+const resultLinksSchema = Type.Object(
+  {
+    methodology: Type.Literal('/methodology'),
+    definitions: Type.Literal('/definitions'),
+  },
+  { additionalProperties: false },
+);
+
+export const chargeOnlyResultSuccessSchema = Type.Object(
   {
     charge: chargeSummarySchema,
     resultType: Type.Literal('charge_only'),
@@ -96,14 +105,40 @@ export const chargeOnlyResultResponseSchema = Type.Object(
     aggregateRunId: Type.String({ format: 'uuid' }),
     outcomes: chargeOutcomesSchema,
     sentencing: chargeSentencingSchema,
-    links: Type.Object(
-      {
-        methodology: Type.Literal('/methodology'),
-        definitions: Type.Literal('/definitions'),
-      },
-      { additionalProperties: false },
-    ),
+    links: resultLinksSchema,
   },
   { additionalProperties: false },
 );
+export type ChargeOnlyResultSuccess = Static<typeof chargeOnlyResultSuccessSchema>;
+
+/**
+ * HTTP 200 unavailable arm (task 13.2a): the charge entity exists but no
+ * publishable aggregate does (no published run, or zero rows for the charge in
+ * the published run — the two states are publicly indistinguishable by
+ * design). Discriminated by `resultType`, mirroring the shipped 8.2
+ * judge-unavailable pattern exactly. It carries charge identity as served, the
+ * pinned code/message literals, and the methodology/definitions links only —
+ * no distributions, sample sizes, or run metadata. Where the 8.2 arm carries a
+ * `fallback` to the charge-only result, this arm carries `links`: the
+ * charge-only result IS the terminal baseline, so there is nothing to fall
+ * back to, and the links object matches the success arm's shape.
+ */
+export const chargeOnlyResultUnavailableSchema = Type.Object(
+  {
+    resultType: Type.Literal('charge_only_unavailable'),
+    code: Type.Literal(PUBLIC_ERROR_CODES.CHARGE_RESULT_UNAVAILABLE),
+    message: Type.Literal(CHARGE_RESULT_UNAVAILABLE_MESSAGE),
+    charge: chargeSummarySchema,
+    links: resultLinksSchema,
+  },
+  { additionalProperties: false },
+);
+export type ChargeOnlyResultUnavailable = Static<typeof chargeOnlyResultUnavailableSchema>;
+
+// Structurally disjoint via the resultType literals; used as the single 200
+// response schema so serialization stripping covers both arms.
+export const chargeOnlyResultResponseSchema = Type.Union([
+  chargeOnlyResultSuccessSchema,
+  chargeOnlyResultUnavailableSchema,
+]);
 export type ChargeOnlyResultResponse = Static<typeof chargeOnlyResultResponseSchema>;

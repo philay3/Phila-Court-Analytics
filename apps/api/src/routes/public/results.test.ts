@@ -1,7 +1,11 @@
 import { Kysely, PostgresDialect } from 'kysely';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CHARGE_SENTENCING_UNAVAILABLE_MESSAGE, PUBLIC_ERROR_CODES } from '@pca/shared';
+import {
+  CHARGE_RESULT_UNAVAILABLE_MESSAGE,
+  CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
+  PUBLIC_ERROR_CODES,
+} from '@pca/shared';
 import type { Database } from '@pca/db';
 import { buildApp } from '../../app.js';
 
@@ -108,6 +112,7 @@ describe.skipIf(!hasDb)('GET /results/charge/:chargeIdOrSlug against the seeded 
   let setupDb: Kysely<Database>;
   let app: ReturnType<typeof buildApp>;
   let retailTheftId: string;
+  let harassmentId: string;
   let publishedRunId: string;
 
   // Neither temp charge has aggregate rows, so plain deletes are FK-safe.
@@ -137,6 +142,15 @@ describe.skipIf(!hasDb)('GET /results/charge/:chargeIdOrSlug against the seeded 
         .selectFrom('ref.normalized_charges')
         .select('id')
         .where('slug', '=', 'retail-theft')
+        .executeTakeFirstOrThrow()
+    ).id;
+    // Seeded charge-unavailable fixture (task 13.2a): active, real statute,
+    // deliberately absent from every aggregate distribution.
+    harassmentId = (
+      await setupDb
+        .selectFrom('ref.normalized_charges')
+        .select('id')
+        .where('slug', '=', 'harassment')
         .executeTakeFirstOrThrow()
     ).id;
     // The endpoint must serve exactly this run — resolved here by the same
@@ -245,6 +259,35 @@ describe.skipIf(!hasDb)('GET /results/charge/:chargeIdOrSlug against the seeded 
     expect((body.outcomes as { rows: unknown[] }).rows).toHaveLength(7);
   });
 
+  it('returns the HTTP-200 unavailable arm for a resolvable charge with zero aggregate rows', async () => {
+    const res = await getResult('harassment');
+    expect(res.statusCode).toBe(200);
+    // Exact body: identity as served, the pinned code/message literals, and the
+    // links — no distributions, sample sizes, or run metadata.
+    expect(res.json()).toEqual({
+      resultType: 'charge_only_unavailable',
+      code: PUBLIC_ERROR_CODES.CHARGE_RESULT_UNAVAILABLE,
+      message: CHARGE_RESULT_UNAVAILABLE_MESSAGE,
+      charge: {
+        id: harassmentId,
+        slug: 'harassment',
+        displayName: 'Harassment',
+        statuteCode: '18 § 2709',
+        // grade is null in the reference seeds → omitted, per the shared convention.
+      },
+      links: { methodology: '/methodology', definitions: '/definitions' },
+    });
+    // The message is the imported shared literal, never a re-typed string.
+    expect(res.json().message).toBe(CHARGE_RESULT_UNAVAILABLE_MESSAGE);
+  });
+
+  it('serves the unavailable arm identically by UUID', async () => {
+    const bySlug = await getResult('harassment');
+    const byId = await getResult(harassmentId);
+    expect(byId.statusCode).toBe(200);
+    expect(byId.json()).toEqual(bySlug.json());
+  });
+
   it('returns 404 CHARGE_NOT_FOUND for an unknown slug, in the flat catalog shape', async () => {
     const res = await getResult('no-such-charge');
     expect(res.statusCode).toBe(404);
@@ -305,6 +348,8 @@ describe.skipIf(!hasDb)('GET /results/charge/:chargeIdOrSlug against the seeded 
       'links',
       'methodology',
       'definitions',
+      // Present on the 13.2a charge-only unavailable arm only.
+      'code',
     ]);
     const collectKeys = (value: unknown, seen: string[]) => {
       if (Array.isArray(value)) {
@@ -318,7 +363,7 @@ describe.skipIf(!hasDb)('GET /results/charge/:chargeIdOrSlug against the seeded 
       return seen;
     };
 
-    for (const slug of ['retail-theft', 'possession-controlled-substance']) {
+    for (const slug of ['retail-theft', 'possession-controlled-substance', 'harassment']) {
       const res = await getResult(slug);
       expect(res.statusCode).toBe(200);
       for (const key of collectKeys(res.json(), [])) {

@@ -54,6 +54,16 @@ export const CHARGE_SEEDS: readonly ChargeSeed[] = [
     statuteCode: '18 § 3503',
     aliases: ['trespassing'],
   },
+  {
+    // Charge-unavailable fixture (task 13.2a): a real, active charge that
+    // deliberately appears in NO aggregate distribution. Requesting it returns
+    // the HTTP 200 charge-only unavailable arm (published run exists, zero rows
+    // for this charge). Do not add aggregate rows for it.
+    slug: 'harassment',
+    displayName: 'Harassment',
+    statuteCode: '18 § 2709',
+    aliases: ['harassing communications'],
+  },
 ];
 
 export const JUDGE_SEEDS: readonly JudgeSeed[] = [

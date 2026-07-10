@@ -96,6 +96,19 @@ describe('public API client — success', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('returns the charge-only 200 unavailable arm as ok:true data (not an error)', async () => {
+    const unavailableArm = {
+      resultType: 'charge_only_unavailable',
+      code: 'CHARGE_RESULT_UNAVAILABLE',
+      message: 'unavailable',
+      charge: { id: 'x', slug: 'harassment', displayName: 'Harassment' },
+      links: { methodology: '/methodology', definitions: '/definitions' },
+    };
+    stubFetch(() => jsonResponse(unavailableArm));
+    const result = await getChargeResult('harassment');
+    expect(result).toEqual({ ok: true, data: unavailableArm });
+  });
+
   it('builds the search query string with q and limit', async () => {
     const fetchMock = vi.fn<(url: string | URL) => Promise<Response>>(() =>
       Promise.resolve(jsonResponse({ results: [] })),

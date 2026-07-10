@@ -19,10 +19,11 @@ export interface PublicRouteProbe {
 // Keyed by the EXACT Fastify route pattern as registered (prefix included).
 // Probe targets are globalSetup-seeded slugs only (vitest.global-setup.ts);
 // consuming suites never insert or delete rows. Arm choices mirror the seeded
-// facts the 8.1/8.2 suites verify: possession-controlled-substance has no
-// sentencing rows, retail-theft + judge-fakename-example has no
-// judge-specific aggregate, criminal-trespass and simple-assault +
-// judge-testina-placeholder are the thin-data cases. The search routes have
+// facts the 8.1/8.2/13.2a suites verify: possession-controlled-substance has
+// no sentencing rows, harassment has no aggregate rows at all (charge-only
+// unavailable), retail-theft + judge-fakename-example has no judge-specific
+// aggregate, criminal-trespass and simple-assault + judge-testina-placeholder
+// are the thin-data cases. The search routes have
 // no 404/unavailable arms, so their error coverage is the 400
 // validation-error arm (central error handler output must be scanned too).
 export const PROBE_REGISTRY: Readonly<Record<string, readonly PublicRouteProbe[]>> = {
@@ -66,6 +67,13 @@ export const PROBE_REGISTRY: Readonly<Record<string, readonly PublicRouteProbe[]
     {
       name: '200-sentencing-unavailable',
       path: `${PUBLIC_ROUTE_PREFIX}/results/charge/possession-controlled-substance`,
+      expectedStatus: 200,
+    },
+    {
+      // Charge exists (seeded) but has zero aggregate rows → the 13.2a HTTP
+      // 200 charge-only unavailable arm.
+      name: '200-charge-unavailable',
+      path: `${PUBLIC_ROUTE_PREFIX}/results/charge/harassment`,
       expectedStatus: 200,
     },
     {
