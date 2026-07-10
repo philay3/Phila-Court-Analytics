@@ -1,18 +1,89 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
+import { ResponsibleUseNotice } from '../components/ResponsibleUseNotice';
 
+/**
+ * About route (task 14.3). A static server component — unlike the 14.1/14.2
+ * content pages it performs no data fetch, so there is no View split and no
+ * loading/error state. All user-facing copy is inline JSX; the app/-walking
+ * copy guard scans this file's contents automatically (test/copy-guard.test.ts).
+ *
+ * The Responsible Use section renders the shared <ResponsibleUseNotice />
+ * (the four framing statements from RESULT_DISPLAY_COPY) rather than re-typing
+ * any disclaimer text; the only newly authored disclaimer-adjacent sentence is
+ * the required attorney-consultation line that follows it.
+ *
+ * Layout tokens mirror MethodologyView: single-column, mobile-first, semantic
+ * hierarchy (one h1, one h2 per section). Site-wide noindex is inherited from
+ * the root layout, unchanged.
+ */
 export const metadata: Metadata = {
-  title: 'About',
+  title: 'About this site',
 };
+
+const LINK_CLASS =
+  'text-accent hover:underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
 
 export default function AboutPage() {
   return (
-    <>
-      <h1>About</h1>
-      <p>
-        This page will describe the project: who is behind it, why it exists, and the principles
-        that guide it — transparency about sources and methods, and responsible presentation of
-        historical court data.
-      </p>
-    </>
+    <div className="flex flex-col gap-10">
+      <header>
+        <h1>About this site</h1>
+      </header>
+
+      <section className="space-y-3">
+        <h2 className="text-xl font-semibold text-ink">What this site is</h2>
+        <p className="text-muted">
+          This site presents historical aggregate outcomes from Philadelphia criminal court cases.
+          Users can search by criminal charge and, optionally, filter by judge to see how cases
+          involving that charge have historically been resolved — including outcome distributions
+          and, where available, sentencing distributions.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xl font-semibold text-ink">Where the data comes from</h2>
+        <p className="text-muted">
+          The underlying information comes from public court docket sheets published by the
+          Pennsylvania Unified Judicial System. Docket information is parsed, normalized, reviewed,
+          and aggregated before anything appears on this site. Only aggregate statistics are
+          published here: no individual case records, docket numbers, or defendant information are
+          available through this site. For details on scope, date ranges, and known limitations, see
+          the Data Coverage page.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xl font-semibold text-ink">How to read the numbers</h2>
+        <p className="text-muted">
+          Every figure on this site shows its sample size and date range. Small samples are flagged
+          so they are not over-read. Results are historical distributions of past cases — they
+          describe what has happened, not what will happen in any individual case. See the
+          Methodology page for how figures are produced and the Definitions page for what each
+          category means.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xl font-semibold text-ink">Responsible use</h2>
+        <ResponsibleUseNotice />
+        <p className="text-muted">
+          If you are facing criminal charges, consult a licensed attorney about your specific
+          situation.
+        </p>
+      </section>
+
+      <nav aria-label="Content pages" className="flex flex-wrap gap-4">
+        <Link href="/methodology" className={LINK_CLASS}>
+          Methodology
+        </Link>
+        <Link href="/definitions" className={LINK_CLASS}>
+          Definitions
+        </Link>
+        <Link href="/data-coverage" className={LINK_CLASS}>
+          Data Coverage
+        </Link>
+      </nav>
+    </div>
   );
 }

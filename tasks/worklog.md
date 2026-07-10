@@ -1251,3 +1251,40 @@
   one-liners, kept page-local per scope discipline; if a fourth consumer appears,
   a single shared `app/lib` mapper would be worth consolidating. Accessibility
   sweep + E2E for these routes is Phase 15.
+
+## Task 14.3 — About Page
+
+- **Date:** 2026-07-09
+- **What was built:** Replaced the 4.1 placeholder `/about` route with the final
+  Phase 14 content page: a static server component (no data fetch, no View split,
+  no loading/error state) with a single `h1` and four `h2` sections — What this
+  site is / Where the data comes from / How to read the numbers / Responsible use
+  — using the verbatim task copy, followed by a `Content pages` nav linking
+  `/methodology`, `/definitions`, `/data-coverage`. The Responsible Use section
+  renders the existing shared `<ResponsibleUseNotice />` (the four
+  `RESULT_DISPLAY_COPY` framing statements); the only newly authored
+  disclaimer-adjacent sentence is the required attorney-consultation line. Layout
+  tokens mirror `MethodologyView` (single-column, mobile-first, `text-ink` /
+  `text-muted`, shared `LINK_CLASS` focus-visible ring). One render test
+  (vitest + testing-library) asserts the h1, all four section h2s, the shared
+  responsible-use framing (via imported `RESULT_DISPLAY_COPY`, not re-typed
+  disclaimer text), and the three content-page links by href.
+- **Files touched:** `apps/web/app/about/page.tsx` (replace placeholder),
+  `apps/web/app/about/AboutPage.test.tsx` (new), `tasks/worklog.md`.
+- **How to verify:** `pnpm --filter @pca/web test`, then `pnpm lint`,
+  `pnpm format:check`, `pnpm typecheck`.
+- **Gates — all green:** web tests 177 passed (43 files, +4 from the new suite);
+  copy-guard + copy-safety suites green; eslint 0; prettier clean; full-workspace
+  typecheck 0.
+- **Scanner-driven copy adjustments:** none. The verbatim task copy passed the
+  copy-safety scanner unchanged (no forbidden stems; "small samples are flagged"
+  is statistical sample-size language, not a seeded/demo-data disclosure; the
+  shared component's "not a prediction"/"not legal advice" strings are guarded
+  phrases).
+- **Deviations from plan:** none. No nav/layout change — `/about` was already in
+  `NAV_LINKS`. No API endpoint, no `@pca/shared` additions.
+- **Notes for next task:** `/about` is intentionally the only content page with
+  no `-copy.ts` module (copy is inline JSX, covered by the app/-walking copy
+  guard) and no server-fetch/error shape, since it has no data source. Team/
+  contact/credits content and SEO/indexing remain out of scope (site-wide
+  noindex stands).
