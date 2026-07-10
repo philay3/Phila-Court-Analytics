@@ -10,6 +10,7 @@ import os
 import sys
 from pathlib import Path
 
+from pipeline.envelope import run_parse
 from pipeline.equivalence_check import SALT_ENV_VAR, run_equivalence_check
 from pipeline.evaluation.extractors import EXTRACTORS
 from pipeline.evaluation.harness import run_evaluation
@@ -28,6 +29,7 @@ SUBCOMMANDS = (
         "equivalence-check",
         "Diff ported extraction+parse output against the Capstone baseline.",
     ),
+    ("parse", "Parse extraction artifacts into per-docket envelope artifacts."),
     ("evaluate-extractors", "Compare candidate PDF text extractors."),
     ("run-fixtures", "Run the pipeline against local fixture PDFs."),
 )
@@ -39,6 +41,7 @@ IMPLEMENTED_COMMANDS = frozenset(
         "import-manual",
         "seam-check",
         "equivalence-check",
+        "parse",
     }
 )
 
@@ -194,6 +197,27 @@ def build_parser() -> argparse.ArgumentParser:
                     "excluded and every artifact says so."
                 ),
             )
+        if name == "parse":
+            subparser.add_argument(
+                "--artifacts-dir",
+                type=Path,
+                # Resolved here, at the CLI/run boundary — never at import.
+                default=Path.home() / "court-data" / "extracted",
+                help=(
+                    "Directory of 16.2 extraction artifacts (*.json, searched "
+                    "non-recursively). Default: ~/court-data/extracted/."
+                ),
+            )
+            subparser.add_argument(
+                "--output-dir",
+                type=Path,
+                default=Path.home() / "court-data" / "envelopes",
+                help=(
+                    "Where per-docket envelope artifacts are written (created if "
+                    "needed); must be outside any git working tree. Default: "
+                    "~/court-data/envelopes/."
+                ),
+            )
         if name == "evaluate-extractors":
             subparser.add_argument(
                 "--fixtures-dir",
@@ -285,5 +309,23 @@ def main(argv: list[str] | None = None) -> int:
             args.output_dir,
             low_text_threshold=args.threshold,
         )
+    if args.command == "parse":
+        if running_in_ci():
+            logger.error(
+                "parse runs over local court data and must never run in a CI "
+                "environment; refusing",
+                extra={"command": args.command},
+            )
+            return 2
+        # Salt read at the run boundary (never at import); value never logged.
+        salt = os.environ.get(SALT_ENV_VAR, "")
+        if not salt.strip():
+            logger.error(
+                "DEFENDANT_HASH_SALT is required to run the parser; set it in "
+                "the environment (its value is never printed or written)",
+                extra={"command": args.command},
+            )
+            return 2
+        return run_parse(args.artifacts_dir, args.output_dir, salt=salt)
     logger.info("command not implemented", extra={"command": args.command})
     return 0

@@ -42,3 +42,22 @@ def test_subcommand_help(command, capsys):
         cli.main([command, "--help"])
     assert excinfo.value.code == 0
     assert command in capsys.readouterr().out
+
+
+def test_parse_refuses_in_ci(monkeypatch, capsys):
+    monkeypatch.setenv("CI", "true")
+    monkeypatch.setenv("DEFENDANT_HASH_SALT", "test-salt")
+    assert cli.main(["parse", "--artifacts-dir", "/nonexistent"]) == 2
+    entry = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert entry["command"] == "parse"
+    assert "CI" in entry["message"]
+
+
+def test_parse_requires_salt(monkeypatch, capsys):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("DEFENDANT_HASH_SALT", raising=False)
+    assert cli.main(["parse", "--artifacts-dir", "/nonexistent"]) == 2
+    entry = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert entry["command"] == "parse"
+    assert "DEFENDANT_HASH_SALT" in entry["message"]
