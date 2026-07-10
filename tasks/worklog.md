@@ -1626,3 +1626,62 @@
   `low_text_page`/`empty_page`/`unreadable_pdf` codes into the unified
   vocabulary. `paths.inside_git_worktree` is now the shared output guard for
   any future stage that writes artifacts.
+
+## Task 16.3 — Manual Import: Content Hashing, Dedupe, Metadata
+
+- **Date:** 2026-07-10
+- **What was built:** The real `import-manual` stage replacing the Sprint 1
+  placeholder. `manual_import.py` flat-scans a directory, streams sha256
+  hashes (1 MiB chunks — multi-MB PDFs never load whole), validates by
+  extension + `%PDF-` magic bytes, dedupes by content hash across runs, and
+  writes one hash-keyed `<sha256>.json` metadata record per file under a
+  worktree-guarded root (default `~/court-data/imports/`), plus a counts-only
+  `import-report.json` (overwritten each run). Records carry the full pinned
+  field set (`id`, `original_filename`, `file_hash`, `file_size_bytes`,
+  `imported_at`, `mode`, `docket_number_provenance`, `court_type`, `county`,
+  `status`, `error_code`); `id` is the full sha256 (== `file_hash`).
+  Provenance derives from the filename stem via the Philadelphia UJS pattern
+  `^(CP|MC)-(\d{2})-[A-Z]{2}-\d{7}-\d{4}$` (court code + 2-digit county);
+  non-matching stems degrade all three provenance fields to null — never
+  guessed. `cli.py` wires the subcommand (positional input dir,
+  `--metadata-root` override) and moves it into `IMPLEMENTED_COMMANDS`.
+- **Files touched:** `services/pipeline/src/pipeline/manual_import.py` (new),
+  `services/pipeline/src/pipeline/cli.py` (subcommand wiring),
+  `services/pipeline/tests/test_manual_import.py` (new, 11 tests),
+  `services/pipeline/tests/test_import_side_effects.py` (added
+  `pipeline.manual_import` to the fresh-import guard), `tasks/worklog.md`.
+  No `paths.py` change (existing `inside_git_worktree` sufficed); no new
+  dependencies (stdlib only).
+- **Status semantics:** exactly one of `imported` / `duplicate` / `invalid` /
+  `failed` per file. Per-file flow: wrong extension → `invalid`, skipped, NO
+  record; unreadable (OSError) → `failed`, counted only, no record (no hash to
+  key by; sanitized to the OS error *class name* only); `.pdf` with bad magic
+  bytes → `invalid` WITH a hash-keyed record; existing hash → `duplicate`
+  (original record immutable, never overwritten); else → `imported`.
+- **Deliberate invalid-content dedupe (approved adjustment):** a
+  bad-magic-bytes file writes a hash-keyed record, so re-importing it counts as
+  `duplicate` and the record retains status `invalid`. Documented in the module
+  docstring and covered by a test (import → invalid; re-import → duplicate,
+  record byte-identical).
+- **Privacy:** console prints only the counts summary
+  (`imported=N duplicate=N invalid=N failed=N`); logs (stderr JSON) carry
+  counts/statuses only — never filenames, stems, paths, or content. Per-file
+  detail (incl. `original_filename` and the provenance stem) lives only in the
+  out-of-repo records. Proven by a sentinel-stem test asserting the name never
+  reaches captured stdout/stderr/caplog across every status path.
+- **Deviations from plan:** none. All four approved adjustments applied
+  (wrong-extension no-record; single overwritten report; invalid-content
+  dedupe documented + tested; unreadable test skips under `os.geteuid() == 0`
+  since root ignores permission bits).
+- **Verification:** full suite 81 passed; ruff clean. Exercised end-to-end via
+  the installed `pipeline` console script into an out-of-repo dir:
+  imported/invalid split correct, re-run all-duplicate (bad-magic PDF →
+  duplicate, record-less `.txt` → invalid again), worktree guard exits 2 and
+  creates nothing, logs id/status-only.
+- **Notes for next task:** the parser stage takes `docket_number` as an
+  explicit parameter — it should read it from the record's
+  `docket_number_provenance` (or a caller override), never re-derive from a
+  filename. The `wrong_extension` / `bad_magic_bytes` / `unreadable_file`
+  codes are import-stage-local; 18.1's unified warning/error vocabulary may
+  absorb them. `python -m pipeline.cli` is a no-op (no `__main__` block); use
+  the `pipeline` console script or `pipeline.cli:main`.
