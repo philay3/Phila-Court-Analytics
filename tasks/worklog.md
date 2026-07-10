@@ -785,3 +785,74 @@
   give the parent-owned committed selection, an `onCommitChange`, and a typed
   `search` function returning `PublicApiResult<{ results: T[] }>`. When a form
   hosts multiple comboboxes, query inputs by accessible name, not bare role.
+
+## Task 13.1 — Distribution + Metadata Display Components
+
+- **Date:** 2026-07-09
+- **What was built:** The reusable, presentational-only display components that
+  13.2/13.3 will compose into the result pages — a generic `DistributionSection`
+  (semantic table + paired aria-hidden bars) plus five metadata components
+  (`SampleSizeLabel`, `DateRangeLabel`, `ThinDataBadge`, `ThinDataCallout`,
+  `ResponsibleUseNotice`) — a copy-constants module, and a single-source
+  definition-anchor helper. Components only: no pages, routes, or data fetching.
+- **Files touched (all new):**
+  - **`apps/web/app/lib/definition-anchor.ts`**: `DistributionKind` type +
+    `definitionAnchor(kind, categoryCode)` → `/definitions#<kind>-<categoryCode>`
+    (pinned decision 2). The single home of the convention; 14.1 imports it to
+    mint matching ids. Uses the taxonomy code verbatim.
+  - **`apps/web/app/components/result-display-copy.ts`**: `RESULT_DISPLAY_COPY`
+    — every user-facing string the display components render (captions, headers,
+    definition-link text/label prefix, thin-data callout body, the four
+    responsible-use statements). Flat string values so the app/-walking copy
+    guard covers each and the direct scan test iterates them.
+  - **`DistributionSection.tsx`**: `<section>` labelled by the table `<caption>`;
+    a semantic table (`<th scope="col">` headers, `<th scope="row">` per category
+    holding the display name + definition anchor link, count and percentage in
+    adjacent `<td>`s — always together, via the 11.4 formatters); a separate
+    `aria-hidden="true"` bar block whose fill width is `width: ${percentage}%`
+    from the API percentage only. Embeds `ThinDataBadge` adjacent to the sample
+    size when thin; does NOT render the callout.
+  - **`SampleSizeLabel.tsx` / `DateRangeLabel.tsx` / `ThinDataBadge.tsx` /
+    `ThinDataCallout.tsx` / `ResponsibleUseNotice.tsx`**: metadata components,
+    all formatting through `app/lib/formatters.ts`. `DateRangeLabel` takes an
+    optional range and renders nothing when absent (never invents a default).
+    `ThinDataBadge` renders the pinned `THIN_DATA_LABEL` via `formatThinDataLabel`
+    only when thin. `ThinDataCallout` is standalone (page-level placement is
+    13.2/13.3's job per required mobile content order).
+  - **Tests (co-located per the 12.2 jsdom-project convention):**
+    `DistributionSection.test.tsx` (7: outcome render; sentencing with its
+    separate sample size; shuffled fixture renders in fixture order — proving no
+    client re-sort; bar widths = API %, aria-hidden, table mirrors every value;
+    per-row anchor; scoped `<th>` + caption; embedded badge both ways with no
+    callout in-section), `ThinDataBadge`/`ThinDataCallout`/`SampleSizeLabel`/
+    `DateRangeLabel` (incl. missing-range case)/`ResponsibleUseNotice` tests,
+    `result-display-copy.test.ts` (direct `scanPublicCopy`), and
+    `definition-anchor.test.ts`. Fixtures are typed straight from `@pca/shared`
+    (`OutcomeDistributionEntry` / `SentencingDistributionEntry`) — no mock shapes.
+- **Pinned-decision-1 verification (recorded per review):** the Sprint 2 result
+  endpoints serve distribution rows in taxonomy sort order server-side. Both
+  services map stored rows through `apps/api/src/services/result-helpers.ts`,
+  which sorts by taxonomy `sortOrder` before serving (`mapped.sort(...)`), and
+  the route suites assert "in taxonomy sort order". So `DistributionSection`
+  renders `rows` in received order with NO client sort.
+- **How to verify:** `pnpm run build:packages` (Phase 13 dist prereq), then from
+  root `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm test` (or
+  `pnpm --filter @pca/web test`).
+- **Gates — all green:** lint 0; format:check clean; typecheck 0; web tests 89
+  (up from 70; node + jsdom projects), api 194, all other workspace suites
+  unaffected.
+- **Deviations from plan:** none. As approved at review, the thin-data rendering
+  was split — badge embedded in `DistributionSection`, callout standalone only.
+  One implementation note: the whole-file copy guard scans comments too, so a
+  few doc comments were reworded to avoid the forbidden vocabulary (e.g.
+  "guarantees" → "keeps"; dropped "prediction/predictive" from prose); the
+  rendered string values are unchanged and pass the direct scan.
+- **Notes for next task (13.2/13.3, 14.1):** compose `DistributionSection` per
+  distribution and place `ThinDataCallout` at page level (before the sections)
+  per the required mobile content order; it is intentionally not embedded.
+  `ResponsibleUseNotice` and `DateRangeLabel` are page-composed too — the result
+  `dateRange` is result-level, so pass it to `DateRangeLabel` at the page.
+  Task 14.1 (definitions page) MUST import `definitionAnchor` from
+  `app/lib/definition-anchor.ts` and emit element ids from the same helper so the
+  per-row links resolve. Category codes are served verbatim (e.g. `guilty_plea`,
+  `no_further_penalty`).
