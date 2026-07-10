@@ -1477,3 +1477,34 @@
 - **Files touched:** `apps/web/app/definitions/page.tsx`,
   `apps/web/app/methodology/page.tsx`, `apps/web/app/data-coverage/page.tsx`,
   `tasks/worklog.md`.
+
+## Task 15.3 — Sprint 3 exit demo + sprint close (human step, worklog only)
+
+- **Date:** 2026-07-10
+- **What happened:** Human exit demo run by Chops. All ten demo steps passed;
+  Sprint 3 is closed. No code, config, copy, or test changes — bookkeeping only.
+- **Exit demo — ten steps, all PASS:**
+  1. Homepage charge search ("retail") → suggestions → charge-only result.
+  2. Distributions as table + bars, counts + percentages together, sample size,
+     date range, last refreshed.
+  3. Thin-data charge (Criminal Trespass) renders "Based on a small sample."
+  4. Judge-specific result beside Philadelphia baseline, separate sample sizes,
+     neutral labels.
+  5. Remove-filter action routes back to charge-only result.
+  6. Judge-unavailable pair renders the pinned `@pca/shared` fallback message;
+     W1 harassment judge-route state confirmed.
+  7. Sentencing-unavailable charge: outcome persists, callout renders.
+  8. `/definitions`, `/methodology`, `/data-coverage` render API content;
+     2025-01-01 start date and seeded-data disclosure visible as served.
+  9. Mobile viewport: pinned content order correct, no horizontal scroll.
+  10. Full CI green on main including the e2e job.
+- **Sprint 3 quality-gate yield (for the record):** the E2E gate caught three
+  real defects before sprint close — (1) the W1 judge-route regression,
+  (2) the homepage Level A color-only-meaning defect, and (3) the content-page
+  build-time prerender baking (fixed via `force-dynamic`). The gate paid for
+  itself: three production-visible defects surfaced and fixed pre-close.
+- **Files touched:** `tasks/worklog.md`, `tasks/current-task.md` (cleared to a
+  one-line "No active task" placeholder).
+- **Deviations from plan:** none — no code changes.
+- **Notes for next task:** Sprint 4 planning in progress; `current-task.md`
+  holds the "No active task" placeholder until the next task is assigned.
