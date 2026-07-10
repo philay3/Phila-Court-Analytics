@@ -1,4 +1,4 @@
-import type { ChargeOnlyResultResponse, DateRange, JudgeSpecificResultSuccess } from '@pca/shared';
+import type { ChargeOnlyResultSuccess, DateRange, JudgeSpecificResultSuccess } from '@pca/shared';
 
 /**
  * Shared frontend formatting utilities (task 11.4). Pure functions, no React,
@@ -70,11 +70,13 @@ export const THIN_DATA_LABEL = 'Based on a small sample.';
  * The result-type values this module labels, derived from the shared response
  * contracts rather than hand-written literals. Adding a new labelable result
  * type to the contract makes {@link formatResultTypeLabel} fail typecheck at
- * the `never` assertion instead of silently mislabeling. `judge_specific_unavailable`
- * is intentionally excluded — it is a fallback state, not a labelable result.
+ * the `never` assertion instead of silently mislabeling. The
+ * `*_unavailable` arms (`charge_only_unavailable`, `judge_specific_unavailable`)
+ * are intentionally excluded — they are absent-data states, not labelable
+ * results — so both `resultType`s are drawn from the success arms only.
  */
 type LabelableResultType =
-  ChargeOnlyResultResponse['resultType'] | JudgeSpecificResultSuccess['resultType'];
+  ChargeOnlyResultSuccess['resultType'] | JudgeSpecificResultSuccess['resultType'];
 
 /** Integer count with en-US grouping separators. `0` renders as "0". */
 export function formatCount(count: number): string {

@@ -2,8 +2,10 @@ import { TAXONOMY_VERSION } from '@pca/taxonomy';
 
 import { publicOutcomeCategories, publicSentencingCategories } from '../public/categories.js';
 import {
+  CHARGE_RESULT_UNAVAILABLE_MESSAGE,
   CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
-  type ChargeOnlyResultResponse,
+  type ChargeOnlyResultSuccess,
+  type ChargeOnlyResultUnavailable,
   type ChargeSentencingAvailable,
 } from '../public/charge-result.js';
 import type { OutcomeDistribution, SentencingDistribution } from '../public/common.js';
@@ -53,7 +55,7 @@ export function validSentencingDistribution(): SentencingDistribution {
   };
 }
 
-export function validChargeOnlyResult(): ChargeOnlyResultResponse {
+export function validChargeOnlyResult(): ChargeOnlyResultSuccess {
   return {
     charge: {
       id: 'b8eb27a6-6fa1-4d0c-816b-96be2e3428b6',
@@ -93,10 +95,21 @@ export function validChargeOnlyResult(): ChargeOnlyResultResponse {
   };
 }
 
-export function validChargeOnlyResultSentencingUnavailable(): ChargeOnlyResultResponse {
+export function validChargeOnlyResultSentencingUnavailable(): ChargeOnlyResultSuccess {
   return {
     ...validChargeOnlyResult(),
     sentencing: { available: false, message: CHARGE_SENTENCING_UNAVAILABLE_MESSAGE },
+  };
+}
+
+export function validChargeOnlyResultUnavailable(): ChargeOnlyResultUnavailable {
+  const base = validChargeOnlyResult();
+  return {
+    resultType: 'charge_only_unavailable',
+    code: 'CHARGE_RESULT_UNAVAILABLE',
+    message: CHARGE_RESULT_UNAVAILABLE_MESSAGE,
+    charge: base.charge,
+    links: base.links,
   };
 }
 

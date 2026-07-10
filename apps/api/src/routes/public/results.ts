@@ -23,8 +23,9 @@ export const resultRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         params: chargeResultParamsSchema,
-        // Serializing through the response schema strips anything outside the
-        // public contract — aggregate-only defense in depth.
+        // The single 200 schema is the top-level tagged union (task 13.2a), so
+        // response stripping covers the success AND unavailable arms alike —
+        // aggregate-only defense in depth.
         response: { 200: chargeOnlyResultResponseSchema },
       },
     },
