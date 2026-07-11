@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "UNSUPPORTED_FORMAT",
+    "exception_class": "ParseError"
+  },
+  "record": null,
+  "review_needed": true,
+  "status": "failed",
+  "warnings": []
+}

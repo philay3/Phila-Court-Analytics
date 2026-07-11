@@ -33,6 +33,9 @@ collector = [
 dev = [
     "pytest>=8",
     "ruff>=0.12",
+    # Task 19.1: parse the tier-1 fixture-index.yaml in the index-validation
+    # test. Dev-only (never installed by production `uv sync` without the group).
+    "pyyaml>=6",
 ]
 
 [tool.ruff]

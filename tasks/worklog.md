@@ -2553,3 +2553,69 @@ the record field there.
   - `.venv/bin/ruff format --check .` — 44 files already formatted.
   - `.venv/bin/python -m pytest -q` — 299 passed.
   - repo-root `pnpm format:check` — passed (MD touched).
+
+## Task 19.1 — Tier-1 Synthetic Fixture Corpus + Index + Goldens + Hygiene Test
+
+- **Date:** 2026-07-11
+- **Goal:** Committed, CI-safe regression corpus: synthetic TEXT fixtures over
+  the full scenario matrix (CP/MC where layout differs), a fixture index,
+  parser-generated golden JSONs (fixed public test salt), plus tests enforcing
+  docket-number hygiene, index/golden consistency, and fixture↔golden
+  regression. No parser behavior change.
+- **What was built (all under `services/pipeline/tests/tier1/`):**
+  - **32 fixtures** (`fixtures/*.txt`) covering every matrix scenario; CP+MC
+    pairs where layout differs (single-charge, multiple-charge), MC-only where
+    the section set differs (held/cross-court + related-cases, blank-judge,
+    multi-non-terminal). Pages separated by a visible `=== PAGE BREAK ===` line
+    (all current fixtures are single-page). Two invented MC renderings
+    (`unverified_mc_trial_verdict`, `unverified_mc_amp_diversion`) marked
+    `layout_unverified: true`.
+  - **32 goldens** (`goldens/*.json`) — the deterministic PROJECTION of the
+    parse pipeline: `status`, `record` (with non-deterministic `parsed_at`
+    dropped), full `warnings`, derived `review_needed`, and (on failed parse)
+    the structural `error` arm. Warnings/`review_needed` composed exactly as
+    `envelope.parse_document` does (`observe()` + parser warnings, extraction
+    status fixed at `STATUS_SUCCESS`). Parser-generated only, never hand-edited.
+  - **`fixture-index.yaml`** — per-fixture filename, court_type, scenario,
+    expected_charge_count, expected_warnings, layout_unverified, synthetic.
+  - **`support.py`** — `TIER1_TEST_SALT = "tier1-fixture-salt"` (public; never
+    the real salt), fixture/page loader, `build_golden` projection, golden IO,
+    field-level diff. Contains no `test_*` functions.
+  - **`generate_goldens.py`** — minimal deterministic generator; refuses to run
+    without `--regenerate` (exits non-zero), not pytest-collectable.
+  - **`test_regression.py`** — parses every fixture, compares to its golden with
+    readable field-level diffs; offline; asserts no local-corpus reference.
+  - **`test_index.py`** — 1:1 fixture↔index↔golden; expected_warnings ⊆
+    EMITTED_CODES; MISSING_CHARGE_SECTION never expected; index consistent with
+    goldens; explicit failed-parse convention (count 0 / null record / error arm).
+  - **`test_hygiene.py`** — scans the ENTIRE tier1 tree; fails on any docket-shape
+    token whose 7-digit sequence isn't the `000000\d` placeholder; reports
+    location only, never the matched token.
+- **Files touched:** `services/pipeline/tests/tier1/**` (fixtures, goldens,
+  index, support, generator, 3 tests); `services/pipeline/pyproject.toml` +
+  `uv.lock` (add dev-only `pyyaml`, approved); repo-root `.prettierignore` (one
+  line excluding the generated goldens dir, approved); `tasks/worklog.md`.
+- **Required-fix resolutions:** restitution folded into the Fines-and-Costs
+  sentence program text (the ported parser recognizes only six sentence-type
+  prefixes; restitution is not a distinct parsed component — a faithful
+  limitation, not a parser change); dedicated `missing_disposition_date_mc`
+  (disposition without a date) and `missing_sentence_date_mc` (sentence without
+  a date) fixtures added; hygiene scans the whole tree; failed-fixture rule
+  documented + asserted in `test_index.py`; generator gated + non-collectable.
+- **CP/MC layout evidence:** the parser branches on court only via
+  `detect_court_type` (prefix-only, `docket_parser.py:266`), the RELATED CASES
+  section (MC-only, `docket_parser.py:851`), and the Cross Court Docket Nos line
+  (`docket_parser.py:469`). CHARGES / DISPOSITION / STATUS / DEFENDANT parsing
+  never reads court_type, so shared-path scenarios are court-agnostic and
+  single-court coverage suffices; CP+MC pairs are provided where the section set
+  differs.
+- **Deviations from plan:** none beyond the approved required fixes.
+- **Notes for next task (19.2):** the run-fixtures CLI builds on this loader +
+  `build_golden` projection; regeneration discipline (explicit flag + this
+  worklog note) is to be formalized there. Goldens are prettier-ignored (repo
+  root) because they are generated artifacts; the YAML index stays prettier-checked.
+- **Verification (all four gates green):**
+  - `.venv/bin/ruff check src tests` — All checks passed.
+  - `.venv/bin/ruff format --check .` — 48 files already formatted.
+  - `.venv/bin/python -m pytest -q` — 337 passed.
+  - repo-root `pnpm format:check` — passed (YAML/MD in play; goldens ignored).

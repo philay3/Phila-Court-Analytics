@@ -8,3 +8,4 @@ tasks/
 CLAUDE.md
 test-results/
 playwright-report/
+services/pipeline/tests/tier1/goldens/

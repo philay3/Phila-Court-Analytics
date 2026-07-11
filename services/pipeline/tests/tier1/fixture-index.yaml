@@ -1,0 +1,287 @@
+# Tier-1 synthetic fixture corpus index (Task 19.1).
+#
+# One entry per committed fixture, paired 1:1 with a fixture *.txt and a golden
+# *.json (golden filename = fixture stem + .json). Hand-authored; validated by
+# tests/tier1/test_index.py (1:1 fixture<->index<->golden, expected_warnings a
+# subset of the emitted vocabulary minus UNEMITTED_CODES, and each entry's
+# expected_warnings / expected_charge_count consistent with its golden).
+#
+# Fields:
+#   filename              fixture file under tests/tier1/fixtures/
+#   court_type            "Common Pleas" (CP) | "Municipal Court" (MC); fixes the
+#                         placeholder docket the parser is handed at generation
+#   scenario              matrix scenario this fixture exercises
+#   expected_charge_count charges in the parsed record (0 for a failed parse)
+#   expected_warnings     emitted warning codes (envelope observe + parser), a
+#                         subset of EMITTED_CODES; [] when none
+#   layout_unverified     true only for invented layouts not verified vs real CPCMS
+#   synthetic             always true — every tier-1 fixture is synthetic
+#
+# All docket numbers here and in every fixture/golden are zero-sequence
+# placeholders (-0000000- / -0000001-); the hygiene test enforces this across
+# the whole tree.
+
+fixtures:
+  - filename: single_charge_cp.txt
+    court_type: Common Pleas
+    scenario: single charge, guilty verdict with probation
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: single_charge_mc.txt
+    court_type: Municipal Court
+    scenario: single charge, guilty verdict with confinement
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: multiple_charges_cp.txt
+    court_type: Common Pleas
+    scenario: multiple charges, mixed dispositions
+    expected_charge_count: 3
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: multiple_charges_mc.txt
+    court_type: Municipal Court
+    scenario: multiple charges, mixed dispositions
+    expected_charge_count: 2
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: dismissed_mc.txt
+    court_type: Municipal Court
+    scenario: dismissed
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: withdrawn_cp.txt
+    court_type: Common Pleas
+    scenario: withdrawn
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: guilty_plea_mc.txt
+    court_type: Municipal Court
+    scenario: guilty plea
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: guilty_verdict_cp.txt
+    court_type: Common Pleas
+    scenario: guilty verdict
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: acquittal_mc.txt
+    court_type: Municipal Court
+    scenario: acquittal (not guilty)
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: ard_diversion_cp.txt
+    court_type: Common Pleas
+    scenario: ARD / diversion
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: probation_cp.txt
+    court_type: Common Pleas
+    scenario: probation sentence
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: incarceration_mc.txt
+    court_type: Municipal Court
+    scenario: incarceration sentence
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: fine_costs_restitution_mc.txt
+    court_type: Municipal Court
+    scenario: fine / costs / restitution
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: multi_sentence_components_mc.txt
+    court_type: Municipal Court
+    scenario: multiple sentence components
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: missing_sentencing_cp.txt
+    court_type: Common Pleas
+    scenario: missing sentencing (disposed, no sentence)
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: multiple_judges_mc.txt
+    court_type: Municipal Court
+    scenario: multiple judges
+    expected_charge_count: 2
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: junk_judge_mc.txt
+    court_type: Municipal Court
+    scenario: junk judge line (SUSPECT_JUDGE_LINE)
+    expected_charge_count: 1
+    expected_warnings:
+      - SUSPECT_JUDGE_LINE
+    layout_unverified: false
+    synthetic: true
+
+  - filename: blank_assigned_judge_mc.txt
+    court_type: Municipal Court
+    scenario: blank assigned judge (MC)
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: held_cross_court_mc.txt
+    court_type: Municipal Court
+    scenario: held / non-terminal (MC) with cross-court reference
+    expected_charge_count: 1
+    expected_warnings:
+      - NON_TERMINAL_CASE
+    layout_unverified: false
+    synthetic: true
+
+  - filename: progression_mc.txt
+    court_type: Municipal Court
+    scenario: progression — non-terminal then terminal, no event keys
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: multi_nonterminal_mc.txt
+    court_type: Municipal Court
+    scenario: multi non-terminal, latest event-header wins
+    expected_charge_count: 1
+    expected_warnings:
+      - NON_TERMINAL_CASE
+    layout_unverified: false
+    synthetic: true
+
+  - filename: amended_charge_mc.txt
+    court_type: Municipal Court
+    scenario: amended / replaced charge (SUSPECTED_AMENDED_CHARGE)
+    expected_charge_count: 1
+    expected_warnings:
+      - SUSPECTED_AMENDED_CHARGE
+    layout_unverified: false
+    synthetic: true
+
+  - filename: truncation_repair_mc.txt
+    court_type: Municipal Court
+    scenario: truncation repair (Transferred to Another -> full disposition)
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: unparseable_duration_mc.txt
+    court_type: Municipal Court
+    scenario: unparseable duration (Life -> UNPARSEABLE_DURATION)
+    expected_charge_count: 1
+    expected_warnings:
+      - UNPARSEABLE_DURATION
+    layout_unverified: false
+    synthetic: true
+
+  - filename: min_assumed_mc.txt
+    court_type: Municipal Court
+    scenario: min assumed (min filled from max)
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: sentinel_collision_cp.txt
+    court_type: Common Pleas
+    scenario: sentinel collision (judge slot collides with defendant name)
+    expected_charge_count: 1
+    expected_warnings:
+      - SENTINEL_COLLISION
+    layout_unverified: false
+    synthetic: true
+
+  - filename: legacy_thin_cp.txt
+    court_type: Common Pleas
+    scenario: legacy / thin docket
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: low_text_degenerate_mc.txt
+    court_type: Municipal Court
+    scenario: low-text / degenerate document (parser degenerate path -> failed)
+    expected_charge_count: 0
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: missing_disposition_date_mc.txt
+    court_type: Municipal Court
+    scenario: disposition recorded without a date (MISSING_DISPOSITION_DATE)
+    expected_charge_count: 1
+    expected_warnings:
+      - MISSING_DISPOSITION_DATE
+    layout_unverified: false
+    synthetic: true
+
+  - filename: missing_sentence_date_mc.txt
+    court_type: Municipal Court
+    scenario: sentence recorded without a date (MISSING_SENTENCE_DATE)
+    expected_charge_count: 1
+    expected_warnings:
+      - MISSING_SENTENCE_DATE
+    layout_unverified: false
+    synthetic: true
+
+  - filename: unverified_mc_trial_verdict.txt
+    court_type: Municipal Court
+    scenario: unverified MC rendering — decided trial verdict
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: true
+    synthetic: true
+
+  - filename: unverified_mc_amp_diversion.txt
+    court_type: Municipal Court
+    scenario: unverified MC rendering — AMP diversion
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: true
+    synthetic: true

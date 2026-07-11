@@ -1,0 +1,44 @@
+{
+  "error": null,
+  "record": {
+    "case": {
+      "assigned_judge_raw": "Torres, Judge A.",
+      "case_status": "Closed",
+      "county": "Philadelphia",
+      "court_type": "Common Pleas",
+      "cross_court_dockets": null,
+      "dc_number": null,
+      "defendant_hash": "4d66b9141e1f8282d6f5cea32ea3e8c86010ab0a9d73ed226c62c0d2b03b4357",
+      "filed_date": "2025-02-03",
+      "otn": "X 7654321-1"
+    },
+    "charges": [
+      {
+        "disposition_date": "2025-03-10",
+        "disposition_judge_raw": "Torres, Judge A.",
+        "disposition_raw": "Guilty",
+        "grade": null,
+        "offense": "Burglary",
+        "sentences": [
+          {
+            "max_days": 1440,
+            "min_days": 720,
+            "program": "Confinement",
+            "raw_text": "Confinement, Min of 24.00 Months Max of 48.00 Months",
+            "sentence_date": "2025-03-10",
+            "sentence_type": "Confinement"
+          }
+        ],
+        "sequence": 1,
+        "statute": "18 \u00a7 3502 F1"
+      }
+    ],
+    "docket_number": "CP-51-CR-0000000-2025",
+    "notes": [],
+    "parser_version": 2,
+    "related_cases": []
+  },
+  "review_needed": false,
+  "status": "parsed",
+  "warnings": []
+}

@@ -1,0 +1,35 @@
+{
+  "error": null,
+  "record": {
+    "case": {
+      "assigned_judge_raw": "Okonkwo, Judge C.",
+      "case_status": "Active",
+      "county": "Philadelphia",
+      "court_type": "Municipal Court",
+      "cross_court_dockets": null,
+      "dc_number": null,
+      "defendant_hash": "c0f66003d025ddfa01c8923b7faa5fb600b22f8769aa24383b4a78232ab6f3cf",
+      "filed_date": "2025-02-06",
+      "otn": "X 1234567-8"
+    },
+    "charges": [
+      {
+        "disposition_date": "2025-02-10",
+        "disposition_judge_raw": "Okonkwo, Judge C.",
+        "disposition_raw": "AMP - Accepted",
+        "grade": null,
+        "offense": "Possession",
+        "sentences": [],
+        "sequence": 1,
+        "statute": "35 \u00a7 780-113 M"
+      }
+    ],
+    "docket_number": "MC-51-CR-0000000-2025",
+    "notes": [],
+    "parser_version": 2,
+    "related_cases": []
+  },
+  "review_needed": false,
+  "status": "parsed",
+  "warnings": []
+}
