@@ -2886,3 +2886,57 @@ the record field there.
 - **Notes for next task:** Sprint 5 opens with the fixture-layout audit above and
   the six 20.1 handoff items; the held-case value gate is the template for any
   future capture field (never certify values with a key-presence class alone).
+
+## Task 18.5 (in progress) — Disposition-token scanner (RF1 evidence tooling) (2026-07-11)
+
+- **Status:** first of five sequenced steps for 18.5 (supersedes the defective
+  18.4 ARD routing; continues on the never-merged `task-18.4` branch). This
+  commit lands ONLY the corpus token scanner. The parser routing redesign, the
+  comparator UN-DISPOSAL check, the new `ard_progression_cp` fixture, and the
+  record updates (deliverables 2–7) remain BLOCKED until Chops runs the scanner
+  and the ARD_CLASS / NON_TERMINAL frozensets are finalized against its output.
+- **What was built:** `services/pipeline/scripts/scan_disposition_tokens.py` —
+  enumerates every distinct NON-EMPTY charge-line disposition token appearing
+  under a Not-Final event across the extracted corpus, and cross-references each
+  occurrence against the Capstone baseline (RF1). Per-token it reports corpus
+  count, `disposed_under_event`, `held_under_event`, `raw_equals_token`, and a
+  mechanical partition: `disposed_under_event == corpus_count` → ARD_CLASS;
+  `disposed_under_event == 0 and raw_equals_token == 0` → NON_TERMINAL; else
+  MIXED (a plan-level STOP). Exit code 1 whenever any MIXED token exists.
+- **Why attribution, not final-state (the RF1 subtlety):** Capstone routed at
+  the EVENT level (status-row "ard" fired for every charge under the event); the
+  18.5 redesign routes at the CHARGE-LINE level. A charge held at "Held for
+  Court" (Not Final) and later found guilty at a Final event is DISPOSED in its
+  final baseline state, so a naive final-state split marks "Held for Court" both
+  disposed (progressed charges) and held (held-forever charges) → a false MIXED
+  on the commonest non-terminal. So an occurrence is `disposed_under_event` only
+  when the disposition is ATTRIBUTABLE to this event: `baseline.disposition_raw
+  == token`, OR `baseline.disposition_date` ∈ the event block's judge-line dates.
+  `raw_equals_token` is the decisive signal for the wrapped revoked token — if
+  any docket ENDS on a revoked event the baseline disposed it with the wrap
+  token as raw, so it must be ARD_CLASS or the fix would itself un-dispose it;
+  only the cross-reference sees this (the inspected progression docket cannot —
+  its revoked write was masked by the terminal overwrite).
+- **Placement decision (flagged):** committed under `services/pipeline/scripts/`
+  rather than repo-root `scripts/` (the plan's literal path). CI lints Python via
+  `uv run ruff check .` from `services/pipeline/`, so a repo-root `scripts/*.py`
+  would escape every Python gate; under `services/pipeline/scripts/` it is
+  ruff-checked and format-checked. Trivial to relocate if repo-root is preferred.
+- **Privacy:** console prints CPCMS tokens + structural counts ONLY (no docket
+  numbers, names, dates, or sequences); the detailed JSON artifact is written
+  OUT-OF-REPO (default `~/court-data/scan-disposition-tokens/`) and keys dockets
+  by source-hash prefix, never docket number (mirrors the tier-2 report). The
+  scanner refuses to run in CI, refuses to write inside the git worktree, and
+  requires `DEFENDANT_HASH_SALT` (never printed/written).
+- **Validation (offline, synthetic):** a five-docket fictional corpus in the
+  scratchpad exercised all three partitions — pure ARD → ARD_CLASS; held-forever
+  AND held→Final-guilty both → NON_TERMINAL for "Held for Court" (proving
+  attribution suppresses the false MIXED); ends-on-revoked + masked-by-terminal
+  → MIXED/STOP for the wrap token. Zero docket-number/name leaks in the artifact.
+  The synthetic corpus was deleted after the run.
+- **Files touched:** `services/pipeline/scripts/scan_disposition_tokens.py`
+  (new), `tasks/worklog.md` (this entry). No parser/comparator/fixture/CI change.
+- **Next step:** Chops runs the scanner (command in the report), shares the
+  token/count/baseline-partition output here; any MIXED token or any regressed
+  charge whose baseline raw is not covered by ARD_CLASS ∪ the Final path is a
+  STOP; then the frozensets are finalized and deliverables 2–7 implemented.
