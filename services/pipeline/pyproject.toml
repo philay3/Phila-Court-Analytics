@@ -23,6 +23,13 @@ build-backend = "uv_build"
 module-name = "pipeline"
 
 [dependency-groups]
+# Optional group for the `pipeline collect` command (Task COL-1). Playwright
+# is pinned EXACT and lives only here: it is NOT a default group, so `uv sync`
+# and CI (`uv sync --locked`) never install it, and no test imports it. Run
+# `uv sync --group collector` + `uv run playwright install chromium` to collect.
+collector = [
+    "playwright==1.61.0",
+]
 dev = [
     "pytest>=8",
     "ruff>=0.12",

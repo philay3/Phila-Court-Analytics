@@ -2372,3 +2372,73 @@ the record field there.
   - `.venv/bin/ruff check src tests` — All checks passed.
   - `.venv/bin/ruff format --check .` — 30 files already formatted.
   - `.venv/bin/python -m pytest -q` — 208 passed (206 + 2 Check-2 regression tests).
+
+## Task COL-1 — Collection Baseline Run (Collector Port + One-Hour Weekend Baseline)
+
+- **Date:** 2026-07-10
+- **What was built:** The `pipeline collect` CLI subcommand and a new
+  `pipeline.collector` package that ports Capstone's UJS-portal per-docket fetch
+  path into a fully code-enforced pacing/stop regime. Enumerates
+  `MC-51-CR-#######-2025` docket numbers, fetches each docket-sheet PDF into an
+  intake dir, logs every attempt, and writes a JSONL attempt log + JSON run
+  report. Tooling only — Chops runs the actual baseline manually.
+- **Files touched:**
+  - `services/pipeline/src/pipeline/collector/__init__.py` (new)
+  - `services/pipeline/src/pipeline/collector/enumeration.py` (new — docket-range
+    formatting, 7-digit zero-pad, MC-only)
+  - `services/pipeline/src/pipeline/collector/classification.py` (new — pure
+    `FetchSignal` → outcome; block-before-miss precedence)
+  - `services/pipeline/src/pipeline/collector/guard.py` (new — block streak N=5
+    and error streak N=5)
+  - `services/pipeline/src/pipeline/collector/engine.py` (new — run loop; all
+    caps/cooldowns/delays/reporting; injected transport/sleep/clock/jitter/abort)
+  - `services/pipeline/src/pipeline/collector/transport.py` (new — Playwright
+    adapter, lazy import, block detection; the only Playwright-touching module)
+  - `services/pipeline/src/pipeline/collector/run.py` (new — run boundary: dir
+    validation, SIGINT→graceful abort, real deps, transport lifecycle)
+  - `services/pipeline/src/pipeline/cli.py` (collect subcommand + flags + CI guard)
+  - `services/pipeline/pyproject.toml` + `uv.lock` (optional `collector` group,
+    `playwright==1.61.0` exact)
+  - `services/pipeline/README.md` (run-procedure section)
+  - `services/pipeline/tests/test_collector_{enumeration,classification,guard,engine,cli}.py`
+    (new) + `test_import_side_effects.py` (collector modules added, Playwright-free
+    import test)
+- **Capstone throttle-review findings:** Pacing lived largely in the SHELL
+  wrapper `run_loop.sh` (`CHUNK=40`, `REST=180`s `sleep`, `while true`,
+  operator Ctrl-C) — operator-attention pacing, now replaced by code. `collect.py`
+  added only a per-fetch `polite_sleep` + `--limit` budget + a 150-fetch browser
+  restart; **no wall-clock cap, no post-block cooldown, no bot-check detection**.
+  `guard.py` (`AbortGuard`) ran two streaks (error@5, nopdf@8) that **conflated
+  "no PDF" with "throttled"** and could not tell a genuine missing docket from a
+  block. `fetch_fixtures.py`/`fetch_mc_fixtures.py` were standalone fixture
+  fetchers with the same conflation. COL-1 replaces all of it with: 240-min hard
+  ceiling, 2-min post-block cooldown, jittered 2–5s per-request delay, 40/batch +
+  4-min inter-batch cooldown, explicit block/bot-check classification distinct
+  from clean miss, block streak N=5 + error streak N=5, per-attempt outcome
+  logging, resumable `already_present` skip, out-of-repo intake/report dirs.
+- **Strategy divergence (confirmed proceed):** Capstone's `collect.py`
+  deliberately *retired* docket-number enumeration in favor of a Date-Filed
+  search harvest, precisely because enumeration wastes lookups on non-existent
+  sequences and produced rate-limit false negatives under `AbortGuard`. COL-1
+  re-adopts enumeration as a standing locked decision (it is the coverage
+  denominator), and the new miss/block separation is the specific fix for the
+  conflation that drove Capstone off enumeration. This changes the miss-rate
+  profile Capstone saw — expected and intended.
+- **Deviations from plan:** none. All six approved fixes incorporated
+  (per-request jittered delay; consecutive-error stop; headful default; no
+  screenshots/tracing/HAR/video + grep test; block-before-miss precedence;
+  documented browser-restart drop). Playwright pin resolved to `1.61.0` at
+  implement time; batch boundaries count real portal requests (both pre-approved).
+- **Flagged for re-evaluation after the baseline run:** (1) browser-restart-every-
+  150-fetches dropped (unnecessary for a ≤600-request hour); (2) block/bot-check
+  DOM signatures in `transport.py` are best-effort (Capstone had none to port) and
+  MUST be operator-confirmed on the headful run before extended collection.
+- **Notes for next task:** Running the collection is the human step (Chops, a
+  weekend). Collected PDFs are NEW INPUTS in `~/court-data/intake/`, not fixtures
+  or baseline members; they enter the pipeline later via the 16.3 manual-import
+  path after triage. Bot-check written confirmation remains an ADR 0002 open item
+  gating extended/regular collection.
+- **Verification (all three pipeline CI gates green):**
+  - `.venv/bin/ruff check src tests` — All checks passed.
+  - `.venv/bin/ruff format --check .` — 42 files already formatted.
+  - `.venv/bin/python -m pytest -q` — 274 passed.
