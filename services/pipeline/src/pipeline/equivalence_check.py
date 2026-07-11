@@ -145,6 +145,10 @@ class DocketResult:
     # in-process only to compute the aggregate value-population gate; never
     # written per-docket to any artifact.
     held_events: list[dict[str, object]] = field(default_factory=list)
+    # 18.5 UN-DISPOSAL check: sequences disposed in the baseline but left
+    # undisposed by the corpus parse (the 18.4 ARD-routing regression signature).
+    # Counts only; the sequence numbers are structural, never docket text.
+    undisposals: list[int] = field(default_factory=list)
 
 
 def _court_of(docket_number: str) -> str:
@@ -180,6 +184,40 @@ def _held_events(record: dict) -> list[dict[str, object]]:
         for charge in record.get("charges", [])
         if "event_date" in charge or "event_name" in charge
     ]
+
+
+def _charge_is_disposed(charge: dict) -> bool:
+    """A charge is disposed if it carries any disposition field — the same
+    predicate the parser's placement sweep uses."""
+    return (
+        charge.get("disposition_raw") is not None
+        or charge.get("disposition_date") is not None
+        or charge.get("disposition_judge_raw") is not None
+    )
+
+
+def _undisposed_regressions(baseline: dict, corpus: dict) -> list[int]:
+    """Sequences disposed in the baseline but undisposed in the corpus parse.
+
+    The 18.4 ARD-routing regression signature (Task 18.5): a charge Capstone's
+    baseline recorded as disposed that the corpus parse leaves with null
+    disposition_raw/date/judge. Only sequences present in BOTH records are
+    considered (a missing sequence is a separate charge-count divergence). This
+    is a distinct, always-fail category — never folded into generic field
+    divergence counts.
+    """
+    corpus_by_seq = {c.get("sequence"): c for c in corpus.get("charges", [])}
+    out: list[int] = []
+    for baseline_charge in baseline.get("charges", []):
+        seq = baseline_charge.get("sequence")
+        corpus_charge = corpus_by_seq.get(seq)
+        if (
+            _charge_is_disposed(baseline_charge)
+            and corpus_charge is not None
+            and not _charge_is_disposed(corpus_charge)
+        ):
+            out.append(seq)
+    return out
 
 
 def _hash_prefix(source_hash: str | None) -> str:
@@ -386,6 +424,7 @@ def compare_one(
         source_hash=source_hash,
         divergences=divergences,
         held_events=_held_events(record),
+        undisposals=_undisposed_regressions(baseline, record),
     )
 
 
@@ -447,6 +486,15 @@ def _render_summary(report: dict[str, object]) -> str:
     lines.append(
         f"  distinct event_name vocabulary size: {gate['event_name_vocab_size']} "
         "(informational; event-name strings never written)"
+    )
+    lines.append("")
+    undisposal = report["un_disposal"]
+    lines.append(
+        f"UN-DISPOSAL CHECK (18.5): {'PASS' if undisposal['pass'] else 'FAIL'}"
+    )
+    lines.append(
+        f"  charges disposed in baseline but undisposed in corpus: "
+        f"{undisposal['charges']} (across {undisposal['dockets']} dockets)"
     )
     lines.append("")
     lines.append("Totals:")
@@ -673,6 +721,22 @@ def run_equivalence_check(
             },
         )
 
+    # 18.5 UN-DISPOSAL check: charges disposed in the baseline but undisposed in
+    # the corpus parse. A distinct, always-fail category — never folded into the
+    # generic divergence counts. Zero is required for a green run.
+    undisposal_charges = sum(len(result.undisposals) for result in all_results)
+    undisposal_dockets = sum(1 for result in all_results if result.undisposals)
+    undisposal_pass = undisposal_charges == 0
+    if not undisposal_pass:
+        logger.error(
+            "UN-DISPOSAL check FAILED: charges disposed in baseline but undisposed "
+            "in the corpus parse (structural counts only)",
+            extra={
+                "undisposal_charges": undisposal_charges,
+                "undisposal_dockets": undisposal_dockets,
+            },
+        )
+
     gate_pass = reconciled and all(
         counts[status] == 0
         for status in (
@@ -720,6 +784,11 @@ def run_equivalence_check(
             "held_charges_violations": held_violations,
             "event_name_vocab_size": len(event_name_vocab),
         },
+        "un_disposal": {
+            "pass": undisposal_pass,
+            "charges": undisposal_charges,
+            "dockets": undisposal_dockets,
+        },
         "totals": {status: counts[status] for status in _SUMMARY_ORDER},
         "by_court": by_court,
         "top_divergent_paths": top_divergent_paths,
@@ -746,12 +815,17 @@ def run_equivalence_check(
         f"(held={held_total} populated={held_populated} "
         f"violations={held_violations} event_name_vocab={len(event_name_vocab)})"
     )
+    print(
+        f"un_disposal: {'PASS' if undisposal_pass else 'FAIL'} "
+        f"(charges={undisposal_charges} dockets={undisposal_dockets})"
+    )
     logger.info(
         "equivalence check complete",
         extra={
             "file_count": len(pdf_paths),
             "reconciled": reconciled,
             "held_value_gate_pass": held_value_gate_pass,
+            "undisposal_pass": undisposal_pass,
         },
     )
-    return 0 if (reconciled and held_value_gate_pass) else 1
+    return 0 if (reconciled and held_value_gate_pass and undisposal_pass) else 1

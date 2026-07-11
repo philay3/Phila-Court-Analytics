@@ -2802,6 +2802,10 @@ the record field there.
   `in_valid_event` routing (incl. the ARD `"ard" in event_name` special case) are
   unchanged in behavior. Two-line handling is not retained (no real specimen in
   3,278 anchors); it returns as its own task if a real specimen ever appears.
+  **[18.5 pointer] This `"ard" in event_name` special case was the accidental
+  ARD-routing mechanism, and correcting event_name off the case-status row here
+  severed it (65+ charges lost ARD dispositions). Task 18.5 retires it and routes
+  ARD from the charge-line token at EVENT grain — see the 18.5 entry.**
 - **Version bump:** `ENVELOPE_PARSER_VERSION` **4 → 5** (behavior axis — same input,
   corrected values). Record `parser_version` **stays 2** (no schema change — same
   conditional keys, corrected values). `test_envelope.py`, the `run_fixtures.py`
@@ -2989,3 +2993,103 @@ the record field there.
   plan-approval item (the ARD-County held/fcov edges, "Withdrawn" must_route=2,
   the "RD - County" fragment, and the 65↔95 charge-count reconciliation are the
   open adjudication points). No frozensets pinned; no parser work started.
+
+## Task 18.5 — ARD routing decoupled from event_name (event grain) (2026-07-11)
+
+- **What was built (deliverables 2–7):** ARD-class dispositions route again —
+  restored on the never-merged task-18.4 branch — but now via the charge-line
+  disposition TOKEN at EVENT grain, fully decoupled from event_name and the
+  case-status row. Supersedes the defective 18.4 routing.
+- **Mechanism (approved event grain).** A Not-Final event routes **iff its FIRST
+  charge line's token is in `ARD_CLASS_DISPOSITIONS`**; a routed event disposes
+  **ALL** its charge lines, each with its own token as `disposition_raw`. Final
+  Disposition events route as always; latest-valid-event-wins unchanged. The
+  retired `"ard" in event_name` special case is gone. Implemented as a tri-state
+  `in_valid_event` (None = a Not-Final event whose first charge line — the
+  decision point — has not yet been seen), resolved on that first line; corpus
+  evidence shows the ARD line is first in 27/27 ARD-bearing events, so a forward
+  state machine needs no buffering. `_charge_line_token` factors the offense/
+  statute/grade strip so routing can read the token before deciding.
+- **Two discoveries reframe the 18.3/18.4 defect history (records).** (1) The
+  18.4 two-line lookahead had been capturing the CASE-STATUS ROW ("ARD - County
+  Open", "Proceed to Court (ARD Revoked)"), not the event name — its `"ard"`
+  substring is what accidentally routed ARD. (2) Capstone's routing was
+  EVENT-grained: when that status-row `"ard"` fired, EVERY charge line under the
+  event disposed (each with its own token), not just the ARD line. Together these
+  explain both the regression (18.4 corrected event_name off the status row →
+  severed routing) and why charge-line grain is insufficient (it would strand
+  companion dispositions — see the Withdrawn specimen). The token is the TRIGGER
+  for an event-level decision, not a per-line routing key.
+- **Frozensets (pinned, corpus-evidenced from `scripts/scan_disposition_tokens.py`
+  over 1,596 docs).** `ARD_CLASS_DISPOSITIONS = {"ARD - County", "RD - County"}`
+  — the latter a corpus-evidenced strip fragment (the DISPOSITION section reprints
+  a shorter offense than CHARGES, so the longest-prefix strip eats the leading
+  "A"); kept as an exact fragment form (never a repair — the baseline carries the
+  fragment too), 18.2 discipline. `NON_TERMINAL_DISPOSITIONS` = all 36 scanned
+  NON_TERMINAL tokens VERBATIM (including the `ceed/oceed/roceed to Court` strip
+  fragments, `Proceed to Court (ARD`, `Proceed to Ct (Nolle Prossed`, and the
+  verbose un-stripped `DUI:*` / `Permitting*` tokens) so UNKNOWN warns only on
+  genuinely novel vocabulary. `Withdrawn` and the wrap token stay OUT of ARD_CLASS
+  permanently — they only ever dispose as COMPANION (non-first) lines under an
+  already-routed ARD event, which event grain reproduces without their being
+  triggers.
+- **Warning vocabulary 10 → 11:** `UNKNOWN_NOT_FINAL_DISPOSITION` (review
+  severity, sets review_needed). Fires when a Not-Final event's FIRST charge-line
+  token is in neither frozenset (the routing decision point), OR when an ARD_CLASS
+  token is stranded on a NON-FIRST line of an UNROUTED event (the non-ARD-first
+  guard; corpus 0/27 today). Structural context only (section, sequence) — never
+  the token text.
+- **Comparator UN-DISPOSAL check (permanent, deliverable 6):** a named,
+  always-fail category — charges disposed in the baseline but undisposed in the
+  corpus parse — reported distinctly (`un_disposal` block + txt/console lines),
+  never folded into generic divergence counts; the run returns non-zero if
+  `charges > 0`. The 18.4 regression is the motivating specimen.
+- **New tier-1 fixture `ard_progression_cp` (deliverable 5):** the observed
+  progression + companion-withdrawal shape — status rows, a `Status` (Not-Final)
+  event whose first line `ARD - County` routes it with judge + ARD sentence, a
+  companion seq2 `Withdrawn` disposing under the same routed event, a wrapped
+  `Proceed to Court (ARD` / `Revoked)` revoke event held, and a terminal
+  `Waiver Trial` (Final) carrying NO judge/sentence line — so the golden shows
+  seq1 `disposition_raw` "Nolle Prossed" from the terminal event but judge / date
+  / sentence from the ARD event (RF3). Fictional throughout; zero-sequence docket;
+  `layout_unverified: false` (evidence: this task's human inspection + the scan).
+  All 33 prior tier-1 goldens are byte-identical (event grain leaves held/ARD
+  fixtures unchanged: their first-line tokens are empty→held or `ARD - County`→
+  routed exactly as before).
+- **Pattern B (deliverable 3) confirmed same root cause:** on the real docket
+  (hash-prefix `17d1d0d787d9`) the ARD `Status` event carries judge + sentence and
+  the Final `Waiver Trial` carries only the disposition, so v5 (un-routed ARD)
+  lost judge/sentence-date/sentence while the Final event supplied
+  disposition_raw; the fix routes the ARD event and the Final overwrites raw only.
+  The 2 shifted-sentence dockets (`1d40e633ab36`, `fef3d2dff345`) are the identical
+  shape (sentences mis-attributed off the un-routed ARD event).
+- **Restoration reconciliation (acceptance amendment, approved):** the true
+  baseline-anchored restoration is **68 distinct charges / 19 dockets** — 66
+  ARD-class (65 `ARD - County` + 1 `RD - County` fragment) + 2 `Withdrawn`
+  companions on the discriminator docket (`7ed52b93628c`). The triage's 65
+  undercounted by 3 (the fragment + the 2 companions); the scan's earlier "95/97"
+  was occurrence-vs-charge double counting (94 `ARD - County` occurrences map to
+  65 charges, since a charge recurs under multiple Not-Final events). Genuine held
+  (Class A) is 463 charges / 926 keys / 104 dockets (CP 91 / MC 13) — unchanged;
+  under event grain the 68 regression charges move held→disposed and post-fix held
+  returns to exactly 463 (charge-line grain would strand the 2 Withdrawn → 465 +
+  UN-DISPOSAL 2).
+- **Files touched:** `src/pipeline/docket_parser.py` (frozensets, token helper,
+  event-grain routing), `src/pipeline/warning_codes.py` (+ its test),
+  `src/pipeline/equivalence_check.py` (UN-DISPOSAL check),
+  `tests/test_docket_parser.py`, `tests/test_equivalence_check.py`,
+  `tests/test_warning_codes.py`,
+  `tests/tier1/fixtures/ard_progression_cp.txt`,
+  `tests/tier1/goldens/ard_progression_cp.json`, `tests/tier1/fixture-index.yaml`,
+  `tasks/worklog.md`. No change to single-line capture, placement sweep, value
+  gate, version numbers (envelope stays 5, record parser_version stays 2),
+  junk-judge, truncation repairs, min_assumed, or sentinel logic.
+- **POC report update DEFERRED (out-of-scope state change — flagged, not done).**
+  Deliverable 7 also names the POC report, but it is mid-move by the human:
+  `agent-docs/parser-proof-of-concept.md` is deleted from the working tree and an
+  untracked copy now sits at `docs/parser-proof-of-concept.md`, which CLAUDE.md
+  forbids the agent from editing. I did not touch either. The case-status-row and
+  event-grain reframing is recorded here in full; the POC edit awaits the human's
+  decision (commit the move first, edit the docs/ copy as an approved exception,
+  or self-update).
+- **18.4 worklog entry:** carries an inline 18.5 pointer on its routing bullet.

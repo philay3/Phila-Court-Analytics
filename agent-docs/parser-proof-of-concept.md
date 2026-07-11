@@ -20,8 +20,10 @@ names describing real-corpus findings.
 
 Phases 16–19 ported the Capstone parser faithfully, proved it equivalent to
 the regenerated baseline, landed six hardening items as classified golden
-deltas, stood up a ten-code warning framework, and built a two-tier fixture
-system with CI-enforced tier-1 regression and local tier-2 real-corpus runs.
+deltas, stood up an eleven-code warning framework (the eleventh,
+`UNKNOWN_NOT_FINAL_DISPOSITION`, added in 18.5 — see the event-grain correction
+below), and built a two-tier fixture system with CI-enforced tier-1 regression
+and local tier-2 real-corpus runs.
 
 The parser is **correct on the evidence available**: 100% field equivalence
 against the baseline, every post-hardening divergence attributable to exactly
@@ -217,10 +219,68 @@ capture field requires a value gate, not just a key-presence diff.** 18.4 adds
 one: the equivalence/corpus tooling now asserts, fail-loud, that **100% of held
 charges (the placement-sweep survivors — exactly the charges carrying event
 keys) have a non-null, date-parseable `event_date` and a non-null `event_name`**,
-and reports the distinct `event_name` vocabulary size (~26 case-normalized
-values corpus-wide) as an informational line. This defect was surfaced by the
-20.2 exit demo and root-caused to the two-line assumption; it is recorded here,
-not smoothed over (Check-2 precedent).
+and reports the distinct `event_name` vocabulary size (**10** case-normalized
+held-survivor values corpus-wide as of the 18.5 rerun; the 18.4 "~26" was an
+over-estimate the run corrected) as an informational line. This defect was
+surfaced by the 20.2 exit demo and root-caused to the two-line assumption; it is
+recorded here, not smoothed over (Check-2 precedent).
+
+### 18.5 correction — ARD routing decoupled from `event_name` (event grain)
+
+The 18.4 single-line fix was correct but surfaced a **third, deeper layer of the
+same defect** that reframes the whole 18.3/18.4 narrative above. Two discoveries:
+
+1. **The two-line lookahead had been capturing the CASE-STATUS ROW, not the
+   event name.** Real CPCMS prints a case-status row _above_ the event header
+   (e.g. `ARD - County Open`, `Proceed to Court (ARD Revoked)`). The 18.3/pre-18.4
+   parser's previous-line lookahead captured _that_ row as the "event_name". Its
+   `ard` substring is what — accidentally — routed ARD dispositions: an
+   `in_valid_event` special case (`"ard" in event_name`) fired on the status row.
+   So "18.3 mis-sourced event_name" (above) was more precisely "captured the
+   status row," and that mis-capture was load-bearing for ARD routing.
+2. **Capstone's routing was EVENT-grained.** When the status-row `ard` fired,
+   EVERY charge line under that event disposed — each with its own charge-line
+   token as `disposition_raw`, not just the ARD line. The token was the _trigger_
+   for an event-level decision, never a per-line routing key.
+
+**The regression 18.4 introduced.** Correcting `event_name` off the status row to
+the true single-line label (`Status`, `Violation of Probation` — no `ard`
+substring) severed the accidental routing. On the v5 corpus run this un-disposed
+**68 charges across 19 dockets** (66 ARD-class = 65 `ARD - County` + 1 corpus
+strip-fragment `RD - County`, plus 2 `Withdrawn` companions), inflating the
+held-survivor set 463 → 531 and producing a Pattern-B specimen (an un-routed ARD
+event losing judge/sentence-date/sentence while a later Final event still
+supplied `disposition_raw`) and two shifted-sentence dockets.
+
+**The 18.5 fix — event grain, decoupled from `event_name` and the status row.**
+A Not-Final event routes **iff its FIRST charge line's disposition token is in
+`ARD_CLASS_DISPOSITIONS`** (`{ARD - County, RD - County}`, corpus-evidenced, 18.2
+exact-match discipline); a routed event disposes **all** its charge lines, each
+with its own token; Final Disposition events route as always; latest-valid-event
+-wins is unchanged. `NON_TERMINAL_DISPOSITIONS` pins the 36 other scanned tokens
+verbatim so a new eleventh warning, **`UNKNOWN_NOT_FINAL_DISPOSITION`** (review),
+fires only on genuinely novel first-line vocabulary (or an ARD token stranded on
+a non-first line of an unrouted event). The comparator gains a permanent,
+always-fail **UN-DISPOSAL** check (a charge disposed in the baseline but
+undisposed by the corpus parse — its own report category, never folded into
+generic divergences). `ENVELOPE_PARSER_VERSION` stays 5 (same behaviour-change
+lineage, never shipped); record `parser_version` stays 2.
+
+**Corpus rerun (v5-with-event-grain vs baseline).** `reconciled: True`,
+`baseline_missing 7`, `held_value_gate PASS 463/463` (100% populated),
+`un_disposal PASS 0/0`. The 1,204 divergences decompose with **zero
+unclassified**: Class A 926 keys / 463 charges / 104 dockets (CP 91 / MC 13),
+Class B 1,842 `min_assumed` / 1,095 dockets (the pinned v4 figure — restoring the
+ARD sentences restores their annotation), Class C 0, Class D 3 junk-judge nulls,
+Class E 16 Transferred repairs (one docket carries B+D; all others single-class).
+The 19 ARD dockets, the Pattern-B docket, and the 2 shifted-sentence dockets each
+reproduce their baseline record with zero routing divergence (Class-B
+`min_assumed` only). Held-survivor `event_name` vocabulary settled 11 → 10 as the
+now-ARD-routed `Violation of Probation` events left the held set. The mechanism
+choice (event grain over charge-line grain) is corpus-forced: charge-line grain
+would strand the 2 `Withdrawn` companions (held 465, UN-DISPOSAL 2); event grain
+lands held exactly at the pinned 463. A new tier-1 fixture, `ard_progression_cp`,
+encodes the shape end-to-end.
 
 ### `min_assumed` annotation (18.3 Item 2, Class B)
 
@@ -337,13 +397,19 @@ ADR 0001's known limitation).
 
 ## 11. Fixture-corpus coverage and gaps
 
-**Tier-1 (committed, CI-enforced):** 33 synthetic TEXT fixtures over the full
+**Tier-1 (committed, CI-enforced):** 34 synthetic TEXT fixtures over the full
 scenario matrix, with CP+MC pairs where layout differs and MC-only fixtures
 where the section set differs. Each has a parser-generated golden and an index
 entry; a hygiene test scans the entire tier-1 tree and fails on any
 docket-shaped token that is not the `000000\d` placeholder. The tier-1
-regression runs in CI under the existing pytest job. 18.4 corrected the
-event-header layout of the held (`held_cross_court_mc`) and ARD
+regression runs in CI under the existing pytest job. 18.5 added
+`ard_progression_cp` — the event-grain progression + companion-withdrawal shape
+(ARD `Status` event routes on its first-line `ARD - County` token with judge +
+sentence, a companion seq2 `Withdrawn` disposes under the same routed event, a
+wrapped `Proceed to Court (ARD` / `Revoked)` revoke event stays held, and a
+terminal Final event carrying no judge/sentence overwrites `disposition_raw`
+only) — and all 33 prior goldens stayed byte-identical under event grain. 18.4
+corrected the event-header layout of the held (`held_cross_court_mc`) and ARD
 (`ard_diversion_cp`) fixtures to the corpus-canonical single-line form (both
 goldens reproduced byte-for-byte) and added `held_multiword_event_cp` — a held
 fixture whose multi-word event name places the date token at index 4, guarding

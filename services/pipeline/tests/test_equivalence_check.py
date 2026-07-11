@@ -292,6 +292,67 @@ def test_held_value_gate_fails_on_empty_event_name(tmp_path, monkeypatch):
     assert h.json_report()["held_value_gate"]["held_charges_violations"] == 1
 
 
+# --- 18.5 UN-DISPOSAL check -------------------------------------------------
+
+
+def test_undisposed_regressions_flags_only_present_and_undisposed():
+    """Disposed-in-baseline / undisposed-in-corpus is flagged; a charge held in
+    BOTH (not a regression) and a baseline-disposed charge ABSENT from the corpus
+    (a separate charge-count divergence) are NOT counted."""
+    baseline = {
+        "charges": [
+            {"sequence": 1, "disposition_raw": "ARD - County"},  # disposed
+            {"sequence": 2, "disposition_raw": None},  # held in baseline too
+            {"sequence": 3, "disposition_raw": "Guilty"},  # disposed, missing below
+        ]
+    }
+    corpus = {
+        "charges": [
+            {"sequence": 1, "disposition_raw": None, "disposition_date": None},
+            {"sequence": 2, "disposition_raw": None},
+        ]
+    }
+    assert equivalence_check._undisposed_regressions(baseline, corpus) == [1]
+
+
+def test_undisposed_regressions_empty_when_disposed_in_both():
+    baseline = {"charges": [{"sequence": 1, "disposition_date": "2025-03-10"}]}
+    corpus = {"charges": [{"sequence": 1, "disposition_raw": "ARD - County"}]}
+    assert equivalence_check._undisposed_regressions(baseline, corpus) == []
+
+
+def test_un_disposal_gate_fails_and_exits_nonzero(tmp_path, monkeypatch):
+    """A charge disposed in the baseline but left undisposed (held) by the corpus
+    parse — the 18.4 ARD regression — trips the always-fail UN-DISPOSAL category
+    and returns a non-zero exit, distinct from generic field divergences."""
+    h = _Harness(tmp_path, monkeypatch)
+    dk = "CP-51-CR-0000020-2024"
+    baseline = _record(dk)
+    baseline["charges"][0].update(
+        {"disposition_raw": "ARD - County", "disposition_date": "2025-03-10"}
+    )
+    corpus = _record(dk)
+    corpus["charges"][0].update(
+        {
+            "disposition_raw": None,
+            "disposition_date": None,
+            "disposition_judge_raw": None,
+            "event_date": "2025-03-10",
+            "event_name": "Status",
+        }
+    )
+    h.add_corpus(dk)
+    h.add_baseline(baseline)
+    h.set_parsed(dk, corpus)
+    code = h.run()
+    undisposal = h.json_report()["un_disposal"]
+    assert undisposal["pass"] is False
+    assert undisposal["charges"] == 1
+    assert undisposal["dockets"] == 1
+    assert "UN-DISPOSAL CHECK (18.5): FAIL" in h.txt_report()
+    assert code == 1
+
+
 def test_held_value_gate_reports_distinct_vocab_size_and_never_leaks_names(
     tmp_path, monkeypatch
 ):

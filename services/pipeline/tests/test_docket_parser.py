@@ -30,6 +30,7 @@ from pipeline.warning_codes import (
     SENTINEL_COLLISION,
     SUSPECT_JUDGE_LINE,
     SUSPECTED_AMENDED_CHARGE,
+    UNKNOWN_NOT_FINAL_DISPOSITION,
 )
 
 TEST_SALT = "test-salt"
@@ -739,27 +740,175 @@ def test_held_multiword_event_name_captured_and_date_parseable():
     assert date.fromisoformat(charge["event_date"]) == date(2024, 7, 3)
 
 
-def test_ard_event_single_line_routes_as_valid_disposition_not_held():
-    """18.4 stop-report resolution: ARD is a 'Not Final' event routed as a VALID
-    disposition solely via the ``'ard' in event_name`` check. Under the single-line
-    capture event_name comes from the same line as the date, so the ARD charge must
-    still end DISPOSED (disposition populated, no event keys), not misread as held."""
+# --- 18.5: event-grain disposition routing ----------------------------------
+# A Not-Final event routes iff its FIRST charge line's token is in ARD_CLASS;
+# a routed event disposes ALL its charge lines (each with its own token);
+# routing is decoupled from event_name and the case-status row.
+
+
+def _mc_two_charge_head() -> list[str]:
+    """An MC head whose CHARGES section carries two sequences (for companion
+    tests). Fictional; placeholder docket number; no real docket data."""
+    return [
+        "MUNICIPAL COURT OF PHILADELPHIA COUNTY",
+        "DOCKET",
+        f"Docket Number: {DOCKET_MC}",
+        "CASE INFORMATION",
+        "Judge Assigned: Date Filed: 01/06/2025",
+        "OTN: X 1234567-8",
+        "STATUS INFORMATION",
+        "Case Status: Closed",
+        "DEFENDANT INFORMATION",
+        "Date Of Birth: 01/01/1990",
+        "CASE PARTICIPANTS",
+        "Participant Type Name",
+        "Defendant Example, Chris",
+        "CHARGES",
+        "Seq. Statute Grade Description",
+        "1 1 18 § 2701 M1 Simple Assault 01/01/2025 X1234567",
+        "2 1 18 § 3921 M1 Theft By Unlawful Taking 01/01/2025 X1234567",
+        "DISPOSITION SENTENCING/PENALTIES",
+    ]
+
+
+def test_ard_event_routes_via_charge_line_token_not_event_name():
+    """18.5 event grain: a Not-Final event routes iff its FIRST charge line's token
+    is in ARD_CLASS_DISPOSITIONS — decoupled from event_name (the 18.4 regression
+    came from the retired ``'ard' in event_name`` check). event_name here is
+    "Status" (no 'ard'), yet the "ARD - County" charge-line token routes the event,
+    so the charge ends DISPOSED with judge + sentence, not held."""
     page = build_mc(
-        "ARD 03/10/2025 Not Final",
-        "1 / Possession ARD - County",
+        "Status 03/10/2025 Not Final",
+        "1 / Simple Assault ARD - County",
         "Torres, Judge A. 03/10/2025",
         "ARD",
         "Max of 12.00 Months",
     )
     record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
     charge = record["charges"][0]
-    # Routed as a VALID disposition (not held): disposition captured, no event keys.
-    assert charge["disposition_raw"] is not None
-    assert charge["disposition_raw"].endswith("ARD - County")
+    assert charge["disposition_raw"] == "ARD - County"
     assert charge["disposition_date"] == "2025-03-10"
     assert charge["disposition_judge_raw"] == "Torres, Judge A."
+    assert charge["sentences"][0]["sentence_type"] == "ARD"
     assert "event_date" not in charge
     assert "event_name" not in charge
+
+
+def test_non_terminal_first_line_token_leaves_event_held_silently():
+    """A first-line NON_TERMINAL token (here "Held for Court") does not route: the
+    charge stays held (event keys recorded, no disposition), and no warning fires
+    — it is known vocabulary."""
+    page = build_mc(
+        "Preliminary Hearing 06/15/2024 Not Final",
+        "1 / Simple Assault Held for Court",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None
+    assert charge["event_name"] == "Preliminary Hearing"
+    assert charge["event_date"] == "2024-06-15"
+    assert not any(w["code"] == UNKNOWN_NOT_FINAL_DISPOSITION for w in warnings)
+
+
+def test_wrap_token_proceed_to_court_ard_stays_non_terminal():
+    """The wrapped revoked token "Proceed to Court (ARD" (first line of a line-wrap)
+    is NON_TERMINAL — it never routes, and warns nothing (corpus-evidenced)."""
+    page = build_mc(
+        "Violation of Probation 05/01/2025 Not Final",
+        "1 / Simple Assault Proceed to Court (ARD",
+        "Revoked)",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None
+    assert charge["event_name"] == "Violation of Probation"
+    assert not any(w["code"] == UNKNOWN_NOT_FINAL_DISPOSITION for w in warnings)
+
+
+def test_unknown_first_line_token_warns_review_and_holds():
+    """A non-empty first-line token in NEITHER frozenset is novel vocabulary at the
+    routing decision point: the event stays held and UNKNOWN_NOT_FINAL_DISPOSITION
+    (review severity) fires with structural context only — never the token text."""
+    page = build_mc(
+        "Status 03/10/2025 Not Final",
+        "1 / Simple Assault Frobnicated Beyond Recognition",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None  # not routed
+    hits = [w for w in warnings if w["code"] == UNKNOWN_NOT_FINAL_DISPOSITION]
+    assert len(hits) == 1
+    assert hits[0]["charge_sequence"] == 1
+    assert hits[0]["section"] == "DISPOSITION SENTENCING/PENALTIES"
+    assert "Frobnicated" not in json.dumps(warnings)
+
+
+def test_event_grain_disposes_companion_line_with_its_own_token():
+    """The discriminator shape (docket 7ed52b93628c): a routed ARD event whose
+    FIRST line is "ARD - County" disposes its COMPANION line with the companion's
+    own token ("Withdrawn"), even though "Withdrawn" is not in any frozenset —
+    event grain, Capstone-faithful. No warning (companion is a non-first line)."""
+    page = "\n".join(
+        [
+            *_mc_two_charge_head(),
+            "Status 03/10/2025 Not Final",
+            "1 / Simple Assault ARD - County",
+            "Torres, Judge A. 03/10/2025",
+            "ARD",
+            "2 / Theft By Unlawful Taking Withdrawn",
+        ]
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    by_seq = {c["sequence"]: c for c in record["charges"]}
+    assert by_seq[1]["disposition_raw"] == "ARD - County"
+    assert by_seq[2]["disposition_raw"] == "Withdrawn"  # companion disposed
+    assert "event_name" not in by_seq[2]
+    assert not any(w["code"] == UNKNOWN_NOT_FINAL_DISPOSITION for w in warnings)
+
+
+def test_non_ard_first_guard_warns_on_stranded_ard_token():
+    """The non-ARD-first guard: an ARD_CLASS token on a NON-FIRST line of an
+    UNROUTED Not-Final event (first line NON_TERMINAL) is a potentially un-routed
+    genuine ARD disposition — it does not route (event grain decides on the first
+    line) but fires UNKNOWN_NOT_FINAL_DISPOSITION so it cannot vanish silently."""
+    page = "\n".join(
+        [
+            *_mc_two_charge_head(),
+            "Status 03/10/2025 Not Final",
+            "1 / Simple Assault Held for Court",
+            "2 / Theft By Unlawful Taking ARD - County",
+        ]
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    by_seq = {c["sequence"]: c for c in record["charges"]}
+    assert by_seq[1]["disposition_raw"] is None  # event did not route
+    assert by_seq[2]["disposition_raw"] is None  # stranded ARD stays held
+    hits = [w for w in warnings if w["code"] == UNKNOWN_NOT_FINAL_DISPOSITION]
+    assert len(hits) == 1
+    assert hits[0]["charge_sequence"] == 2
+
+
+def test_ard_progression_final_overwrites_raw_keeps_judge_and_sentence():
+    """Pattern B / progression: an ARD "Status" event supplies judge + sentence;
+    a later Final event carrying ONLY the disposition (no judge/sentence lines)
+    overwrites disposition_raw but leaves judge/date/sentences intact (latest-
+    valid-event-wins). Reproduces the Capstone-faithful shape."""
+    page = build_mc(
+        "Status 03/10/2025 Not Final",
+        "1 / Simple Assault ARD - County",
+        "Conroy, David H. 03/10/2025",
+        "ARD",
+        "Max of 6.00 Months",
+        "Waiver Trial 07/01/2025 Final Disposition",
+        "1 / Simple Assault Nolle Prossed",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Nolle Prossed"  # from the Final event
+    assert charge["disposition_date"] == "2025-03-10"  # from the ARD event
+    assert charge["disposition_judge_raw"] == "Conroy, David H."  # from the ARD event
+    assert len(charge["sentences"]) == 1  # the ARD sentence, not overwritten
+    assert charge["sentences"][0]["sentence_type"] == "ARD"
 
 
 # --- Item 2: min_assumed annotation -----------------------------------------
