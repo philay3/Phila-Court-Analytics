@@ -302,7 +302,8 @@ record in a per-document envelope carrying warnings and a derived
 `review_needed` boolean. It is observation-only: emission never mutates the
 record.
 
-- **Ten stable codes**, a closed vocabulary with a single constructor.
+- **Eleven stable codes**, a closed vocabulary with a single constructor (the
+  eleventh, `UNKNOWN_NOT_FINAL_DISPOSITION`, review severity, added in 18.5).
 - **Structural context only** — a warning carries at most `section`,
   `charge_sequence`, `page`, and `field`. A text-carrying warning is
   unrepresentable by construction; raw docket text can never enter a warning.
@@ -498,4 +499,7 @@ These are named only (no Sprint 5 planning content is authored here):
 4. Restitution taxonomy mapping from Fines-and-Costs `raw_text` (§9).
 5. MC evidence deepening — manual/collector supplementation and confirmation
    of the two `layout_unverified` fixtures (§11, §12).
-6. Display-unit handling for durations — deferred to Sprint 7 (§9).
+6. Structured CP↔MC held-case linkage — deferred from 18.3; Sprint 4 captured
+   raw cross-court held-case data only, with structured attribution the
+   Sprint 5 landing task (§5).
+7. Display-unit handling for durations — deferred to Sprint 7 (§9).

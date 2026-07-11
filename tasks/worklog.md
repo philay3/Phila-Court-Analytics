@@ -3093,3 +3093,34 @@ the record field there.
   decision (commit the move first, edit the docs/ copy as an approved exception,
   or self-update).
 - **18.4 worklog entry:** carries an inline 18.5 pointer on its routing bullet.
+
+## POC report corrections (docs-only) — §6 warning count + Sprint 5 handoff + §5 figure verify (2026-07-11)
+
+- **Date:** 2026-07-11
+- **Scope:** Three pre-sprint-close corrections to
+  `agent-docs/parser-proof-of-concept.md`. Documentation only — no code,
+  fixture, golden, or test change.
+- **What changed:**
+  - **§6 warning count:** "Ten stable codes" → "Eleven stable codes",
+    naming the eleventh (`UNKNOWN_NOT_FINAL_DISPOSITION`, review severity,
+    added in 18.5). Aligns §6 with the executive summary's already-correct
+    "eleven-code warning framework". Structural-context and
+    no-numeric-confidence bullets unchanged.
+  - **Sprint 5 handoff list:** added item 6 — structured CP↔MC held-case
+    linkage (deferred from 18.3; Sprint 4 captured raw cross-court held-case
+    data only; structured attribution is the Sprint 5 landing task; §5 ref).
+    The display-units item was retained, renumbered 6 → 7, still labeled
+    Sprint 7.
+  - **§5 reverted-design figure:** VERIFIED, no edit. The 18.2 worklog entry
+    (this file) is the authority and reads verbatim "Item 2's pure-prose
+    append gate produced ~535 divergent dockets whose appended tails were NOT
+    disposition prose." The report already said "~535 dockets" — it matches
+    the worklog. `538` appears nowhere in the worklog; the "538 standing
+    record" was the erroneous source and is outside this file's scope. No
+    change made.
+- **Files touched:** `agent-docs/parser-proof-of-concept.md`, `tasks/worklog.md`.
+- **Deviations from plan:** none.
+- **Notes for next task:** the POC report now lives at
+  `agent-docs/parser-proof-of-concept.md` (the 18.5-flagged docs/ move was
+  not in play for this task). §6 and the executive summary are now consistent
+  on the 11-code vocabulary; the Sprint 5 handoff list is items 1–7.
