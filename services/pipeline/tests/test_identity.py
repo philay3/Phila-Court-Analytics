@@ -83,3 +83,34 @@ def test_leak_key_allowlist_exact_key_match():
     # structural constants and must never be scanned, so this must not trip.
     record = {"defendant_name": None, "otn": "CP-51-CR-0000001-2025"}
     assert assert_no_leak(["defendant_name"], record) is None
+
+
+# --- 18.3 Q1: whole-token (boundary-anchored) matching, replacing substring ---
+
+
+def test_leak_whole_token_collision_still_blocks():
+    # A sentinel that appears as its OWN token in a value is a real leak: the
+    # judge value's surname equals a defendant name part. Boundary-anchored
+    # matching still catches it, so the backstop hard-stops.
+    record = {"case": {"assigned_judge_raw": "Cole, Judge A."}}
+    with pytest.raises(RuntimeError):
+        assert_no_leak(["Cole"], record)
+
+
+def test_leak_fragment_substring_no_longer_blocks():
+    # 18.3 Q1: a sentinel that appears ONLY as a proper sub-span inside a larger
+    # token ("Cole" inside "Coleman") is not a whole-token match and must not
+    # block — this recovers the quarantine fragment false positives. The
+    # surrendered leak class (fragment embedded in a larger token) is accepted.
+    record = {"case": {"assigned_judge_raw": "Coleman, Judge A."}}
+    assert assert_no_leak(["Cole"], record) is None
+
+
+def test_leak_full_name_and_dob_still_matched_exactly():
+    # Multi-token sentinels (rendered full name, DOB string) are matched with
+    # their internal punctuation intact and outer boundaries anchored.
+    record = {"case": {"note": "seen with Example, Chris on 01/01/1990 here"}}
+    with pytest.raises(RuntimeError):
+        assert_no_leak(["Example, Chris"], record)
+    with pytest.raises(RuntimeError):
+        assert_no_leak(["01/01/1990"], record)

@@ -8,19 +8,20 @@ envelope is the exact object ``parse_docket_text`` returns — nothing inside it
 added, removed, renamed, or reformatted (criterion 5).
 
 Two version numbers, deliberately distinct (decision 4 + decision 7): the
-ENVELOPE carries ``parser_version = 3`` (bumped in 18.2 for the hardened parse
-pipeline), while the wrapped record keeps its own internal ``parser_version = 1``,
-untouched. That internal literal is the record-SCHEMA/shape axis: the record's
-shape stays Capstone-equivalent, but as of 18.2 its output VALUES deliberately
-diverge (junk-judge guard, disposition line-wrap fix). The two axes are separate
-— schema-unchanged, values-diverge.
+ENVELOPE carries ``parser_version = 4`` (bumped 3 -> 4 in 18.3 for the hardened
+parse pipeline), while the wrapped record carries its own internal
+``parser_version = 2`` (bumped 1 -> 2 in 18.3, the first record-SCHEMA change
+since the port: the conditional ``event_date``/``event_name``/``min_assumed``
+fields). The two axes are separate — as of 18.2 the record's output VALUES
+diverge from Capstone; as of 18.3 its SCHEMA gains conditional fields too.
 
-Emission scope (decision 6, extended in 18.2): observation-only warnings are
+Emission scope (decision 6, extended in 18.2/18.3): observation-only warnings are
 derived here from the parsed record/extraction status, and the parser's own
 structural parse-time warnings (18.2 Items 1 and 3: SUSPECT_JUDGE_LINE,
-SUSPECTED_AMENDED_CHARGE) are merged in. One defined code remains NOT emitted —
-MISSING_CHARGE_SECTION — because its detector is future work. Its absence from
-emission is asserted by the closure test.
+SUSPECTED_AMENDED_CHARGE; 18.3 third-party name guard: SENTINEL_COLLISION) are
+merged in. One defined code remains NOT emitted — MISSING_CHARGE_SECTION —
+because its detector is future work. Its absence from emission is asserted by the
+closure test.
 
 Failure capture (decision 5): a docket that raises during parse — ParseError,
 KeyError (the quarantined unsupported-disposition specimen), anything — yields a
@@ -60,9 +61,9 @@ from pipeline.warning_codes import (
 logger = logging.getLogger("pipeline.envelope")
 
 # The envelope format / parse-pipeline version (decision 4). Distinct from the
-# wrapped record's internal parser_version, which stays 1 (decision 7). Bumped
-# 2 -> 3 in 18.2 for the hardened parse pipeline.
-ENVELOPE_PARSER_VERSION = 3
+# wrapped record's internal parser_version, which is 2 as of 18.3 (decision 7).
+# Bumped 3 -> 4 in 18.3 for the hardened parse pipeline.
+ENVELOPE_PARSER_VERSION = 4
 
 # Parse status vocabulary (decision 4/5): exactly one per envelope.
 PARSE_STATUS_PARSED = "parsed"
@@ -77,8 +78,8 @@ _LOW_TEXT_STATUSES = frozenset({STATUS_PARTIAL, STATUS_NEEDS_OCR_OR_REVIEW})
 _NO_DURATION_TYPES = frozenset({"no further penalty", "fines and costs"})
 
 # Defined code still NOT emitted (its detector is future work). 18.2 wired
-# SUSPECT_JUDGE_LINE and SUSPECTED_AMENDED_CHARGE, so only MISSING_CHARGE_SECTION
-# remains unemitted.
+# SUSPECT_JUDGE_LINE and SUSPECTED_AMENDED_CHARGE; 18.3 wired SENTINEL_COLLISION
+# (all parser-emitted), so only MISSING_CHARGE_SECTION remains unemitted.
 UNEMITTED_CODES: frozenset[str] = frozenset({MISSING_CHARGE_SECTION})
 # Codes the pipeline can produce (as a warning or, for UNSUPPORTED_FORMAT, as an
 # error).

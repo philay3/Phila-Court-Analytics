@@ -2,7 +2,7 @@
 
 This is the SINGLE source of truth for the parser/envelope warning vocabulary.
 No other module defines warning strings; every emitter imports the codes from
-here. The set is closed: the nine codes below are the whole vocabulary, and a
+here. The set is closed: the ten codes below are the whole vocabulary, and a
 test asserts emitted codes are a subset of them. Adding a code requires
 plan-level approval — do not invent codes in code.
 
@@ -23,7 +23,10 @@ Severity map rationale:
   human must adjudicate: LOW_TEXT_EXTRACTION (extraction may be incomplete),
   MISSING_CHARGE_SECTION and UNSUPPORTED_FORMAT (parse failures),
   MISSING_DISPOSITION_DATE (a disposed charge lacking its date suggests a parse
-  miss), SUSPECT_JUDGE_LINE and SUSPECTED_AMENDED_CHARGE (18.2 hardening signals).
+  miss), SUSPECT_JUDGE_LINE and SUSPECTED_AMENDED_CHARGE (18.2 hardening signals),
+  SENTINEL_COLLISION (18.3 third-party name guard: a name-shaped judge capture
+  collided with an identifying sentinel and was nulled — a human confirms the
+  intended judge value).
 - ``info`` — a truthful observation that review cannot improve:
   UNPARSEABLE_DURATION (usually a legitimate non-numeric term such as "Life";
   raw_text is preserved), NON_TERMINAL_CASE (a held/non-terminal case legitimately
@@ -37,7 +40,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-# --- The nine codes (locked; additions require plan approval) ---------------
+# --- The ten codes (locked; additions require plan approval) ----------------
 LOW_TEXT_EXTRACTION = "LOW_TEXT_EXTRACTION"
 MISSING_CHARGE_SECTION = "MISSING_CHARGE_SECTION"
 UNPARSEABLE_DURATION = "UNPARSEABLE_DURATION"
@@ -47,6 +50,7 @@ SUSPECT_JUDGE_LINE = "SUSPECT_JUDGE_LINE"
 SUSPECTED_AMENDED_CHARGE = "SUSPECTED_AMENDED_CHARGE"
 NON_TERMINAL_CASE = "NON_TERMINAL_CASE"
 UNSUPPORTED_FORMAT = "UNSUPPORTED_FORMAT"
+SENTINEL_COLLISION = "SENTINEL_COLLISION"
 
 # Severity levels.
 SEVERITY_REVIEW = "review"
@@ -60,6 +64,7 @@ SEVERITY: dict[str, str] = {
     MISSING_DISPOSITION_DATE: SEVERITY_REVIEW,
     SUSPECT_JUDGE_LINE: SEVERITY_REVIEW,
     SUSPECTED_AMENDED_CHARGE: SEVERITY_REVIEW,
+    SENTINEL_COLLISION: SEVERITY_REVIEW,
     UNPARSEABLE_DURATION: SEVERITY_INFO,
     MISSING_SENTENCE_DATE: SEVERITY_INFO,
     NON_TERMINAL_CASE: SEVERITY_INFO,
