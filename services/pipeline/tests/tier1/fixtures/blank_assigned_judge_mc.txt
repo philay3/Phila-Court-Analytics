@@ -1,0 +1,23 @@
+MUNICIPAL COURT OF PHILADELPHIA COUNTY
+DOCKET
+Docket Number: MC-51-CR-0000000-2025
+CASE INFORMATION
+Judge Assigned: Date Filed: 01/06/2025
+OTN: X 1234567-8
+Case Local Number Type(s) Case Local Number(s)
+District Control Number 9988776655
+STATUS INFORMATION
+Case Status: Closed
+DEFENDANT INFORMATION
+Date Of Birth: 01/01/1990
+CASE PARTICIPANTS
+Participant Type Name
+Defendant Sample, Chris
+CHARGES
+Seq. Statute Grade Description
+1 1 18 § 2701 M1 Simple Assault 01/01/2025 X1234567
+DISPOSITION SENTENCING/PENALTIES
+Trial
+01/15/2025 Final Disposition
+1 / Simple Assault Guilty
+Reyes, Judge M. 01/15/2025
