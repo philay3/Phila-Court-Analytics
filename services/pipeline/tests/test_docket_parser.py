@@ -134,8 +134,7 @@ def mc_held_page() -> str:
             "Seq. Statute Grade Description",
             "1 1 18 § 2701 M1 Simple Assault 01/01/2025 X1234567",
             "DISPOSITION SENTENCING/PENALTIES",
-            "Held for Court",
-            "06/15/2024 Not Final",
+            "Held for Court 06/15/2024 Not Final",
             "1 / Simple Assault",
         ]
     )
@@ -675,11 +674,9 @@ def test_progression_charge_disposed_after_nonterminal_has_no_event_keys():
     keys and a populated disposition (the placement sweep strips the transient
     event keys once the charge is disposed)."""
     page = build_mc(
-        "Preliminary Hearing",
-        "06/15/2024 Not Final",
+        "Preliminary Hearing 06/15/2024 Not Final",
         "1 / Simple Assault",
-        "Trial",
-        "01/15/2025 Final Disposition",
+        "Trial 01/15/2025 Final Disposition",
         "1 / Simple Assault Guilty",
         "Torres, Judge A. 01/15/2025",
     )
@@ -697,11 +694,9 @@ def test_held_charge_under_multiple_nonterminal_events_latest_wins():
     the LATEST event-header's date and name (assignment overwrites); disposition
     stays null."""
     page = build_mc(
-        "Preliminary Hearing",
-        "06/15/2024 Not Final",
+        "Preliminary Hearing 06/15/2024 Not Final",
         "1 / Simple Assault",
-        "Continued Hearing",
-        "09/20/2024 Not Final",
+        "Continued Hearing 09/20/2024 Not Final",
         "1 / Simple Assault",
     )
     record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
@@ -712,6 +707,59 @@ def test_held_charge_under_multiple_nonterminal_events_latest_wins():
     assert charge["disposition_date"] is None
     assert charge["disposition_judge_raw"] is None
     assert charge["sentences"] == []
+
+
+def test_held_event_header_single_line_tolerates_trailing_whitespace():
+    """18.4 Required Fix 1: the single-line event-header capture is anchored with
+    ``$``; extracted lines are ``.strip()``ed before matching, so a header line
+    carrying trailing whitespace still parses to a populated event_date/name."""
+    page = build_mc(
+        "Held for Court 06/15/2024 Not Final   ",
+        "1 / Simple Assault",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["event_date"] == "2024-06-15"
+    assert charge["event_name"] == "Held for Court"
+
+
+def test_held_multiword_event_name_captured_and_date_parseable():
+    """18.4 value-verification (unit): a multi-word event name whose date token is
+    NOT at index 2 is captured whole (leading text before the date), and
+    event_date is a real, parseable ISO date — not an offense fragment or null."""
+    from datetime import date
+
+    page = build_mc(
+        "Waiver of Preliminary Hearing 07/03/2024 Not Final",
+        "1 / Simple Assault",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["event_name"] == "Waiver of Preliminary Hearing"
+    assert date.fromisoformat(charge["event_date"]) == date(2024, 7, 3)
+
+
+def test_ard_event_single_line_routes_as_valid_disposition_not_held():
+    """18.4 stop-report resolution: ARD is a 'Not Final' event routed as a VALID
+    disposition solely via the ``'ard' in event_name`` check. Under the single-line
+    capture event_name comes from the same line as the date, so the ARD charge must
+    still end DISPOSED (disposition populated, no event keys), not misread as held."""
+    page = build_mc(
+        "ARD 03/10/2025 Not Final",
+        "1 / Possession ARD - County",
+        "Torres, Judge A. 03/10/2025",
+        "ARD",
+        "Max of 12.00 Months",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    # Routed as a VALID disposition (not held): disposition captured, no event keys.
+    assert charge["disposition_raw"] is not None
+    assert charge["disposition_raw"].endswith("ARD - County")
+    assert charge["disposition_date"] == "2025-03-10"
+    assert charge["disposition_judge_raw"] == "Torres, Judge A."
+    assert "event_date" not in charge
+    assert "event_name" not in charge
 
 
 # --- Item 2: min_assumed annotation -----------------------------------------

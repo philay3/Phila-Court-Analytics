@@ -47,7 +47,7 @@ import json
 import logging
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from pipeline.docket_parser import parse_docket_checked
@@ -140,12 +140,46 @@ class DocketResult:
     reason: str | None = None
     exception_type: str | None = None
     divergences: list[dict[str, object]] = field(default_factory=list)
+    # 18.4 value gate: the parsed event_date/event_name for each HELD charge on
+    # this docket (a charge carrying event keys — see ``_held_events``). Held
+    # in-process only to compute the aggregate value-population gate; never
+    # written per-docket to any artifact.
+    held_events: list[dict[str, object]] = field(default_factory=list)
 
 
 def _court_of(docket_number: str) -> str:
     """CP / MC from the canonical UJS docket-number pattern; else 'unknown'."""
     match = DOCKET_NUMBER_RE.match(docket_number)
     return match.group(1) if match else "unknown"
+
+
+def _is_iso_date(value: object) -> bool:
+    """True iff ``value`` is a string parseable as an ISO (YYYY-MM-DD) date."""
+    if not isinstance(value, str):
+        return False
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _held_events(record: dict) -> list[dict[str, object]]:
+    """The (event_date, event_name) pair for each HELD charge in a parsed record.
+
+    Selection predicate (18.4, mirrors the parser's placement sweep exactly): a
+    held charge is one that ENDS the parse undisposed — the placement sweep strips
+    event keys from any charge later disposed, so a charge still carrying
+    ``event_date``/``event_name`` is precisely a placement-sweep survivor. Keying
+    off key PRESENCE (not truthiness) keeps this gate auditing the same charge set
+    the ledger's Class A counts, so the value gate cannot silently diverge from the
+    key-presence accounting it backstops.
+    """
+    return [
+        {"event_date": charge.get("event_date"), "event_name": charge.get("event_name")}
+        for charge in record.get("charges", [])
+        if "event_date" in charge or "event_name" in charge
+    ]
 
 
 def _hash_prefix(source_hash: str | None) -> str:
@@ -346,7 +380,12 @@ def compare_one(
     divergences = diff_records(baseline, record, exclusions=exclusions)
     status = STATUS_DIVERGENT if divergences else STATUS_EQUIVALENT
     return DocketResult(
-        docket_number, court, status, source_hash=source_hash, divergences=divergences
+        docket_number,
+        court,
+        status,
+        source_hash=source_hash,
+        divergences=divergences,
+        held_events=_held_events(record),
     )
 
 
@@ -397,6 +436,18 @@ def _render_summary(report: dict[str, object]) -> str:
     lines.append(f"reconciled: {header['reconciled']}")
     lines.append("")
     lines.append(f"VERDICT: {report['verdict']}")
+    lines.append("")
+    gate = report["held_value_gate"]
+    lines.append(f"HELD-CHARGE VALUE GATE (18.4): {'PASS' if gate['pass'] else 'FAIL'}")
+    lines.append(
+        f"  held charges: {gate['held_charges_total']} "
+        f"(populated: {gate['held_charges_populated']}, "
+        f"violations: {gate['held_charges_violations']})"
+    )
+    lines.append(
+        f"  distinct event_name vocabulary size: {gate['event_name_vocab_size']} "
+        "(informational; event-name strings never written)"
+    )
     lines.append("")
     lines.append("Totals:")
     for status in _SUMMARY_ORDER:
@@ -587,6 +638,41 @@ def run_equivalence_check(
             path_counter[path] += 1
     top_divergent_paths = sorted(path_counter.items(), key=lambda kv: (-kv[1], kv[0]))
 
+    # 18.4 value-verification gate. Every HELD charge (placement-sweep survivor —
+    # see _held_events) must carry a non-null, date-parseable event_date and a
+    # non-null event_name. This closes the 18.3 verification gap: key-presence
+    # diffs are value-blind, so a corpus with 100% of held charges bearing event
+    # keys can still have null/mis-sourced values. This is FAIL-LOUD and separate
+    # from baseline equivalence — a violation is never folded into ledger Class A.
+    # The distinct event_name vocabulary SIZE (a count) is reported as an
+    # informational signal; the event_name strings themselves are never written.
+    held_total = 0
+    held_populated = 0
+    held_violations = 0
+    event_name_vocab: set[str] = set()
+    for result in all_results:
+        for event in result.held_events:
+            held_total += 1
+            date_ok = _is_iso_date(event.get("event_date"))
+            name = event.get("event_name")
+            name_ok = isinstance(name, str) and name.strip() != ""
+            if date_ok and name_ok:
+                held_populated += 1
+            else:
+                held_violations += 1
+            if name_ok:
+                event_name_vocab.add(name.strip().lower())
+    held_value_gate_pass = held_violations == 0
+    if not held_value_gate_pass:
+        logger.error(
+            "held-charge value gate FAILED: held charges with null/unparseable "
+            "event_date or null event_name (structural counts only)",
+            extra={
+                "held_total": held_total,
+                "held_violations": held_violations,
+            },
+        )
+
     gate_pass = reconciled and all(
         counts[status] == 0
         for status in (
@@ -627,6 +713,13 @@ def run_equivalence_check(
             "reconciled": reconciled,
         },
         "verdict": verdict,
+        "held_value_gate": {
+            "pass": held_value_gate_pass,
+            "held_charges_total": held_total,
+            "held_charges_populated": held_populated,
+            "held_charges_violations": held_violations,
+            "event_name_vocab_size": len(event_name_vocab),
+        },
         "totals": {status: counts[status] for status in _SUMMARY_ORDER},
         "by_court": by_court,
         "top_divergent_paths": top_divergent_paths,
@@ -648,8 +741,17 @@ def run_equivalence_check(
     print(summary)
     print(f"salt_parity: {salt_mode}")
     print(f"reconciled: {reconciled}")
+    print(
+        f"held_value_gate: {'PASS' if held_value_gate_pass else 'FAIL'} "
+        f"(held={held_total} populated={held_populated} "
+        f"violations={held_violations} event_name_vocab={len(event_name_vocab)})"
+    )
     logger.info(
         "equivalence check complete",
-        extra={"file_count": len(pdf_paths), "reconciled": reconciled},
+        extra={
+            "file_count": len(pdf_paths),
+            "reconciled": reconciled,
+            "held_value_gate_pass": held_value_gate_pass,
+        },
     )
-    return 0 if reconciled else 1
+    return 0 if (reconciled and held_value_gate_pass) else 1

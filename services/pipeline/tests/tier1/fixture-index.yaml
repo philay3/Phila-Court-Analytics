@@ -176,6 +176,15 @@ fixtures:
     layout_unverified: false
     synthetic: true
 
+  - filename: held_multiword_event_cp.txt
+    court_type: Common Pleas
+    scenario: held / non-terminal (CP), multi-word event name (date token index != 2)
+    expected_charge_count: 1
+    expected_warnings:
+      - NON_TERMINAL_CASE
+    layout_unverified: false
+    synthetic: true
+
   - filename: progression_mc.txt
     court_type: Municipal Court
     scenario: progression — non-terminal then terminal, no event keys

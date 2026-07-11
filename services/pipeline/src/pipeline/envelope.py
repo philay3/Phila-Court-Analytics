@@ -8,12 +8,14 @@ envelope is the exact object ``parse_docket_text`` returns — nothing inside it
 added, removed, renamed, or reformatted (criterion 5).
 
 Two version numbers, deliberately distinct (decision 4 + decision 7): the
-ENVELOPE carries ``parser_version = 4`` (bumped 3 -> 4 in 18.3 for the hardened
-parse pipeline), while the wrapped record carries its own internal
-``parser_version = 2`` (bumped 1 -> 2 in 18.3, the first record-SCHEMA change
-since the port: the conditional ``event_date``/``event_name``/``min_assumed``
-fields). The two axes are separate — as of 18.2 the record's output VALUES
-diverge from Capstone; as of 18.3 its SCHEMA gains conditional fields too.
+ENVELOPE carries ``parser_version = 5`` (bumped 4 -> 5 in 18.4 for the single-line
+event-header capture fix — a parse-BEHAVIOR change), while the wrapped record
+carries its own internal ``parser_version = 2`` (bumped 1 -> 2 in 18.3, the first
+record-SCHEMA change since the port: the conditional
+``event_date``/``event_name``/``min_assumed`` fields; unchanged by 18.4, which
+corrects held-charge event VALUES without altering the schema). The two axes are
+separate — as of 18.2 the record's output VALUES diverge from Capstone; as of
+18.3 its SCHEMA gains conditional fields too.
 
 Emission scope (decision 6, extended in 18.2/18.3): observation-only warnings are
 derived here from the parsed record/extraction status, and the parser's own
@@ -62,8 +64,9 @@ logger = logging.getLogger("pipeline.envelope")
 
 # The envelope format / parse-pipeline version (decision 4). Distinct from the
 # wrapped record's internal parser_version, which is 2 as of 18.3 (decision 7).
-# Bumped 3 -> 4 in 18.3 for the hardened parse pipeline.
-ENVELOPE_PARSER_VERSION = 4
+# Bumped 3 -> 4 in 18.3 for the hardened parse pipeline; 4 -> 5 in 18.4 for the
+# single-line event-header capture fix (parse-behavior change, no schema change).
+ENVELOPE_PARSER_VERSION = 5
 
 # Parse status vocabulary (decision 4/5): exactly one per envelope.
 PARSE_STATUS_PARSED = "parsed"

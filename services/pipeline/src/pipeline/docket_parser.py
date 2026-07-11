@@ -629,7 +629,7 @@ def parse_docket_text(
             current_sentence_comp = None
 
     disposition_lines = sections.get("DISPOSITION SENTENCING/PENALTIES", [])
-    for idx, line in enumerate(disposition_lines):
+    for line in disposition_lines:
         line_str = line.strip()
         if not line_str:
             continue
@@ -637,31 +637,27 @@ def parse_docket_text(
         if line_str in DISPO_SKIP_HEADERS:
             continue
 
-        # Check if the next line is an event date line (lookahead)
-        is_event_header = False
-        if idx + 1 < len(disposition_lines):
-            next_line = disposition_lines[idx + 1].strip()
-            if re.search(r"(Final Disposition|Not Final)$", next_line):
-                is_event_header = True
-
-        if is_event_header:
+        # Event header (single-line, canonical CPCMS layout):
+        #   "<EventName> <MM/DD/YYYY> <Not Final|Final Disposition>"
+        # 18.4 replaced the previous two-line assumption (event name on its own
+        # line, then the date at column 0 of the following anchor line). A corpus
+        # scan found the date immediately left of the status token on 3,278/3,278
+        # anchor lines and at line start on 0 of them, so single-line is canonical
+        # and two-line handling is retired (a future real specimen would return it
+        # as its own task). line_str is already .strip()ed above, so the "$" anchor
+        # tolerates trailing whitespace in the source line.
+        event_match = re.search(
+            r"(\d{2}/\d{2}/\d{4})\s+(?:Final Disposition|Not Final)$", line_str
+        )
+        if event_match:
             save_current_sentence()
             current_charge_seq = None
-            current_event_name = line_str
-            continue
-
-        date_line_match = re.search(r"(Final Disposition|Not Final)$", line_str)
-        if date_line_match:
-            save_current_sentence()
-            current_charge_seq = None
-            # 18.3 Item 1: capture the event-header date (the leading date on the
-            # date line) so a non-terminal/held charge can record it below.
-            m_event_date = re.match(r"^(\d{2}/\d{2}/\d{4})", line_str)
-            current_event_date = (
-                parse_date(m_event_date.group(1)) if m_event_date else None
-            )
+            # event_date is the date token immediately preceding the status token;
+            # event_name is the leading text before that date on the same line.
+            current_event_date = parse_date(event_match.group(1))
+            current_event_name = line_str[: event_match.start()].strip()
             if (
-                date_line_match.group(1) == "Final Disposition"
+                line_str.endswith("Final Disposition")
                 or "ard" in current_event_name.lower()
             ):
                 in_valid_event = True

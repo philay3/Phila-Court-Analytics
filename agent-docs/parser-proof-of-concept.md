@@ -74,10 +74,12 @@ The Capstone parser was ported behavior-preserving across three tasks:
   hardening changes in Phase 18 (§5). The port itself changed no parse
   behavior.
 
-Current versions: **`ENVELOPE_PARSER_VERSION = 4`**, **record
+Current versions: **`ENVELOPE_PARSER_VERSION = 5`**, **record
 `parser_version = 2`**. (The envelope version tracks the observability
-wrapper; the record version tracks record-schema changes — bumped to 2 in
-18.3 for the two conditional held-case fields.)
+wrapper / parse behavior — bumped to 5 in 18.4 for the single-line
+event-header capture fix; the record version tracks record-schema changes —
+bumped to 2 in 18.3 for the two conditional held-case fields and unchanged by
+18.4, which corrected held-charge values without a schema change.)
 
 ## 3. Extraction-seam findings (17.1)
 
@@ -164,7 +166,7 @@ no field, never merges or re-keys charges.
   CPCMS document and no corpus observation back it yet; it stays speculative
   until real hits arrive.
 
-### Held-case event dates (18.3 Item 1, Class A)
+### Held-case event dates (18.3 Item 1 / corrected in 18.4, Class A)
 
 Records `event_date` (event-header date) and `event_name` on charges — but
 **only on charges that end the parse undisposed** (`disposition_raw`,
@@ -177,15 +179,48 @@ is byte-identical to the baseline.
 
 - **Record delta: 926 keys (event_date + event_name) across 104 dockets**
   (CP 91 / MC 13), from 463 true-held event-key charges; **all also carry
-  `NON_TERMINAL_CASE`.**
+  `NON_TERMINAL_CASE`.** As of 18.4 these keys are **populated with correct
+  values**; the 18.3 run had the keys present but their values wrong (see
+  below).
 
-**Placement rule and its acceptance authority:** the initial implementation
-attached the event keys at each non-terminal appearance but did not strip them
-when the same charge was later disposed — a placement defect that **206 green
-unit tests did not catch**. The full-corpus rerun found 3,085 disposed charges
-wrongly carrying event keys, and the placement sweep was added in response.
-The lesson is recorded here deliberately: **corpus verification, not the unit
-suite, is the acceptance authority for this parser.**
+**Placement rule and its acceptance authority:** the initial 18.3
+implementation attached the event keys at each non-terminal appearance but did
+not strip them when the same charge was later disposed — a placement defect
+that **206 green unit tests did not catch**. The full-corpus rerun found 3,085
+disposed charges wrongly carrying event keys, and the placement sweep was added
+in response. The lesson is recorded here deliberately: **corpus verification,
+not the unit suite, is the acceptance authority for this parser.**
+
+**18.4 correction — single-line event header (a second, deeper defect of the
+same field).** The 18.3 capture assumed a _two-line_ event header: an event-name
+line, then an anchor line carrying the date at column 0
+(`MM/DD/YYYY … Not Final`). Real CPCMS prints the header on **one line**:
+`<EventName> <MM/DD/YYYY> <Not Final|Final Disposition>` — a corpus scan found
+the date immediately left of the status token on **3,278/3,278** anchor lines
+and at line start on **zero** of them. Consequence on the authoritative v4
+corpus run: **`event_date` was null on 463/463 held charges and `event_name`
+was mis-sourced** (offense fragments captured off the wrong line), not the
+event labels. 18.4 replaces the capture with a single-line anchored read
+(`event_date` = the date token immediately preceding the status token;
+`event_name` = the leading text before it) and bumps `ENVELOPE_PARSER_VERSION`
+4 → 5 (record `parser_version` stays 2 — same keys, corrected values). Two-line
+handling is retired; no real specimen exists to support it.
+
+**Why the key-presence diff hid it — the verification-gap lesson.** The
+comparator classifies these as `key_missing_in_baseline` (Class A) because the
+Capstone baseline has no such keys. That diff is **value-blind**: it fires on
+the _presence_ of a key, so a corpus where 100% of held charges carry
+`event_date`/`event_name` keys reconciles cleanly even when every one of those
+values is null or wrong. Class-A key-presence counts were green through 18.3
+precisely because they never inspected the values. **Going forward, any new
+capture field requires a value gate, not just a key-presence diff.** 18.4 adds
+one: the equivalence/corpus tooling now asserts, fail-loud, that **100% of held
+charges (the placement-sweep survivors — exactly the charges carrying event
+keys) have a non-null, date-parseable `event_date` and a non-null `event_name`**,
+and reports the distinct `event_name` vocabulary size (~26 case-normalized
+values corpus-wide) as an informational line. This defect was surfaced by the
+20.2 exit demo and root-caused to the two-line assumption; it is recorded here,
+not smoothed over (Check-2 precedent).
 
 ### `min_assumed` annotation (18.3 Item 2, Class B)
 
@@ -302,18 +337,34 @@ ADR 0001's known limitation).
 
 ## 11. Fixture-corpus coverage and gaps
 
-**Tier-1 (committed, CI-enforced):** 32 synthetic TEXT fixtures over the full
+**Tier-1 (committed, CI-enforced):** 33 synthetic TEXT fixtures over the full
 scenario matrix, with CP+MC pairs where layout differs and MC-only fixtures
 where the section set differs. Each has a parser-generated golden and an index
 entry; a hygiene test scans the entire tier-1 tree and fails on any
 docket-shaped token that is not the `000000\d` placeholder. The tier-1
-regression runs in CI under the existing pytest job.
+regression runs in CI under the existing pytest job. 18.4 corrected the
+event-header layout of the held (`held_cross_court_mc`) and ARD
+(`ard_diversion_cp`) fixtures to the corpus-canonical single-line form (both
+goldens reproduced byte-for-byte) and added `held_multiword_event_cp` — a held
+fixture whose multi-word event name places the date token at index 4, guarding
+against a position-baked capture.
 
 - **Disclosed gap — two `layout_unverified` MC fixtures:** the decided-trial-
   verdict and AMP-diversion renderings are **invented layouts, never confirmed
   against real CPCMS output.** They are marked `layout_unverified: true` in the
   index and should be validated against a real MC docket of each kind before
   being trusted as coverage.
+
+- **Disclosed gap — broader fixture-layout audit needed (Sprint 5).** 18.4
+  found _two_ committed fixtures encoding an invented two-line event header
+  (`held_cross_court_mc`, then `ard_diversion_cp`) that does not exist in real
+  CPCMS. The remaining terminal fixtures still encode the same two-line layout;
+  they parse inertly under the single-line capture (terminal `event_name` is
+  unused and the date is captured identically), so their goldens are unchanged
+  and they were left untouched — but their `layout_unverified: false` markings
+  are not yet evidence-backed against corpus-observed formats. A Sprint 5
+  opening item verifies every tier-1 fixture's event-header (and other section)
+  layouts against real formats and corrects the markings accordingly.
 
 **Tier-2 (local, out-of-repo):** **1,603 fixtures = 1,596 baseline + 7
 recovered sentinel dockets.** The 7 recovered dockets have no Capstone
@@ -338,7 +389,9 @@ Evidence base:
 - All post-hardening divergences classified into intended delta classes with
   **zero unclassified diffs** (§5).
 - Held-case, min_assumed, and sentinel behaviors validated at CP scale
-  (CP 91 held dockets; the bulk of the 1,842 min_assumed annotations).
+  (CP 91 held dockets; the bulk of the 1,842 min_assumed annotations). Held-case
+  event **values** are correct as of the 18.4 single-line fix and are now
+  enforced by a fail-loud corpus value gate, not key-presence alone (§5).
 
 CP charge-level data can proceed into Sprint 5 normalization/taxonomy work.
 The open items are Sprint 5 work by design (judge validation, disposition-map
