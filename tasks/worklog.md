@@ -2274,6 +2274,11 @@ the record field there.
       parse undisposed only. **Post-fix actuals over the 1,603 corpus: 463 true-held
       event-key charges → 926 keys across 104 dockets (CP 91 / MC 13), all of which
       also carry `NON_TERMINAL_CASE`.**
+      > **[Class A semantics amended by the 18.4 defect note below — these are
+      > key-PRESENCE counts, and the VALUES they counted were wrong. See the
+      > "18.4 defect note" appended to this entry for populated-value status and
+      > the value gate that now enforces it. Do not act on these counts as
+      > evidence of correct held-charge values.]**
     - **Class B — min_assumed additions:** `key_missing_in_baseline` at
       `charges[i].sentences[j].min_assumed`, value `true`, filled-min sentences
       only. **Post-fix actuals: 1,842 keys across 1,095 dockets, 0 with value ≠
@@ -2372,6 +2377,29 @@ the record field there.
   - `.venv/bin/ruff check src tests` — All checks passed.
   - `.venv/bin/ruff format --check .` — 30 files already formatted.
   - `.venv/bin/python -m pytest -q` — 208 passed (206 + 2 Check-2 regression tests).
+- **18.4 defect note (appended 2026-07-11 — do not rewrite history above).**
+  A SECOND defect in the same held-case event capture was found after this entry
+  was written, at the **20.2 exit demo**, and fixed in task 18.4. The 18.3 capture
+  assumed a **two-line** event header (event-name line, then an anchor line with
+  the date at **column 0**: `MM/DD/YYYY … Not Final`). Real CPCMS prints the
+  header on **one line**: `<EventName> <MM/DD/YYYY> <Not Final|Final Disposition>`
+  — a corpus scan found the date immediately left of the status token on
+  **3,278/3,278** anchor lines and at line start on **zero**. On the authoritative
+  v4 corpus run this left **`event_date` null on 463/463 held charges** and
+  **`event_name` mis-sourced** (offense fragments off the wrong line) on 463/463.
+  - **Ledger Class A semantics amended (key-presence → populated-value).** The
+    Class A bullet above counts `key_missing_in_baseline` at
+    `charges[i].event_date`/`event_name`. That diff is **value-blind**: it fires on
+    key PRESENCE, so the 926-key / 104-docket / 463-charge (CP 91 / MC 13) counts
+    were all green in 18.3 while the underlying values were wrong. After 18.4 the
+    **paths and counts are unchanged** (comparator diffs stay
+    `key_missing_in_baseline` on the same paths); what changed is that the VALUES
+    are now correct and **a new fail-loud value gate enforces it** (see 18.4 item 4
+    / the 18.4 entry below). Read the Class A counts as key-presence only; value
+    correctness is attested by the value gate, not by these diffs.
+  - **Verification-gap lesson:** key-presence diffs cannot certify a new capture
+    field's values. Any future capture field requires a value gate, not just a
+    key-presence class in the ledger. The 18.4 entry records the gate.
 
 ## Task COL-1 — Collection Baseline Run (Collector Port + One-Hour Weekend Baseline)
 
@@ -2755,3 +2783,106 @@ the record field there.
   planned) at the end of the report — judge normalization/validation,
   disposition-map cleanup, court_type populate-vs-drop, restitution taxonomy
   mapping, MC evidence deepening, and (Sprint 7) duration display units.
+
+## Task 18.4 — Event-header capture fix (single-line) + value gate + record corrections (2026-07-11)
+
+- **What was built:** the held-case event header is now captured as a **single
+  line** (`<EventName> <MM/DD/YYYY> <Not Final|Final Disposition>`), replacing the
+  18.3 two-line assumption (name line, then date at column 0). The 18.3 assumption
+  left `event_date` null on 463/463 held charges and `event_name` mis-sourced on
+  463/463 in the authoritative v4 corpus run — surfaced at the 20.2 exit demo,
+  root-caused to the layout assumption, corpus-confirmed by a scan (date immediately
+  left of the status token on 3,278/3,278 anchor lines; 0 at line start).
+- **Parser fix** (`docket_parser.py`, disposition loop): the previous-line name
+  lookahead is retired; a line ending in the status token is matched with the
+  anchored `r"(\d{2}/\d{2}/\d{4})\s+(?:Final Disposition|Not Final)$"` —
+  `event_date` = the date token immediately preceding the status token,
+  `event_name` = the leading text before it on the same line. The placement sweep
+  (event keys only on charges ending undisposed; latest non-terminal wins) and the
+  `in_valid_event` routing (incl. the ARD `"ard" in event_name` special case) are
+  unchanged in behavior. Two-line handling is not retained (no real specimen in
+  3,278 anchors); it returns as its own task if a real specimen ever appears.
+- **Version bump:** `ENVELOPE_PARSER_VERSION` **4 → 5** (behavior axis — same input,
+  corrected values). Record `parser_version` **stays 2** (no schema change — same
+  conditional keys, corrected values). `test_envelope.py`, the `run_fixtures.py`
+  projection comment, and a `test_run_fixtures.py` sample were updated 4 → 5; no
+  other hardcoded envelope-version-4 reference was found.
+- **STOP-AND-REPORT during implementation — `ard_diversion_cp.txt` (honest
+  history).** The plan asserted terminal fixtures were **inert** under the fix
+  (terminal `event_name` is unused, date captured identically). Tier-1 report-mode
+  run **falsified that for one fixture**: `ard_diversion_cp.txt` diverged. Root
+  cause: ARD is a `Not Final` event routed as a **valid disposition** solely via
+  `"ard" in current_event_name` — so ARD *does* consume `event_name`, and in the
+  two-line fixture the name "ARD" sat on the orphaned line. This is a real
+  terminal-golden drift; per the armed stop condition I halted and reported it
+  rather than mass-editing or explaining it away. Chops authorized (Option 1)
+  folding it to the corpus-canonical single-line `ARD 03/10/2025 Not Final`. I
+  verified **in-memory, before writing**, that the single-line form reproduces the
+  committed golden **byte-for-byte**; the on-disk correction then matched. A pinned
+  unit test now covers ARD single-line routing (charge ends disposed, no event
+  keys). No other fixture diverged — the full tier-1 run confirms only this one.
+- **Fixtures (tier-1):** `held_cross_court_mc.txt` and `ard_diversion_cp.txt`
+  folded to single-line (both goldens reproduced byte-for-byte);
+  `multi_nonterminal_mc.txt` folded to single-line (latest-wins semantics
+  unchanged); the two inline event regression tests + `mc_held_page()` +
+  `HELD_FOR_COURT` folded likewise. New fixture **`held_multiword_event_cp.txt`**
+  (+ golden, + index entry): a held CP docket whose multi-word event name
+  ("Waiver of Preliminary Hearing") places the date token at **index 4 (≠ 2)**,
+  guarding against a position-baked capture. `held_cross_court_mc`'s
+  `layout_unverified: false` marking is **unchanged in value but now
+  evidence-backed** — after correction it reflects the corpus-observed single-line
+  layout (cite: the 3,278-anchor scan), where before it mismarked an invented
+  two-line layout as verified.
+- **Value-verification gate (closes the 18.3 verification gap):** unit tests assert
+  held `event_date` is a real parseable date and `event_name` is a non-empty label
+  (incl. the multi-word and trailing-whitespace cases). `equivalence_check.py` now
+  computes a **fail-loud** held-charge value gate over the placement-sweep survivors
+  (charges carrying event keys — the same set Class A counts): `event_date` non-null
+  & date-parseable and `event_name` non-null on 100%, else the run returns exit 1
+  and the report/console show `held_value_gate: FAIL`. The distinct `event_name`
+  vocabulary **size** (expected ~26 case-normalized) is reported as an
+  informational count — the event-name strings are never written (privacy).
+- **Fixture-layout audit queued (Sprint 5 opening item).** `ard_diversion_cp` is the
+  **second** confirmed specimen of the invented two-line layout (after
+  `held_cross_court_mc`) — evidence the audit is necessary, not hypothetical. The
+  remaining terminal fixtures still encode the two-line layout but parse inertly
+  (goldens unchanged), so they were left untouched; their `layout_unverified: false`
+  markings are not yet evidence-backed. **Follow-up:** verify every tier-1 fixture's
+  event-header (and other section) layouts against corpus-observed formats and
+  correct `layout_unverified` markings accordingly.
+- **Record corrections (this PR):** 18.3 worklog entry carries an appended defect
+  note + an inline pointer on its Class A bullet (history not rewritten); the POC
+  report (`agent-docs/parser-proof-of-concept.md`) corrects every held-case
+  event-date statement, adds the defect/fix and the verification-gap lesson, and
+  updates the tier-1 count 32 → 33 and the envelope version 4 → 5; `fixture-index.yaml`
+  gains the new fixture.
+- **Files touched:** `src/pipeline/docket_parser.py`, `src/pipeline/envelope.py`,
+  `src/pipeline/equivalence_check.py`, `src/pipeline/run_fixtures.py` (comment),
+  `tests/test_docket_parser.py`, `tests/test_envelope.py`,
+  `tests/test_equivalence_check.py`, `tests/test_run_fixtures.py`,
+  `tests/tier1/fixtures/{held_cross_court_mc,ard_diversion_cp,multi_nonterminal_mc,held_multiword_event_cp}.txt`,
+  `tests/tier1/goldens/held_multiword_event_cp.json`, `tests/tier1/fixture-index.yaml`,
+  `agent-docs/parser-proof-of-concept.md`, `tasks/worklog.md`.
+- **Deviations from plan:** one — the authorized in-scope extension to correct
+  `ard_diversion_cp.txt` (the stop-report above). No other deviation; no pinned
+  decision reopened.
+- **FULL-CORPUS RERUN — standing local human step (Chops), NOT run in this task.**
+  Fixtures live outside the repo. Provide the run its own NEW dated output dirs
+  (never overwrite `full-corpus-18.3-fix`). Parse the corpus with the v5 parser,
+  then run `equivalence-check` vs the immutable Capstone baseline. **Expected:**
+  every divergence classifies into amended ledger classes A–E; Class A stays
+  926 keys / 104 dockets (CP 91 / MC 13) on the same paths, now **populated**;
+  `baseline_missing == 7` exactly; unclassified `== 0`; placement re-check 463
+  event-key charges / 0 violations; **held_value_gate: PASS** with 100% populated
+  and the distinct-vocabulary size (~26) reported. Quarantine/side sets are **not**
+  rerun here (they get the v5 parser whenever next exercised). **ARD watch item:**
+  any ARD-related divergence in the comparator rerun — disposition fields changing
+  on ARD dockets, or ARD charges gaining/losing event keys — is **UNCLASSIFIED**
+  under the current ledger and therefore **stop-and-report**, never folded into
+  Class A. If real ARD dockets parse identically before/after, the rerun report
+  should say so explicitly (count of ARD-routed events observed, zero divergence)
+  — that is the confirmation the two-line lookahead's effect on ARD routing was
+  fixture-only.
+- **Notes for next task:** Sprint 5 opens with the fixture-layout audit above and
+  the six 20.1 handoff items; the held-case value gate is the template for any
+  future capture field (never certify values with a key-presence class alone).

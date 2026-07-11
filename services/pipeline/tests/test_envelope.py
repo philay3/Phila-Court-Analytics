@@ -129,8 +129,7 @@ AMENDED_CHARGE = build(
 # disposition stays null, and NON_TERMINAL_CASE is emitted.
 HELD_FOR_COURT = build(
     "DISPOSITION SENTENCING/PENALTIES",
-    "Held for Court",
-    "06/15/2024 Not Final",
+    "Held for Court 06/15/2024 Not Final",
     "1 / Simple Assault",
 )
 
@@ -202,7 +201,7 @@ def _all_keys(obj) -> set:
 def test_envelope_shape_has_exactly_the_pinned_fields():
     envelope = make_envelope(DISPOSED_CLEAN)
     assert set(envelope) == EXPECTED_ENVELOPE_KEYS
-    assert envelope["parser_version"] == env.ENVELOPE_PARSER_VERSION == 4
+    assert envelope["parser_version"] == env.ENVELOPE_PARSER_VERSION == 5
     assert set(envelope["extraction_artifact"]) == {
         "artifact_id",
         "text_hash",

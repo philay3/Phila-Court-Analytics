@@ -218,6 +218,122 @@ def test_diff_excludes_defendant_hash_at_verified_path():
     assert divergence["path"] == DEFENDANT_HASH_PATH == "case.defendant_hash"
 
 
+# --- 18.4 held-charge value-verification gate -------------------------------
+
+
+def _held_record(docket_number: str, *, event_date: object, event_name: object) -> dict:
+    """A record whose single charge is HELD (carries event keys, no disposition).
+
+    A held charge is identified by event-key PRESENCE, so both keys are always
+    present here; their VALUES are what the gate verifies.
+    """
+    record = _record(docket_number, n_charges=1)
+    record["charges"][0].update(
+        {"event_date": event_date, "event_name": event_name, "sentences": []}
+    )
+    return record
+
+
+def test_held_value_gate_passes_when_event_date_and_name_populated(
+    tmp_path, monkeypatch
+):
+    h = _Harness(tmp_path, monkeypatch)
+    rec = _held_record(
+        "CP-51-CR-0000010-2024", event_date="2024-06-15", event_name="Held for Court"
+    )
+    h.add_corpus(rec["docket_number"])
+    h.add_baseline(rec)  # identical baseline -> equivalent, gate still evaluates
+    h.set_parsed(rec["docket_number"], rec)
+    code = h.run()
+    gate = h.json_report()["held_value_gate"]
+    assert gate["pass"] is True
+    assert gate["held_charges_total"] == 1
+    assert gate["held_charges_populated"] == 1
+    assert gate["held_charges_violations"] == 0
+    assert gate["event_name_vocab_size"] == 1
+    assert code == 0  # reconciled + gate pass
+
+
+def test_held_value_gate_fails_on_null_event_date(tmp_path, monkeypatch):
+    h = _Harness(tmp_path, monkeypatch)
+    rec = _held_record(
+        "CP-51-CR-0000011-2024", event_date=None, event_name="Held for Court"
+    )
+    h.add_corpus(rec["docket_number"])
+    h.add_baseline(rec)
+    h.set_parsed(rec["docket_number"], rec)
+    code = h.run()
+    gate = h.json_report()["held_value_gate"]
+    assert gate["pass"] is False
+    assert gate["held_charges_violations"] == 1
+    assert "HELD-CHARGE VALUE GATE (18.4): FAIL" in h.txt_report()
+    assert code == 1  # fail-loud even though totals reconcile
+
+
+def test_held_value_gate_fails_on_unparseable_event_date(tmp_path, monkeypatch):
+    h = _Harness(tmp_path, monkeypatch)
+    rec = _held_record(
+        "CP-51-CR-0000012-2024", event_date="not-a-date", event_name="Held for Court"
+    )
+    h.add_corpus(rec["docket_number"])
+    h.add_baseline(rec)
+    h.set_parsed(rec["docket_number"], rec)
+    assert h.run() == 1
+    assert h.json_report()["held_value_gate"]["held_charges_violations"] == 1
+
+
+def test_held_value_gate_fails_on_empty_event_name(tmp_path, monkeypatch):
+    h = _Harness(tmp_path, monkeypatch)
+    rec = _held_record("CP-51-CR-0000013-2024", event_date="2024-06-15", event_name="")
+    h.add_corpus(rec["docket_number"])
+    h.add_baseline(rec)
+    h.set_parsed(rec["docket_number"], rec)
+    assert h.run() == 1
+    assert h.json_report()["held_value_gate"]["held_charges_violations"] == 1
+
+
+def test_held_value_gate_reports_distinct_vocab_size_and_never_leaks_names(
+    tmp_path, monkeypatch
+):
+    h = _Harness(tmp_path, monkeypatch)
+    # Two dockets, two distinct event names (+ a case-variant that must dedupe).
+    specs = [
+        ("CP-51-CR-0000014-2024", "Held for Court"),
+        ("CP-51-CR-0000015-2024", "Waiver of Preliminary Hearing"),
+        ("CP-51-CR-0000016-2024", "held for court"),  # same as #1, normalized
+    ]
+    for docket, name in specs:
+        rec = _held_record(docket, event_date="2024-06-15", event_name=name)
+        h.add_corpus(docket)
+        h.add_baseline(rec)
+        h.set_parsed(docket, rec)
+    code = h.run()
+    gate = h.json_report()["held_value_gate"]
+    assert gate["pass"] is True
+    assert gate["held_charges_total"] == 3
+    assert gate["event_name_vocab_size"] == 2  # case-normalized dedupe
+    assert code == 0
+    # Privacy: the size is reported, the event-name strings are not written.
+    assert "Waiver of Preliminary Hearing" not in h.txt_report()
+    assert "Waiver of Preliminary Hearing" not in json.dumps(h.json_report())
+
+
+def test_held_value_gate_pass_when_no_held_charges(tmp_path, monkeypatch):
+    """A corpus with only terminal charges has zero held charges — the gate
+    passes vacuously (no violations) and reports a zero vocabulary."""
+    h = _Harness(tmp_path, monkeypatch)
+    rec = _record("CP-51-CR-0000017-2024", n_charges=1)  # no event keys
+    h.add_corpus(rec["docket_number"])
+    h.add_baseline(rec)
+    h.set_parsed(rec["docket_number"], rec)
+    code = h.run()
+    gate = h.json_report()["held_value_gate"]
+    assert gate["pass"] is True
+    assert gate["held_charges_total"] == 0
+    assert gate["event_name_vocab_size"] == 0
+    assert code == 0
+
+
 # --- baseline loading -------------------------------------------------------
 
 

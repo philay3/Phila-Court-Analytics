@@ -15,9 +15,7 @@ CHARGES
 Seq. Statute Grade Description
 1 1 18 § 2701 M1 Simple Assault 05/01/2024 X1234567
 DISPOSITION SENTENCING/PENALTIES
-Preliminary Hearing
-06/15/2024 Not Final
+Preliminary Hearing 06/15/2024 Not Final
 1 / Simple Assault
-Continued Hearing
-09/20/2024 Not Final
+Continued Hearing 09/20/2024 Not Final
 1 / Simple Assault
