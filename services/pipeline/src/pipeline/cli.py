@@ -288,6 +288,27 @@ def build_parser() -> argparse.ArgumentParser:
                     "proven configuration and the honest posture."
                 ),
             )
+            subparser.add_argument(
+                "--batch-size",
+                type=int,
+                default=40,
+                help=(
+                    "Dockets per batch before the inter-batch cooldown. "
+                    "Operational parameter. Default: 40."
+                ),
+            )
+            subparser.add_argument(
+                "--batch-cooldown-seconds",
+                type=int,
+                default=240,
+                help=(
+                    "Cooldown between batches, in seconds. Operational "
+                    "parameter with an enforced 60s floor (may be raised, never "
+                    "lowered below it). Default: 240. The counsel-locked "
+                    "240-minute ceiling and 120s post-block cooldown are NOT "
+                    "flags and cannot be changed."
+                ),
+            )
         if name == "evaluate-extractors":
             subparser.add_argument(
                 "--fixtures-dir",
@@ -394,6 +415,8 @@ def main(argv: list[str] | None = None) -> int:
             intake_dir=args.intake_dir,
             report_dir=args.report_dir,
             headless=args.headless,
+            batch_size=args.batch_size,
+            batch_cooldown_seconds=args.batch_cooldown_seconds,
         )
     if args.command == "extract-text":
         return run_extraction(

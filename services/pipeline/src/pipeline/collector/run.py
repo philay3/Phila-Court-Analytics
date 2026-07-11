@@ -45,6 +45,8 @@ def run_collect(
     intake_dir: Path,
     report_dir: Path,
     headless: bool,
+    batch_size: int,
+    batch_cooldown_seconds: int,
 ) -> int:
     """Validate inputs, run one collection, print a summary. Returns exit code.
 
@@ -52,13 +54,26 @@ def run_collect(
     up in ``cli.py``, mirroring parse/seam-check). Tests exercise the pure
     loop via :func:`engine.run` directly and never reach Playwright.
     """
-    if max_minutes < 1 or start_seq < 1 or count < 1:
+    if max_minutes < 1 or start_seq < 1 or count < 1 or batch_size < 1:
         logger.error(
             "invalid parameters",
             extra={
                 "max_minutes": max_minutes,
                 "start_seq": start_seq,
                 "count": count,
+                "batch_size": batch_size,
+            },
+        )
+        return 2
+
+    # Enforced floor on the operational batch cooldown (COL-1a, FIX 4): it may
+    # be raised but never dropped below the floor.
+    if batch_cooldown_seconds < engine.BATCH_COOLDOWN_FLOOR_SECONDS:
+        logger.error(
+            "batch-cooldown-seconds is below the enforced floor",
+            extra={
+                "batch_cooldown_seconds": batch_cooldown_seconds,
+                "floor_seconds": engine.BATCH_COOLDOWN_FLOOR_SECONDS,
             },
         )
         return 2
@@ -82,6 +97,8 @@ def run_collect(
         intake_dir=intake_dir,
         report_dir=report_dir,
         headless=headless,
+        batch_size=batch_size,
+        batch_cooldown_seconds=batch_cooldown_seconds,
     )
 
     abort_event = Event()

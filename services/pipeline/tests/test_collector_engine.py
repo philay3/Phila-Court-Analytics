@@ -10,9 +10,9 @@ import pytest
 from pipeline.collector import engine
 from pipeline.collector.classification import FetchSignal
 from pipeline.collector.engine import (
-    BATCH_SIZE,
+    BATCH_COOLDOWN_DEFAULT_SECONDS,
+    BATCH_SIZE_DEFAULT,
     HARD_CEILING_MINUTES,
-    INTER_BATCH_COOLDOWN_SECONDS,
     POST_BLOCK_COOLDOWN_SECONDS,
     CollectParams,
 )
@@ -84,7 +84,7 @@ def run_engine(params, transport, clock, *, jitter=3.0, abort_event=None):
 
 def test_jittered_delay_after_every_real_request(tmp_path):
     clock = FakeClock()
-    transport = FakeTransport(lambda d: FetchSignal(result_rows=0))
+    transport = FakeTransport(lambda d: FetchSignal(no_results=True))
     params = make_params(tmp_path, count=3)
     report = run_engine(params, transport, clock, jitter=3.7)
     # One 2.0–5.0s delay per fetched attempt; none skipped.
@@ -142,12 +142,12 @@ def test_five_errors_stop_with_error_streak(tmp_path):
 
 def test_inter_batch_cooldown_after_full_batch(tmp_path):
     clock = FakeClock()
-    transport = FakeTransport(lambda d: FetchSignal(result_rows=0))
-    params = make_params(tmp_path, count=BATCH_SIZE + 1)
+    transport = FakeTransport(lambda d: FetchSignal(no_results=True))
+    params = make_params(tmp_path, count=BATCH_SIZE_DEFAULT + 1)
     report = run_engine(params, transport, clock)
     assert report["stop_reason"] == "range_exhausted"
     assert report["cooldowns_taken"]["inter_batch"] == 1
-    assert clock.sleeps.count(INTER_BATCH_COOLDOWN_SECONDS) == 1
+    assert clock.sleeps.count(BATCH_COOLDOWN_DEFAULT_SECONDS) == 1
     # The 41st attempt is in batch 2.
     lines = _read_attempts(params, report)
     assert lines[-1]["batch"] == 2
@@ -157,20 +157,34 @@ def test_inter_batch_cooldown_after_full_batch(tmp_path):
 def test_batch_boundary_counts_real_requests_not_skips(tmp_path):
     # A run of already_present skips must not advance the batch counter.
     clock = FakeClock()
-    params = make_params(tmp_path, count=BATCH_SIZE + 1)
+    params = make_params(tmp_path, count=BATCH_SIZE_DEFAULT + 1)
     params.intake_dir.mkdir(parents=True, exist_ok=True)
     # Pre-place PDFs for the first 10 dockets so they skip.
     from pipeline.collector.enumeration import docket_range
 
-    dockets = docket_range("MC", 2025, 1, BATCH_SIZE + 1)
+    dockets = docket_range("MC", 2025, 1, BATCH_SIZE_DEFAULT + 1)
     for d in dockets[:10]:
         (params.intake_dir / f"{d}.pdf").write_bytes(b"%PDF-1.4 x")
-    transport = FakeTransport(lambda d: FetchSignal(result_rows=0))
+    transport = FakeTransport(lambda d: FetchSignal(no_results=True))
     report = run_engine(params, transport, clock)
     # 41 dockets, 10 skipped -> only 31 real requests -> no inter-batch cooldown.
     assert report["counts"]["already_present"] == 10
     assert report["cooldowns_taken"]["inter_batch"] == 0
-    assert len(transport.calls) == BATCH_SIZE + 1 - 10
+    assert len(transport.calls) == BATCH_SIZE_DEFAULT + 1 - 10
+
+
+def test_batch_size_and_cooldown_come_from_params(tmp_path):
+    # FIX 4: --batch-size / --batch-cooldown-seconds are honored per run.
+    clock = FakeClock()
+    transport = FakeTransport(lambda d: FetchSignal(no_results=True))
+    params = make_params(tmp_path, count=3, batch_size=2, batch_cooldown_seconds=90)
+    report = run_engine(params, transport, clock)
+    assert report["cooldowns_taken"]["inter_batch"] == 1
+    assert clock.sleeps.count(90) == 1
+    assert report["parameters"]["batch_size"] == 2
+    assert report["parameters"]["inter_batch_cooldown_seconds"] == 90
+    lines = _read_attempts(params, report)
+    assert lines[-1]["batch"] == 2
 
 
 # --- time cap + hard ceiling ----------------------------------------------
@@ -178,7 +192,7 @@ def test_batch_boundary_counts_real_requests_not_skips(tmp_path):
 
 def test_time_cap_stops_run(tmp_path):
     clock = FakeClock()
-    transport = FakeTransport(lambda d: FetchSignal(result_rows=0))
+    transport = FakeTransport(lambda d: FetchSignal(no_results=True))
     params = make_params(tmp_path, count=100, max_minutes=1)  # 60s budget
     report = run_engine(params, transport, clock, jitter=20.0)
     # elapsed 0,20,40 -> fetch; at 60 the 4th iteration stops.
@@ -188,7 +202,7 @@ def test_time_cap_stops_run(tmp_path):
 
 def test_hard_ceiling_clamps_even_with_huge_max_minutes(tmp_path):
     clock = FakeClock()
-    transport = FakeTransport(lambda d: FetchSignal(result_rows=0))
+    transport = FakeTransport(lambda d: FetchSignal(no_results=True))
     # max_minutes 9999 must be clamped to 240 (14400s). With a 3600s delay per
     # request, the run stops after 4 requests (elapsed reaches 14400), proving
     # the clamp: without it the budget would be ~600k seconds.
@@ -209,7 +223,7 @@ def test_already_present_skip_does_not_fetch(tmp_path):
     params.intake_dir.mkdir(parents=True, exist_ok=True)
     present = "MC-51-CR-0000002-2025"
     (params.intake_dir / f"{present}.pdf").write_bytes(b"%PDF-1.4 already")
-    transport = FakeTransport(lambda d: FetchSignal(result_rows=0))
+    transport = FakeTransport(lambda d: FetchSignal(no_results=True))
     report = run_engine(params, transport, clock)
     assert present not in transport.calls
     assert report["counts"]["already_present"] == 1
@@ -239,7 +253,7 @@ def test_operator_abort_finishes_in_flight_then_stops(tmp_path):
     def on_fetch(docket):
         event.set()  # SIGINT arrives during the first in-flight request
 
-    transport = FakeTransport(lambda d: FetchSignal(result_rows=0), on_fetch=on_fetch)
+    transport = FakeTransport(lambda d: FetchSignal(no_results=True), on_fetch=on_fetch)
     report = run_engine(params, transport, clock, abort_event=event)
     assert report["stop_reason"] == "operator_abort"
     # The in-flight (first) request completed; the next iteration aborted.
@@ -265,7 +279,7 @@ def test_report_and_attempt_log_shapes(tmp_path):
     def signal_for(d):
         if d.endswith("0000001-2025"):
             return FetchSignal(pdf_ok=True, pdf_bytes=b"%PDF-1.7 a")
-        return FetchSignal(result_rows=0)
+        return FetchSignal(no_results=True)
 
     transport = FakeTransport(signal_for)
     params = make_params(tmp_path, count=3)
@@ -339,7 +353,7 @@ def test_report_and_attempt_log_shapes(tmp_path):
 
 def test_range_exhausted_stop_reason(tmp_path):
     clock = FakeClock()
-    transport = FakeTransport(lambda d: FetchSignal(result_rows=0))
+    transport = FakeTransport(lambda d: FetchSignal(no_results=True))
     params = make_params(tmp_path, count=3)
     report = run_engine(params, transport, clock)
     assert report["stop_reason"] == "range_exhausted"
@@ -347,18 +361,31 @@ def test_range_exhausted_stop_reason(tmp_path):
 
 def test_blocked_attempt_detail_names_the_signal(tmp_path):
     clock = FakeClock()
+    signals = {
+        1: FetchSignal(bot_check=True),
+        2: FetchSignal(unauthorized=True),
+        3: FetchSignal(rate_limited=True),
+        4: FetchSignal(),  # unrecognized -> fail-closed block
+    }
 
     def signal_for(d):
-        if d.endswith("0000001-2025"):
-            return FetchSignal(bot_check=True)
-        return FetchSignal(rate_limited=True)
+        seq = int(d.split("-")[3])
+        return signals[seq]
 
     transport = FakeTransport(signal_for)
-    params = make_params(tmp_path, count=2)
+    params = make_params(tmp_path, count=4)
     report = run_engine(params, transport, clock)
     attempts = _read_attempts(params, report)
-    assert attempts[0]["detail"] == "bot_check"
-    assert attempts[1]["detail"] == "rate_limited"
+    assert [a["detail"] for a in attempts] == [
+        "bot_check",
+        "unauthorized",
+        "rate_limited",
+        "unrecognized_page",
+    ]
+    # All four were classified blocked; the streak stopped the run at N=5? No —
+    # only four, so range_exhausted, but every outcome is blocked.
+    assert all(a["outcome"] == "blocked" for a in attempts)
+    assert report["counts"]["blocks"] == 4
 
 
 # --- privacy: no page content anywhere; no capture APIs (FIX 4) -----------

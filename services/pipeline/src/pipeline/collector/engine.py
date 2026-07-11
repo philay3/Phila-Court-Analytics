@@ -56,9 +56,13 @@ logger = logging.getLogger("pipeline.collector")
 HARD_CEILING_MINUTES = 240
 POST_BLOCK_COOLDOWN_SECONDS = 120
 
-# --- Operational parameters (ours) -----------------------------------------
-BATCH_SIZE = 40
-INTER_BATCH_COOLDOWN_SECONDS = 240
+# --- Operational parameters (ours; batch values are flag-tunable) ----------
+# Defaults for the tunable batch flags (COL-1a, FIX 4). The batch cooldown has
+# an enforced FLOOR — it may be raised but never dropped below it.
+BATCH_SIZE_DEFAULT = 40
+BATCH_COOLDOWN_DEFAULT_SECONDS = 240
+BATCH_COOLDOWN_FLOOR_SECONDS = 60
+# The per-request jitter band is unoverridable (COL-1, FIX 1).
 PER_REQUEST_DELAY_MIN_SECONDS = 2.0
 PER_REQUEST_DELAY_MAX_SECONDS = 5.0
 
@@ -98,6 +102,8 @@ class CollectParams:
     intake_dir: Path
     report_dir: Path
     headless: bool = False
+    batch_size: int = BATCH_SIZE_DEFAULT
+    batch_cooldown_seconds: int = BATCH_COOLDOWN_DEFAULT_SECONDS
 
 
 class Transport:
@@ -140,7 +146,14 @@ def _attempt_detail(outcome: str, signal: FetchSignal | None) -> str | None:
     if signal is None:
         return None
     if outcome == OUTCOME_BLOCKED:
-        return "bot_check" if signal.bot_check else "rate_limited"
+        if signal.bot_check:
+            return "bot_check"
+        if signal.unauthorized:
+            return "unauthorized"
+        if signal.rate_limited:
+            return "rate_limited"
+        # Classified blocked by the fail-closed default: no positive marker.
+        return "unrecognized_page"
     if outcome == OUTCOME_ERROR:
         return signal.error_type
     return None
@@ -244,12 +257,15 @@ def run(
 
         # Inter-batch cooldown fires before the first real request of a new
         # batch — i.e. once a full batch of real requests has completed.
-        if requests_in_batch == BATCH_SIZE:
+        if requests_in_batch == params.batch_size:
             logger.info(
                 "cooldown",
-                extra={"kind": "inter_batch", "seconds": INTER_BATCH_COOLDOWN_SECONDS},
+                extra={
+                    "kind": "inter_batch",
+                    "seconds": params.batch_cooldown_seconds,
+                },
             )
-            sleep(INTER_BATCH_COOLDOWN_SECONDS)
+            sleep(params.batch_cooldown_seconds)
             cooldowns_taken["inter_batch"] += 1
             requests_in_batch = 0
             batch_number += 1
@@ -389,8 +405,8 @@ def _build_report(
             "count": params.count,
             "range_first": dockets[0],
             "range_last": dockets[-1],
-            "batch_size": BATCH_SIZE,
-            "inter_batch_cooldown_seconds": INTER_BATCH_COOLDOWN_SECONDS,
+            "batch_size": params.batch_size,
+            "inter_batch_cooldown_seconds": params.batch_cooldown_seconds,
             "post_block_cooldown_seconds": POST_BLOCK_COOLDOWN_SECONDS,
             "per_request_delay_seconds": [
                 PER_REQUEST_DELAY_MIN_SECONDS,

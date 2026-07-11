@@ -133,23 +133,44 @@ attempt logs its docket number, outcome, batch number, and running
 hits/misses/blocks counts; cooldowns log a notice. **Ctrl-C is graceful** — it
 finishes the in-flight request, writes the report, and exits.
 
-### Enforced pacing and stops (not overridable by any flag)
+### Enforced legal conditions (counsel-locked, NOT overridable by any flag)
 
 - **Hard 240-minute ceiling** on any run — `--max-minutes` can only shorten it.
 - **2-minute cooldown** after any block/bot-check response, before the next
   request.
 - Jittered **2.0–5.0s delay after every real portal request**.
-- **40 dockets per batch**, **4-minute inter-batch cooldown** (batch boundaries
-  count real portal requests, not already-present skips).
-- **Consecutive-block streak** stop at **N=5** (`block_streak`): increments on
-  block/bot-check, resets on a hit or a clean miss.
+
+### Operational parameters (tunable flags; defaults shown)
+
+- **`--batch-size` (default 40)** and **`--batch-cooldown-seconds` (default 240)**
+  — dockets per batch and the inter-batch cooldown. The cooldown has an
+  **enforced 60s floor** (may be raised, never lowered below it). Batch
+  boundaries count real portal requests, not already-present skips.
+- **Consecutive-block streak** stop at **N=5** (`block_streak`): increments on a
+  block/bot-check, resets on a hit or a positively-identified clean miss.
 - **Consecutive-error streak** stop at **N=5** (`error_streak`): increments on
   transport errors, resets on any live response (hit/miss/blocked). Guards
   against a broken selector burning the whole range.
+
+### Classification (fail-closed)
+
 - A **bot check / captcha is always treated as a block** and is never solved,
-  bypassed, or automated.
-- A **clean miss** (docket number does not exist) is a successful request and a
-  logged coverage data point — never a block or a failure.
+  bypassed, or automated. The observed **"unauthorized" / "not authorized"**
+  block page is recognized explicitly.
+- A **clean miss** requires **positive identification** of the portal's genuine
+  no-results state (the search UI rendered with zero docket-sheet links and no
+  block signature). It is a successful request and a logged coverage data
+  point — never a block or a failure.
+- **Fail-closed default:** any page that is neither a successful PDF nor a
+  positively-identified no-results page classifies as `blocked` — unknown or
+  unrecognized shapes are blocks, never misses. (Run 1 proved the old fail-open
+  polarity mislabeled an "unauthorized" block page as `miss`, so 0 blocks were
+  logged and the post-block cooldown never fired; this is the fix.)
+- **Documented residual:** a block page that renders the _full_ search UI with
+  zero sheet links **and** none of the recognized block text would still
+  classify as `miss`. The observed block page is covered by its signature, and
+  interstitials without the search UI are covered by the fail-closed default;
+  the operator confirms block-page appearance on the next headful run.
 - **Resumable**: a docket whose `<docket>.pdf` is already in the intake dir is
   skipped and logged `already_present`; reruns over an overlapping range are
   safe.
@@ -181,9 +202,12 @@ the baseline run, alongside the batch/cooldown/N values:
   browser periodically to guard memory. For a 60-minute baseline (≤ ~600
   requests) this is unnecessary; re-evaluate if extended collection lands.
 - **Block/bot-check DOM signatures are best-effort.** Capstone had no block
-  detection to port, so the selectors/phrases in `collector/transport.py` are
-  unverified against the live portal and must be confirmed on the headful
-  baseline run before any extended collection.
+  detection to port. Run 1 added the observed "unauthorized" signature and a
+  fail-closed default (unknown pages → blocked), so the collector is now robust
+  to unseen block pages, but the exact selectors/phrases in
+  `collector/transport.py` — including the positive no-results marker — remain
+  unverified against the live portal and must be confirmed on the next headful
+  run.
 
 ## Tests
 
