@@ -2940,3 +2940,52 @@ the record field there.
   token/count/baseline-partition output here; any MIXED token or any regressed
   charge whose baseline raw is not covered by ARD_CLASS ∪ the Final path is a
   STOP; then the frozensets are finalized and deliverables 2–7 implemented.
+
+### 18.5 fix (2026-07-11) — scanner `artifacts_scanned=0` + Final-coverage attribution
+
+- **Bug 1 (the reported defect): `artifacts_scanned=0`.** The scanner filtered
+  each artifact on `status == "extracted"`, but 16.2 writes extraction status
+  `success` (values are success/partial/needs_ocr_or_review/failed —
+  `extraction.py:54-57`); the string `"extracted"` was a misread of a
+  `run_extraction` log line. All 1,596 artifacts were skipped → empty table,
+  exit 0. Discovery (`glob("*.json")`) was never at fault (1,596 top-level
+  `{sha}.json`, no nesting). **Fix:** align to the 18.1 parse CLI's loading path
+  — reuse `envelope._artifact_docket_number`, drop the status filter entirely
+  (run_parse parses every artifact's `pages` regardless of status), and skip
+  only empty-`pages` (`failed`) artifacts, which carry no disposition text.
+- **Fail-loud guard (continuation item 3):** an empty table can no longer exit 0.
+  `artifacts_scanned == 0` (dir empty, or all artifacts page-less) and a zero-token
+  result both print an explicit stderr error and exit 2. Verified against an empty
+  dir (exit 2).
+- **Bug 2 (surfaced once real data flowed): attribution conflated Final-covered
+  with must-route.** Real corpus shows terminal dispositions genuinely under
+  Not-Final events (verified: "Quashed" under "Pretrial Bring Back … Not Final").
+  Most are ALSO disposed under a Final event, which always routes, so the
+  Not-Final token need not route. The old `disposed_under_event == corpus`
+  partition wrongly flagged Guilty/Quashed/etc. as ARD_CLASS/MIXED. **Fix:** score
+  each disposed occurrence as `not_final_only` (no Final event covers the seq —
+  must route) vs `final_also_disposed` (Final path covers it); partition keys on
+  `not_final_only`. Guilty→NON_TERMINAL (fcov 12/12), ARD - County→must_route
+  94/97, the "Proceed to Court (ARD" wrap→NON_TERMINAL (0 disposed, 0 raw-match —
+  answers RF1's ends-on-revoked worry: no docket ends on it in this corpus).
+- **Display fix:** the token column no longer truncates at 40 chars (which had
+  collapsed distinct `DUI: … 1st Off*` / `Permitting …` tokens into duplicate
+  rows); full token printed, column width computed from the data.
+- **Faithful-fragment finding (for adjudication, not fixed here):** the offense
+  strip (mirrored verbatim from the parser) yields truncated tokens — "roceed to
+  Court", "RD - County" — when the DISPOSITION section reprints a shorter offense
+  than the CHARGES section and the divergence lands mid disposition-word (root
+  example: CHARGES "Endangering Welfare of Children - Parent/…"; DISPOSITION
+  "Endangering Welfare of Children - Proceed to Court" → strip eats "…- P" →
+  "roceed to Court"). Harmless for Proceed-class (non-terminal), but "RD - County"
+  is a must-route ARD fragment — a routing-mechanism design point for the plan.
+- **Policy note:** per the 18.5 step-2 policy change, real `~/court-data/` is now
+  agent-readable; the scan was run and root-caused directly here. Repo hygiene is
+  unchanged — no real docket text/numbers in tree/commits; the committed console
+  keeps token+count hygiene; the detailed artifact stays out-of-repo, hash-keyed.
+- **Files touched:** `services/pipeline/scripts/scan_disposition_tokens.py`,
+  `tasks/worklog.md`. No parser/comparator/fixture/CI change.
+- **STOP:** table pasted in the report; partition finalization stays a
+  plan-approval item (the ARD-County held/fcov edges, "Withdrawn" must_route=2,
+  the "RD - County" fragment, and the 65↔95 charge-count reconciliation are the
+  open adjudication points). No frozensets pinned; no parser work started.

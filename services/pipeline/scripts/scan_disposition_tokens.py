@@ -8,36 +8,46 @@ REQUIRED FIX 1). The committed routing vocabulary (two frozensets in
 ``docket_parser``) is finalized by hand from this scan's output; only the token
 LIST is committable — the per-docket occurrences stay in the out-of-repo report.
 
-Why the cross-reference is attribution-based, not final-state-based
-------------------------------------------------------------------
-Capstone routed at the EVENT level: when a Not-Final event's case-status row
-contained "ard", every charge line under it routed regardless of token. The
-18.5 redesign routes at the CHARGE-LINE level (token in ARD_CLASS). The two are
-equivalent only if every token the baseline disposed *under a Not-Final event*
-is in ARD_CLASS. A charge held at "Held for Court" (Not Final) and later found
-guilty at a Final event is DISPOSED in its final baseline state, so a naive
-final-state split would mark "Held for Court" both disposed (progressed charges)
-and held (held-forever charges) — a false MIXED on the commonest non-terminal.
-So an occurrence counts as ``disposed_under_event`` only when the disposition is
-ATTRIBUTABLE to this Not-Final event:
+Why the partition keys on Final-event coverage
+----------------------------------------------
+The 18.5 redesign routes at the CHARGE-LINE level (token in ARD_CLASS); Final
+Disposition events ALWAYS route regardless of token. So a Not-Final token needs
+to be in ARD_CLASS only for charges whose baseline disposition the Final path
+canNOT reproduce. Two real-corpus facts (verified, not assumed) force this:
 
-    baseline.disposition_raw == token                       (token survived as
-                                                             the final raw), OR
-    baseline.disposition_date in this event block's judge-line dates
-                                                            (the event sourced
-                                                             the disposition).
+  1. Terminal dispositions genuinely appear under Not-Final events — e.g.
+     "Quashed" / "Nolle Prossed" under a "Pretrial Bring Back ... Not Final"
+     event. Most such charges ALSO carry a Final Disposition event that supplies
+     the same disposition, so the always-routing Final path already reproduces
+     them and the Not-Final token need NOT route.
+  2. A charge held at "Held for Court" (Not Final) and later found guilty at a
+     Final event is DISPOSED in its final baseline state, so a naive final-state
+     split double-counts the commonest non-terminal.
 
-Partition rule (mechanical; MIXED is a plan-level STOP per the task):
+So each occurrence is scored in two steps. First, is the disposition ATTRIBUTABLE
+to this Not-Final event —
 
-    disposed_under_event == corpus_count (> 0)          -> ARD_CLASS  (must route)
-    disposed_under_event == 0 and raw_equals_token == 0 -> NON_TERMINAL
-    otherwise                                            -> MIXED  (STOP)
+    baseline.disposition_raw == token (token survived as the final raw), OR
+    baseline.disposition_date in this event block's judge-line dates.
 
-``raw_equals_token`` decides the wrapped revoked token specifically: if any
-docket ENDS on a revoked event, the baseline disposed that charge with the wrap
-token as raw, so the token must be ARD_CLASS or the 18.5 fix would itself
-un-dispose it. Only the cross-reference can see this — the inspected progression
-docket cannot (its revoked write was masked by the terminal overwrite).
+Then, is the same seq ALSO disposed under a Final event on this docket? If yes,
+``final_also_disposed`` (Final path covers it). If no, ``not_final_only`` — only
+routing this Not-Final event reproduces the disposition. ``not_final_only`` is
+the must-route signal.
+
+Partition CANDIDATE (mechanical; the planning chat finalizes membership):
+
+    not_final_only == 0            -> NON_TERMINAL  (all disposed occ. Final-covered)
+    not_final_only == corpus_count -> ARD_CLASS     (every occurrence must route)
+    otherwise                      -> MIXED  (STOP — adjudicate)
+
+``raw_equals_token`` is reported for the wrapped revoked token specifically: if
+any docket ENDS on a revoked event the baseline disposed that charge with the
+wrap token as raw. One caveat the must-route signal cannot see: an ARD event
+whose disposition_raw is overwritten by a later Final event but whose
+judge/sentence-date/sentences are NOT (the progression case) reads as
+``final_also_disposed`` yet still needs routing for those fields — a plan-level
+adjudication, not a mechanical verdict.
 
 Privacy
 -------
@@ -61,6 +71,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from pipeline.docket_parser import HEADERS, parse_docket_text
+from pipeline.envelope import _artifact_docket_number
 from pipeline.equivalence_check import SALT_ENV_VAR, BaselineError, load_baseline
 from pipeline.helpers import parse_date
 from pipeline.paths import inside_git_worktree
@@ -216,48 +227,102 @@ def _iter_charge_occurrences(block: list[str]):
         i = j
 
 
+def _final_disposed_seqs(lines: list[str], charges_by_seq: dict) -> set[int]:
+    """Sequences disposed under a FINAL Disposition event on this docket.
+
+    A seq is final-covered when it appears on a charge line under a Final
+    Disposition event with a NON-EMPTY disposition token — the Final path routes
+    it regardless of the 18.5 vocabulary. Used to split each disposed Not-Final
+    occurrence into ``final_also_disposed`` (the Final path already reproduces the
+    disposition) vs ``not_final_only`` (only routing the Not-Final event does).
+    """
+    seqs: set[int] = set()
+    in_final = False
+    for line in lines:
+        if EVENT_RE.search(line):
+            in_final = line.endswith("Final Disposition")
+            continue
+        if not in_final:
+            continue
+        charge_match = CHARGE_RE.match(line)
+        if charge_match:
+            seq = int(charge_match.group(1))
+            token = charge_line_token(
+                charge_match.group(2).strip(), charges_by_seq.get(seq)
+            )
+            if token:
+                seqs.add(seq)
+    return seqs
+
+
 def _new_token_row() -> dict:
     return {
         "corpus_count": 0,
-        "disposed_under_event": 0,
+        "disposed_under_event": 0,  # = not_final_only + final_also_disposed
+        "not_final_only": 0,  # disposed here AND no Final event covers the seq
+        "final_also_disposed": 0,  # disposed here BUT a Final event also covers it
         "held_under_event": 0,
         "raw_equals_token": 0,
         "baseline_missing": 0,
         # Out-of-repo detail only (hash-prefix ids, CPCMS raws) — never printed.
-        "dockets_disposed": set(),
+        "must_route_dockets": set(),
         "baseline_raws": set(),
-        "mixed_examples": [],
+        "not_final_only_examples": [],
     }
 
 
 def _partition(row: dict) -> str:
+    """Mechanical partition CANDIDATE — the planning chat finalizes membership.
+
+    Keyed on ``not_final_only``: occurrences whose baseline disposition the
+    Final-event path cannot reproduce (no Final event covers the seq), i.e. the
+    must-route set. ANY must-route occurrence => ARD_CLASS candidate; none =>
+    NON_TERMINAL-safe even when some charges are disposed (all Final-covered);
+    a partial split => MIXED (STOP, adjudicate — e.g. the wrap-token and the
+    terminal-under-Not-Final cases). NOTE the one caveat this signal cannot see:
+    an ARD event whose disposition_raw IS overwritten by a later Final event but
+    whose judge/sentence-date/sentences are NOT (the progression case) is
+    ``final_also_disposed`` yet still needs routing to reproduce those fields —
+    adjudicated at plan level, not by this metric.
+    """
     corpus = row["corpus_count"]
-    disposed = row["disposed_under_event"]
-    if corpus > 0 and disposed == corpus:
-        return "ARD_CLASS"
-    if disposed == 0 and row["raw_equals_token"] == 0:
+    must_route = row["not_final_only"]
+    if must_route == 0:
         return "NON_TERMINAL"
+    if must_route == corpus:
+        return "ARD_CLASS"
     return "MIXED"
 
 
 def scan(artifacts_dir: Path, baseline_dir: Path, salt: str) -> dict:
-    """Walk the extracted artifacts, classify every Not-Final charge-line token."""
+    """Walk the extracted artifacts, classify every Not-Final charge-line token.
+
+    Discovery + loading mirror the 18.1 parse CLI (envelope.run_parse): every
+    ``*.json`` under artifacts_dir is loaded, the docket number comes from the
+    shared ``_artifact_docket_number``, and NO extraction-status filter is
+    applied — run_parse parses every artifact's ``pages`` regardless of status
+    (statuses are success/partial/needs_ocr_or_review/failed, never "extracted").
+    An artifact whose ``pages`` is empty (a ``failed`` extraction) carries no
+    disposition text and contributes no tokens.
+    """
     baseline = load_baseline(baseline_dir)
 
     tokens: dict[str, dict] = defaultdict(_new_token_row)
+    artifacts_found = 0
     artifacts_scanned = 0
+    empty_artifacts = 0
     parse_failures = 0
 
     for artifact_path in sorted(artifacts_dir.glob("*.json")):
+        artifacts_found += 1
         artifact = json.loads(artifact_path.read_text())
-        if artifact.get("status") != "extracted":
-            continue
         pages_text = list(artifact.get("pages", []))
-        # Docket number from the filename stem (import convention, 17.3 /
-        # envelope._artifact_docket_number).
-        docket_number = Path(str(artifact.get("original_filename", ""))).stem
+        docket_number = _artifact_docket_number(artifact)
         source_sha256 = str(artifact.get("source_sha256", ""))
         hash_prefix = (source_sha256 or "unknown")[:HASH_PREFIX_LEN]
+        if not pages_text:
+            empty_artifacts += 1  # failed/empty extraction: no tokens to find
+            continue
         artifacts_scanned += 1
 
         try:
@@ -276,7 +341,9 @@ def scan(artifacts_dir: Path, baseline_dir: Path, salt: str) -> dict:
                 c.get("sequence"): c for c in baseline_record.get("charges", [])
             }
 
-        for block in _not_final_blocks(disposition_lines(pages_text)):
+        dispo = disposition_lines(pages_text)
+        final_seqs = _final_disposed_seqs(dispo, charges_by_seq)
+        for block in _not_final_blocks(dispo):
             for seq, text, judge_dates in _iter_charge_occurrences(block):
                 token = charge_line_token(text, charges_by_seq.get(seq))
                 if not token:
@@ -297,23 +364,36 @@ def scan(artifacts_dir: Path, baseline_dir: Path, salt: str) -> dict:
                     row["raw_equals_token"] += 1
                     row["baseline_raws"].add(raw)
 
+                # Attributed to THIS Not-Final event: the token survived as the
+                # final raw, or the baseline disposition_date lands on a judge
+                # line inside this event's block.
                 disposed = raw is not None and (
                     raw_equals or (disp_date is not None and disp_date in judge_dates)
                 )
-                if disposed:
-                    row["disposed_under_event"] += 1
-                    row["dockets_disposed"].add(hash_prefix)
-                    if raw is not None:
-                        row["baseline_raws"].add(raw)
-                else:
+                if not disposed:
                     row["held_under_event"] += 1
-                    if len(row["mixed_examples"]) < 20:
-                        row["mixed_examples"].append(
-                            {"docket": hash_prefix, "sequence": seq, "held": True}
+                    continue
+
+                row["disposed_under_event"] += 1
+                row["baseline_raws"].add(raw)
+                if seq in final_seqs:
+                    # A Final event also disposes this seq — the Final path (which
+                    # always routes) reproduces it, so routing here is not required
+                    # to keep the charge disposed.
+                    row["final_also_disposed"] += 1
+                else:
+                    # Only routing this Not-Final event keeps the charge disposed.
+                    row["not_final_only"] += 1
+                    row["must_route_dockets"].add(hash_prefix)
+                    if len(row["not_final_only_examples"]) < 20:
+                        row["not_final_only_examples"].append(
+                            {"docket": hash_prefix, "sequence": seq}
                         )
 
     return {
+        "artifacts_found": artifacts_found,
         "artifacts_scanned": artifacts_scanned,
+        "empty_artifacts": empty_artifacts,
         "parse_failures": parse_failures,
         "baseline_records_loaded": baseline.records_loaded,
         "baseline_unique_dockets": len(baseline.index),
@@ -333,15 +413,21 @@ def _render(result: dict) -> tuple[str, dict]:
 
     lines: list[str] = []
     lines.append(
+        f"artifacts_found={result['artifacts_found']} "
         f"artifacts_scanned={result['artifacts_scanned']} "
+        f"empty_artifacts={result['empty_artifacts']} "
         f"parse_failures={result['parse_failures']} "
         f"baseline_records={result['baseline_records_loaded']} "
         f"baseline_dockets={result['baseline_unique_dockets']}"
     )
     lines.append("")
-    header = (
-        f"{'TOKEN':<40} {'corpus':>7} {'disp':>6} {'held':>6} {'raw=':>5}  PARTITION"
-    )
+    # Full token column (no truncation — distinct tokens must display distinctly;
+    # 40-char slicing previously hid e.g. two "DUI: ... 1st Off*" tokens as one).
+    # "must" = not_final_only (the Final path cannot reproduce these); "fcov" =
+    # final_also_disposed; "raw=" = baseline raw literally equals the token.
+    width = max((len(t) for t in tokens), default=len("TOKEN"))
+    cols = f"{'corpus':>7} {'must':>5} {'fcov':>5} {'held':>6} {'raw=':>5}"
+    header = f"{'TOKEN':<{width}} {cols}  PARTITION"
     lines.append(header)
     lines.append("-" * len(header))
     for part_name, bucket in (
@@ -351,58 +437,68 @@ def _render(result: dict) -> tuple[str, dict]:
     ):
         for token in bucket:
             row = tokens[token]
-            lines.append(
-                f"{token[:40]:<40} {row['corpus_count']:>7} "
-                f"{row['disposed_under_event']:>6} {row['held_under_event']:>6} "
-                f"{row['raw_equals_token']:>5}  {part_name}"
+            counts = (
+                f"{row['corpus_count']:>7} {row['not_final_only']:>5} "
+                f"{row['final_also_disposed']:>5} {row['held_under_event']:>6} "
+                f"{row['raw_equals_token']:>5}"
             )
+            lines.append(f"{token:<{width}} {counts}  {part_name}")
 
-    # Restoration aggregate: what ARD_CLASS routing recovers.
-    restored_charges = sum(tokens[t]["disposed_under_event"] for t in ard_class)
-    restored_dockets: set[str] = set()
-    for t in ard_class:
-        restored_dockets |= tokens[t]["dockets_disposed"]
+    # Must-route aggregate: charges/dockets the Final path CANNOT reproduce, so
+    # only Not-Final routing recovers them. These are the ARD_CLASS ∪ MIXED
+    # candidates whose partition the planning chat finalizes.
+    must_tokens = ard_class + mixed
+    must_charges = sum(tokens[t]["not_final_only"] for t in must_tokens)
+    must_dockets: set[str] = set()
+    for t in must_tokens:
+        must_dockets |= tokens[t]["must_route_dockets"]
     lines.append("")
     lines.append(
-        f"ARD_CLASS tokens={len(ard_class)} "
-        f"restore {restored_charges} charges across {len(restored_dockets)} dockets"
+        f"must-route (not_final_only) total: {must_charges} charges across "
+        f"{len(must_dockets)} dockets"
     )
+    lines.append(f"ARD_CLASS candidate tokens={len(ard_class)}")
     lines.append(f"NON_TERMINAL tokens={len(non_terminal)}")
     lines.append(f"MIXED tokens={len(mixed)}  (STOP — plan-level adjudication)")
     if mixed:
-        lines.append("MIXED tokens require adjudication before frozensets finalize:")
+        lines.append("MIXED tokens (some must-route, some Final-covered/held):")
         for token in mixed:
             row = tokens[token]
             lines.append(
-                f"  {token[:60]!r}: corpus={row['corpus_count']} "
-                f"disposed={row['disposed_under_event']} "
+                f"  {token!r}: corpus={row['corpus_count']} "
+                f"must_route={row['not_final_only']} "
+                f"final_covered={row['final_also_disposed']} "
                 f"held={row['held_under_event']} "
                 f"raw_equals_token={row['raw_equals_token']}"
             )
 
     artifact = {
         "summary": {
+            "artifacts_found": result["artifacts_found"],
             "artifacts_scanned": result["artifacts_scanned"],
+            "empty_artifacts": result["empty_artifacts"],
             "parse_failures": result["parse_failures"],
             "baseline_records_loaded": result["baseline_records_loaded"],
             "baseline_unique_dockets": result["baseline_unique_dockets"],
             "ard_class_tokens": ard_class,
             "non_terminal_tokens": non_terminal,
             "mixed_tokens": mixed,
-            "restored_charges": restored_charges,
-            "restored_dockets": len(restored_dockets),
+            "must_route_charges": must_charges,
+            "must_route_dockets": len(must_dockets),
         },
         "tokens": {
             token: {
                 "corpus_count": row["corpus_count"],
                 "disposed_under_event": row["disposed_under_event"],
+                "not_final_only": row["not_final_only"],
+                "final_also_disposed": row["final_also_disposed"],
                 "held_under_event": row["held_under_event"],
                 "raw_equals_token": row["raw_equals_token"],
                 "baseline_missing": row["baseline_missing"],
                 "partition": _partition(row),
-                "dockets_disposed": sorted(row["dockets_disposed"]),
+                "must_route_dockets": sorted(row["must_route_dockets"]),
                 "baseline_raws": sorted(row["baseline_raws"]),
-                "mixed_examples": row["mixed_examples"],
+                "not_final_only_examples": row["not_final_only_examples"],
             }
             for token, row in sorted(tokens.items())
         },
@@ -470,6 +566,32 @@ def main(argv: list[str] | None = None) -> int:
         result = scan(args.artifacts_dir, args.baseline_dir, salt)
     except BaselineError as exc:
         print(f"baseline load failed: {type(exc).__name__}", file=sys.stderr)
+        return 2
+
+    # Fail-loud: an empty table must never exit 0 (Task 18.5 continuation item 3).
+    # These are the two silent-defect signatures — no artifacts processed, or
+    # artifacts processed but the disposition walk matched nothing.
+    if result["artifacts_scanned"] == 0:
+        if result["artifacts_found"] == 0:
+            print(
+                f"no *.json extraction artifacts found in {args.artifacts_dir}",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"found {result['artifacts_found']} artifacts but none carried "
+                f"pages (empty={result['empty_artifacts']}); nothing to scan — "
+                "check the artifact shape",
+                file=sys.stderr,
+            )
+        return 2
+    if not result["tokens"]:
+        print(
+            f"scanned {result['artifacts_scanned']} artifacts but found ZERO "
+            "Not-Final charge-line tokens — the disposition-section walk is not "
+            "matching real layout; refusing to emit an empty table",
+            file=sys.stderr,
+        )
         return 2
 
     console, artifact = _render(result)
