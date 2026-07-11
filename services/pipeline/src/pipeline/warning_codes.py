@@ -2,7 +2,7 @@
 
 This is the SINGLE source of truth for the parser/envelope warning vocabulary.
 No other module defines warning strings; every emitter imports the codes from
-here. The set is closed: the ten codes below are the whole vocabulary, and a
+here. The set is closed: the eleven codes below are the whole vocabulary, and a
 test asserts emitted codes are a subset of them. Adding a code requires
 plan-level approval — do not invent codes in code.
 
@@ -26,7 +26,12 @@ Severity map rationale:
   miss), SUSPECT_JUDGE_LINE and SUSPECTED_AMENDED_CHARGE (18.2 hardening signals),
   SENTINEL_COLLISION (18.3 third-party name guard: a name-shaped judge capture
   collided with an identifying sentinel and was nulled — a human confirms the
-  intended judge value).
+  intended judge value), UNKNOWN_NOT_FINAL_DISPOSITION (18.5 event-grain routing:
+  a Not-Final event's routing is decided by its FIRST charge line's disposition
+  token; a first-line token in neither routing frozenset — or an ARD_CLASS token
+  stranded on a non-first line of an UNROUTED event — is novel/unclassified
+  vocabulary at the decision point and may be a genuinely un-routed disposition a
+  human must adjudicate).
 - ``info`` — a truthful observation that review cannot improve:
   UNPARSEABLE_DURATION (usually a legitimate non-numeric term such as "Life";
   raw_text is preserved), NON_TERMINAL_CASE (a held/non-terminal case legitimately
@@ -40,7 +45,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-# --- The ten codes (locked; additions require plan approval) ----------------
+# --- The eleven codes (locked; additions require plan approval) -------------
 LOW_TEXT_EXTRACTION = "LOW_TEXT_EXTRACTION"
 MISSING_CHARGE_SECTION = "MISSING_CHARGE_SECTION"
 UNPARSEABLE_DURATION = "UNPARSEABLE_DURATION"
@@ -51,6 +56,8 @@ SUSPECTED_AMENDED_CHARGE = "SUSPECTED_AMENDED_CHARGE"
 NON_TERMINAL_CASE = "NON_TERMINAL_CASE"
 UNSUPPORTED_FORMAT = "UNSUPPORTED_FORMAT"
 SENTINEL_COLLISION = "SENTINEL_COLLISION"
+# 18.5: novel/unclassified disposition token at an event-grain routing decision.
+UNKNOWN_NOT_FINAL_DISPOSITION = "UNKNOWN_NOT_FINAL_DISPOSITION"
 
 # Severity levels.
 SEVERITY_REVIEW = "review"
@@ -65,6 +72,7 @@ SEVERITY: dict[str, str] = {
     SUSPECT_JUDGE_LINE: SEVERITY_REVIEW,
     SUSPECTED_AMENDED_CHARGE: SEVERITY_REVIEW,
     SENTINEL_COLLISION: SEVERITY_REVIEW,
+    UNKNOWN_NOT_FINAL_DISPOSITION: SEVERITY_REVIEW,
     UNPARSEABLE_DURATION: SEVERITY_INFO,
     MISSING_SENTENCE_DATE: SEVERITY_INFO,
     NON_TERMINAL_CASE: SEVERITY_INFO,

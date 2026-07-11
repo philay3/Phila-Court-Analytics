@@ -102,6 +102,22 @@ fixtures:
     layout_unverified: false
     synthetic: true
 
+  # 18.5 event-grain: the ARD "Status" event routes on its FIRST charge line's
+  # ARD - County token; the companion seq2 (Withdrawn) disposes under the same
+  # routed event; the wrapped "Proceed to Court (ARD" / "Revoked)" revoke event
+  # stays held; the terminal Waiver Trial (Final) carries NO judge/sentence line,
+  # so it overwrites disposition_raw only (latest-valid-event-wins) — seq1 keeps
+  # disposition_raw "Nolle Prossed" from the terminal event but judge / date /
+  # sentence from the ARD event. Layout is evidence-derived (this task's human
+  # inspection of the corpus + the disposition-token scan), hence not unverified.
+  - filename: ard_progression_cp.txt
+    court_type: Common Pleas
+    scenario: ARD progression (event grain) — ARD event + companion withdrawal, wrapped revoke held, terminal Final overwrites raw
+    expected_charge_count: 2
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
   - filename: probation_cp.txt
     court_type: Common Pleas
     scenario: probation sentence

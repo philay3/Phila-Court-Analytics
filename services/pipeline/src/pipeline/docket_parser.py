@@ -40,6 +40,7 @@ from pipeline.warning_codes import (
     SENTINEL_COLLISION,
     SUSPECT_JUDGE_LINE,
     SUSPECTED_AMENDED_CHARGE,
+    UNKNOWN_NOT_FINAL_DISPOSITION,
     make_warning,
 )
 
@@ -162,6 +163,113 @@ def _matches_amended_charge(disposition_raw: str) -> bool:
     charge. Reads a parsed field only — never page text — so it cannot change any
     parsed value."""
     return any(pattern.search(disposition_raw) for pattern in _AMENDED_CHARGE_PATTERNS)
+
+
+# --- 18.5: event-grain disposition routing vocabulary -----------------------
+# Capstone routed at the EVENT level: a Not-Final event whose case-status row
+# contained "ard" disposed EVERY charge line under it, each with its own token.
+# 18.4 corrected event_name off the status row, which severed that accidental
+# ARD routing (65+ charges lost genuine ARD dispositions). 18.5 restores it
+# decoupled from event_name and the status row: a Not-Final event routes iff its
+# FIRST charge line's disposition token is in ARD_CLASS_DISPOSITIONS, and a
+# routed event disposes ALL its charge lines (each with its own token as
+# disposition_raw). Final Disposition events route as always. Latest-valid-event
+# -wins is unchanged. Both sets are CPCMS court vocabulary — exact-match only,
+# 18.2 repair-table discipline — enumerated from the 1,596-doc corpus scan
+# (scripts/scan_disposition_tokens.py); grow only with the same evidence.
+#
+# ARD_CLASS: the disposition that MUST route under a Not-Final event (a Final
+# event on the same docket cannot reproduce it). Corpus counts (distinct charges
+# / occurrences): "ARD - County" 65 charges / 94 occ; "RD - County" 1 / 1 — a
+# corpus-evidenced strip fragment of "ARD - County" (the DISPOSITION section
+# reprints a shorter offense than CHARGES, so the longest-prefix strip eats the
+# leading "A"); it is a genuine must-route ARD charge, kept as an exact fragment
+# form (never a repair, since the baseline carries the fragment too).
+ARD_CLASS_DISPOSITIONS = frozenset(
+    {
+        "ARD - County",
+        "RD - County",
+    }
+)
+
+# NON_TERMINAL: every other charge-line token observed under a Not-Final event —
+# these NEVER trigger routing (a first-line NON_TERMINAL token leaves the event
+# held). Pinned VERBATIM from the corpus scan, including strip fragments
+# ("ceed/oceed/roceed to Court", "Proceed to Court (ARD", "Proceed to Ct (Nolle
+# Prossed") and verbose un-stripped tokens (DUI:* / Permitting*), so that
+# UNKNOWN_NOT_FINAL_DISPOSITION warns only on genuinely novel vocabulary. Note
+# "Withdrawn" and the wrap token are deliberately absent from ARD_CLASS: they
+# only ever dispose as COMPANION (non-first) lines under an already-routed ARD
+# event, so event-grain reproduces them without their being routing triggers.
+NON_TERMINAL_DISPOSITIONS = frozenset(
+    {
+        "ARD - County Open",
+        "Added by Information",
+        "DUI: High Rte of Alc (Bac.10 - <.16) 1st Off Held for Court M 75 § 3802 §§ B*",  # noqa: E501
+        "DUI: High Rte of Alc (Bac.10 - <.16) 1st Off Proceed to Court M 75 § 3802 §§ B*",  # noqa: E501
+        "DUI: Highest Rte of Alc (BAC .16+) 1st Off Held for Court M 75 § 3802 §§ C*",  # noqa: E501
+        "DUI: Highest Rte of Alc (BAC .16+) 1st Off Proceed to Court M 75 § 3802 §§ C*",  # noqa: E501
+        "Dismissed - LOE",
+        "Dismissed - Rule 600 (Speedy",
+        "Guilty",
+        "Guilty Plea - Negotiated",
+        "Guilty Plea - Non-Negotiated",
+        "HP - Held for Court",
+        "Held for Court",
+        "Held for Court IC",
+        "IGJ - Held for Court",
+        "Mistrial - Hung Jury",
+        "Nolle Prossed",
+        "Nolo Contendere",
+        "Permitting Violation - Accident Involving Damage Held for Court S 75 § 3743 §§ A-P",  # noqa: E501
+        "Permitting Violation - Accident Involving Damage Proceed to Court S 75 § 3743 §§ A-P",  # noqa: E501
+        "Proceed to Court",
+        "Proceed to Court (ARD",
+        "Proceed to Court (Complaint",
+        "Proceed to Court (Conviction",
+        "Proceed to Court (GP",
+        "Proceed to Court (Mistrial)",
+        "Proceed to Court (Program",
+        "Proceed to Court IC",
+        "Proceed to Ct (Nolle Prossed",
+        "Quashed",
+        "Replacement by Information",
+        "Rule 546 - Open",
+        "Rule 586 - Open",
+        "ceed to Court",
+        "oceed to Court",
+        "roceed to Court",
+    }
+)
+
+
+def _charge_line_token(charge: dict | None, text: str) -> str:
+    """The charge-line disposition token: ``text`` minus offense/statute/grade.
+
+    Same strip the disposition loop has always used (longest offense prefix off
+    the front, then statute and grade off the tail), factored so event-grain
+    routing can inspect the token BEFORE deciding whether the charge routes.
+    ``charge`` is the CHARGES-section record for this sequence; ``None`` (an
+    unknown sequence — should not occur under a real event) yields ``""``.
+    """
+    if charge is None:
+        return ""
+    offense = charge["offense"] or ""
+    matched_prefix = ""
+    for i in range(len(offense), 0, -1):
+        prefix = offense[:i].strip()
+        if text.startswith(prefix):
+            matched_prefix = prefix
+            break
+    remaining = text[len(matched_prefix) :].strip()
+
+    statute = charge["statute"] or ""
+    if statute and remaining.endswith(statute):
+        remaining = remaining[: -len(statute)].strip()
+    grade = charge["grade"] or ""
+    if grade and remaining.endswith(grade):
+        remaining = remaining[: -len(grade)].strip()
+    return remaining
 
 
 def is_statute_token(tok: str) -> bool:
@@ -568,7 +676,17 @@ def parse_docket_text(
     current_charge_seq = None
     expecting_judge_line = False
     current_sentence_comp = None
-    in_valid_event = False
+    # 18.5 event-grain routing state. ``in_valid_event`` is tri-state:
+    #   True  -> the current event routes (a Final Disposition event, or a
+    #            Not-Final event whose FIRST charge line's token was ARD_CLASS);
+    #   False -> the current event does not route (held);
+    #   None  -> inside a Not-Final event whose first charge line has not yet been
+    #            seen — the routing decision point.
+    # ``in_not_final_event`` distinguishes an unrouted Not-Final event (record held
+    # event keys; guard stranded ARD tokens) from a Final event and the pre-event
+    # start.
+    in_valid_event: bool | None = False
+    in_not_final_event = False
     current_event_name = ""
     current_event_date = None
 
@@ -656,58 +774,75 @@ def parse_docket_text(
             # event_name is the leading text before that date on the same line.
             current_event_date = parse_date(event_match.group(1))
             current_event_name = line_str[: event_match.start()].strip()
-            if (
-                line_str.endswith("Final Disposition")
-                or "ard" in current_event_name.lower()
-            ):
+            # 18.5: routing is decided by the charge-line disposition TOKEN, not by
+            # event_name (the 18.4 regression came from the retired
+            # ``"ard" in event_name`` special case). A Final event always routes; a
+            # Not-Final event defers its decision to its first charge line.
+            if line_str.endswith("Final Disposition"):
                 in_valid_event = True
+                in_not_final_event = False
             else:
-                in_valid_event = False
+                in_valid_event = None
+                in_not_final_event = True
             continue
 
         charge_match = re.match(r"^(\d+)\s*/\s*(.*)$", line_str)
         if charge_match:
             save_current_sentence()
             seq = int(charge_match.group(1))
+            text = charge_match.group(2).strip()
+            token = _charge_line_token(parsed_charges.get(seq), text)
+
+            # 18.5 event-grain routing decision, made at the FIRST charge line of a
+            # Not-Final event: the event routes iff that token is ARD_CLASS. A
+            # non-empty first-line token in NEITHER frozenset is novel vocabulary at
+            # the decision point — the event stays held and the charge is flagged.
+            if in_valid_event is None:
+                if token in ARD_CLASS_DISPOSITIONS:
+                    in_valid_event = True
+                else:
+                    in_valid_event = False
+                    if token and token not in NON_TERMINAL_DISPOSITIONS:
+                        warnings.append(
+                            make_warning(
+                                UNKNOWN_NOT_FINAL_DISPOSITION,
+                                section="DISPOSITION SENTENCING/PENALTIES",
+                                charge_sequence=seq,
+                            )
+                        )
+
             if not in_valid_event:
                 # 18.3 Item 1: a non-terminal/held event. Record the event name
-                # and event date on the charge. Assignment OVERWRITES on each
-                # non-terminal appearance, so when a held charge is listed under
-                # multiple non-terminal events the LATEST event-header wins. A
-                # charge that is LATER disposed under a terminal event on the same
-                # docket (the Preliminary Hearing -> Trial progression) has these
-                # keys stripped by the placement sweep after the loop, so ONLY a
-                # charge that ends the parse undisposed keeps them (held cases have
-                # no disposition — the output stays honest). NON_TERMINAL_CASE is
-                # emitted by the envelope observation layer.
+                # and event date on the charge (LATEST non-terminal event wins;
+                # the placement sweep strips these from any charge later disposed,
+                # so only a charge that ends the parse undisposed keeps them).
+                # NON_TERMINAL_CASE is emitted by the envelope observation layer.
                 if seq in parsed_charges:
                     parsed_charges[seq]["event_name"] = current_event_name
                     parsed_charges[seq]["event_date"] = current_event_date
                 current_charge_seq = None
+                # Non-ARD-first guard: an ARD_CLASS token stranded on a non-first
+                # charge line of an UNROUTED Not-Final event is a potentially
+                # un-routed genuine ARD disposition (corpus: 0/27 events today) —
+                # surface it rather than let it vanish.
+                if in_not_final_event and token in ARD_CLASS_DISPOSITIONS:
+                    warnings.append(
+                        make_warning(
+                            UNKNOWN_NOT_FINAL_DISPOSITION,
+                            section="DISPOSITION SENTENCING/PENALTIES",
+                            charge_sequence=seq,
+                        )
+                    )
                 continue
+
+            # Routed event (Final, or ARD-triggered Not-Final): dispose THIS charge
+            # line with its own token as disposition_raw — event grain. A later
+            # valid event overwrites it (latest-valid-event-wins), and its judge /
+            # sentence lines attach to this sequence below.
             current_charge_seq = seq
             expecting_judge_line = True
-
-            text = charge_match.group(2).strip()
             if seq in parsed_charges:
-                charge = parsed_charges[seq]
-                offense = charge["offense"] or ""
-                matched_prefix = ""
-                for i in range(len(offense), 0, -1):
-                    prefix = offense[:i].strip()
-                    if text.startswith(prefix):
-                        matched_prefix = prefix
-                        break
-                remaining = text[len(matched_prefix) :].strip()
-
-                statute = charge["statute"] or ""
-                if statute and remaining.endswith(statute):
-                    remaining = remaining[: -len(statute)].strip()
-                grade = charge["grade"] or ""
-                if grade and remaining.endswith(grade):
-                    remaining = remaining[: -len(grade)].strip()
-
-                charge["disposition_raw"] = remaining if remaining else None
+                parsed_charges[seq]["disposition_raw"] = token if token else None
             continue
 
         if current_charge_seq is not None and expecting_judge_line:

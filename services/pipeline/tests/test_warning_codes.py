@@ -17,12 +17,13 @@ EXPECTED_CODES = {
     "NON_TERMINAL_CASE",
     "UNSUPPORTED_FORMAT",
     "SENTINEL_COLLISION",
+    "UNKNOWN_NOT_FINAL_DISPOSITION",
 }
 
 
-def test_vocabulary_is_exactly_the_ten_codes():
+def test_vocabulary_is_exactly_the_eleven_codes():
     assert wc.WARNING_CODES == EXPECTED_CODES
-    assert len(wc.WARNING_CODES) == 10
+    assert len(wc.WARNING_CODES) == 11
 
 
 def test_severity_map_covers_every_code_with_valid_levels():
@@ -41,6 +42,7 @@ def test_severity_map_matches_approved_table():
         wc.SUSPECT_JUDGE_LINE,
         wc.SUSPECTED_AMENDED_CHARGE,
         wc.SENTINEL_COLLISION,
+        wc.UNKNOWN_NOT_FINAL_DISPOSITION,
     }
     assert info == {
         wc.UNPARSEABLE_DURATION,
