@@ -2219,14 +2219,18 @@ the record field there.
   banked quarantine design questions (Q1/Q2), all as declared, corpus-attributable
   delta classes.
   - **Item 1 — held-case event dates.** A non-terminal (Not Final, non-ARD) event
-    now records `event_date` (the event-header date) and `event_name` on the
-    charge; `disposition_raw`/`disposition_date`/`disposition_judge_raw` stay null
-    and `sentences` stays `[]` (held cases have no disposition — output stays
-    honest). `NON_TERMINAL_CASE` continues to be emitted by the envelope
-    observation layer (`event_date` does not affect `_charge_has_disposition`).
-    Both keys are added ONLY on non-terminal charges (absent on terminal charges),
-    so terminal output is byte-identical to the Capstone baseline. Cross-court
-    capture unchanged (raw).
+    records `event_date` (the event-header date) and `event_name` on the charge.
+    **Placement rule (corrected after the Check-2 defect below): the keys survive
+    ONLY on charges that END the parse undisposed** (`disposition_raw`,
+    `disposition_date`, `disposition_judge_raw` all null); a charge listed under a
+    non-terminal event but later disposed under a terminal event (the Preliminary
+    Hearing → Trial progression) has the transient keys stripped by a placement
+    sweep after the disposition loop. When a held charge appears under multiple
+    non-terminal events, the LATEST event-header wins (assignment overwrites). Held
+    cases keep `disposition_*` null and `sentences` `[]` (output stays honest);
+    `NON_TERMINAL_CASE` is still emitted by the envelope observation layer
+    (`event_date` does not affect `_charge_has_disposition`). Terminal output is
+    byte-identical to the Capstone baseline. Cross-court capture unchanged (raw).
   - **Item 2 — `min_assumed` annotation.** A sentence records `min_assumed: true`
     exactly when `min_days` was FILLED from the maximum or from a flat value; it is
     absent (not `false`) when min was parsed directly (max may be filled from min)
@@ -2266,14 +2270,26 @@ the record field there.
   - **Main-corpus comparison (1,596 baseline records), CP/MC separate — every diff
     must be exactly one of:**
     - **Class A — event_date/event_name additions:** `key_missing_in_baseline` at
-      `charges[i].event_date` and `charges[i].event_name`, non-terminal charges
-      only. Expected count = held-charge count (unknown pre-run; human reports).
+      `charges[i].event_date` and `charges[i].event_name`, on charges that END the
+      parse undisposed only. **Post-fix actuals over the 1,603 corpus: 463 true-held
+      event-key charges → 926 keys across 104 dockets (CP 91 / MC 13), all of which
+      also carry `NON_TERMINAL_CASE`.**
     - **Class B — min_assumed additions:** `key_missing_in_baseline` at
       `charges[i].sentences[j].min_assumed`, value `true`, filled-min sentences
-      only.
-    - **Class C — sentinel-disposition changes:** **expected count ZERO in the
-      main corpus.** All 1,596 currently pass (no live collision); whole-token only
+      only. **Post-fix actuals: 1,842 keys across 1,095 dockets, 0 with value ≠
+      true (unchanged by the Check-2 fix — min_assumed was untouched).**
+    - **Class C — sentinel-disposition changes:** **expected and VERIFIED ZERO in
+      the main corpus.** All 1,596 pass (no live collision); whole-token only
       unblocks; the guard nulls nothing where nothing collides.
+    - **Classes D/E — 18.2 carryover against the immutable Capstone baseline
+      (adjudicated into the cumulative ledger; supersede per-task-only class
+      declarations for all future runs against the Capstone baseline until the 19.2
+      goldens become the regression reference).** Class D: `disposition_judge_raw`
+      value→null with `SUSPECT_JUDGE_LINE` (18.2 Item 1) — **accepted count 3**.
+      Class E: `disposition_raw` truncation repairs ('Transferred to Another' → full
+      form) (18.2 Item 2) — **accepted count 16** (split 2/13/1 across
+      CP-51-CR-0000981 / CP-51-CR-0000982 / MC-51-CR-0001053). Carryover identity
+      proven byte-for-byte against the retained 18.2 acceptance report.
   - **STOP-AND-REPORT** (never fix in place, never explain away): any main-corpus
     status change; any `value` diff; any key diff outside Classes A/B; any *new*
     hard block on a previously-passing docket; any Class-C-shaped diff anywhere in
@@ -2311,11 +2327,41 @@ the record field there.
   (`test_identity.py`, `test_docket_parser.py`, `test_envelope.py`,
   `test_warning_codes.py`), `tasks/worklog.md`. `equivalence_check.py` NOT modified
   (see Fix 2 above).
+- **Check-2 defect and fix (honest history, post-review).** The first
+  implementation attached `event_date`/`event_name` at each non-terminal-event
+  appearance keyed by charge sequence, but did NOT remove them when the same
+  sequence was later disposed under a terminal event. The full-corpus placement
+  re-check found **3,085 disposed charges across 1,472 dockets carrying event keys**
+  — falsifying the "byte-identical terminal output" claim (every extra key was a
+  legitimate Class A `key_missing_in_baseline` diff, so the comparator still
+  reconciled and nothing leaked, but the placement was wrong). **Fix (directed, only
+  authorized change):** a placement sweep after the disposition loop strips
+  `event_date`/`event_name` from any charge that ends the parse disposed (chosen
+  over never-setting because the non-terminal event precedes the terminal event in
+  the source, so "ends undisposed" is only knowable once the whole disposition
+  section is parsed). Latest-non-terminal-wins is preserved via loop overwrite. No
+  other behavior changed; no version bumps (same task's record-schema change,
+  corrected — `ENVELOPE_PARSER_VERSION` stays 4, record `parser_version` stays 2).
+  Two regression tests added (progression: disposed-after-nonterminal → no event
+  keys; multi-non-terminal: latest event-header wins).
+- **Post-fix full-corpus rerun actuals (1,603 vs Capstone baseline, reconciled;
+  CP/MC separate).** equivalent 392 (CP 369 / MC 23), divergent 1,204 (CP 1,187 /
+  MC 17), parse_failed 0, extraction_failed 0, baseline_missing 7 (= exactly the
+  recovered 7), corpus_missing 0. Every divergence classifies into exactly one
+  ledger class: Class A 926 keys/104 dockets, Class B 1,842 keys/1,095 dockets,
+  Class D 3, Class E 16; Class C 0; unclassified 0. Placement re-check: 463
+  event-key charges, 0 violations. Warning totals unchanged from the pre-fix parse
+  (UNPARSEABLE_DURATION 280, MISSING_DISPOSITION_DATE 211, NON_TERMINAL_CASE 104,
+  SENTINEL_COLLISION 17 across the 5 recovered dockets, SUSPECT_JUDGE_LINE 5;
+  review_needed true 76 / false 1,527) — the fix moves fields, not warnings.
+  Quarantine spot-check unchanged: 2 pass / 5 flagged, SENTINEL_COLLISION confined
+  to the recovered 5.
 - **Deviations from plan:** (1) Quarantine report reframed status-transition based,
   not baseline-diff (Fix 1). (2) `event_name` added alongside `event_date` on
   non-terminal charges per approved answer (Decision 4's field list was not
   exhaustive); Class A covers both keys. (3) `equivalence_check.py` left unmodified
-  with justification (Fix 2). No other deviation.
+  with justification (Fix 2). (4) Item-1 placement corrected post-review (Check-2
+  defect above). No other deviation.
 - **Notes for next task:** The corpus/quarantine reruns are a STANDING LOCAL human
   step (Chops), same as 18.2 — fixtures live outside the repo. Real Class A/B
   counts and the quarantine per-docket outcomes land from that run; the expected
@@ -2325,4 +2371,4 @@ the record field there.
 - **Verification (all three pipeline CI gates green):**
   - `.venv/bin/ruff check src tests` — All checks passed.
   - `.venv/bin/ruff format --check .` — 30 files already formatted.
-  - `.venv/bin/python -m pytest -q` — 206 passed.
+  - `.venv/bin/python -m pytest -q` — 208 passed (206 + 2 Check-2 regression tests).

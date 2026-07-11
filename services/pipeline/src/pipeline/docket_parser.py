@@ -675,12 +675,15 @@ def parse_docket_text(
             seq = int(charge_match.group(1))
             if not in_valid_event:
                 # 18.3 Item 1: a non-terminal/held event. Record the event name
-                # and event date on the charge; disposition_raw/disposition_date/
-                # disposition_judge_raw stay null and sentences stays [] (held
-                # cases have no disposition — the output stays honest).
-                # NON_TERMINAL_CASE is emitted by the envelope observation layer.
-                # Both keys are added only here (absent on terminal charges), so
-                # terminal output stays byte-identical to the Capstone baseline.
+                # and event date on the charge. Assignment OVERWRITES on each
+                # non-terminal appearance, so when a held charge is listed under
+                # multiple non-terminal events the LATEST event-header wins. A
+                # charge that is LATER disposed under a terminal event on the same
+                # docket (the Preliminary Hearing -> Trial progression) has these
+                # keys stripped by the placement sweep after the loop, so ONLY a
+                # charge that ends the parse undisposed keeps them (held cases have
+                # no disposition — the output stays honest). NON_TERMINAL_CASE is
+                # emitted by the envelope observation layer.
                 if seq in parsed_charges:
                     parsed_charges[seq]["event_name"] = current_event_name
                     parsed_charges[seq]["event_date"] = current_event_date
@@ -812,6 +815,25 @@ def parse_docket_text(
 
     # Format charges as list
     charges_list = sorted(list(parsed_charges.values()), key=lambda x: x["sequence"])
+
+    # 18.3 Item 1 placement invariant (Check-2 fix): event_date/event_name belong
+    # ONLY to charges that end the parse undisposed. A charge listed under a
+    # non-terminal event but LATER disposed under a terminal event transiently
+    # accumulated the event keys on its sequence-keyed dict; strip them here so a
+    # disposed charge carries no event keys and terminal output stays byte-
+    # identical to the Capstone baseline. A final sweep is used because a charge's
+    # disposed/undisposed status is only known once the whole disposition section
+    # has been parsed. Held charges are untouched and keep the latest non-terminal
+    # event's values.
+    for charge in charges_list:
+        disposed = (
+            charge["disposition_raw"] is not None
+            or charge["disposition_date"] is not None
+            or charge["disposition_judge_raw"] is not None
+        )
+        if disposed:
+            charge.pop("event_date", None)
+            charge.pop("event_name", None)
 
     # District Control Number from the Case Local Number(s) table. Printed on
     # both CP and MC sheets; null when absent. Scanned across all sections
