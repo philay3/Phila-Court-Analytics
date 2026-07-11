@@ -75,3 +75,20 @@ Never offer, suggest, or default to committing directly on main. The repo
 discipline is branch + PR + merge-on-green, no exceptions. The human
 handles the PR, CI check, and merge on GitHub. Never end a report with
 "say the word if you'd like me to commit" — provide the commands.
+
+## Verification completeness rule
+
+Every completion report's verification section must run and list ALL gates
+CI enforces for the touched surface — not a subset. For the Python pipeline
+that is three separate gates:
+
+  .venv/bin/ruff check src tests
+  .venv/bin/ruff format --check .
+  .venv/bin/python -m pytest -q
+
+Lint passing does not imply format passing; they are independent checks.
+If CI gains a new gate, this list gains it in the same task.
+
+## Data source & collector status
+
+Collector status: UNPARKED per ADR 0002 (agent-docs/decisions/0002-source-access.md) — collection conditions live there; the baseline-run task will carry the operational spec.
