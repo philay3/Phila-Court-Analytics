@@ -25,12 +25,35 @@ uv run pipeline --help
 uv run pipeline import-manual        # placeholder
 uv run pipeline extract-text         # placeholder
 uv run pipeline evaluate-extractors  # implemented, see below
-uv run pipeline run-fixtures         # placeholder
+uv run pipeline run-fixtures         # implemented, see run-fixtures below
 ```
 
 Placeholder commands log a structured "not implemented" message and exit 0.
 Logs are JSON lines on **stderr**; stdout is reserved for future
 machine-readable output.
+
+## run-fixtures (golden regression)
+
+Runs the tier-1 committed-corpus regression always, plus a tier-2 run over
+local docket PDFs when `--corpus-dir` is given (requires `DEFENDANT_HASH_SALT`,
+never runs in CI). See `uv run pipeline run-fixtures --help` for the full
+option set; the golden-write and report contract is:
+
+- **Golden writes are always flag-gated.** A tier-2 run with no
+  golden-writing flag NEVER writes a golden — a docket lacking one is reported
+  `golden_missing` and the run exits nonzero (dockets that do have goldens are
+  still compared in the same run).
+- `--init-goldens` (tier-2 only) writes **only absent** goldens (first-time
+  establishment); it never overwrites a divergent existing golden.
+- `--update-goldens` refreshes **only existing** goldens that diverge; it never
+  creates an absent one. Passing both flags is an explicit full-write mode
+  (absent created, divergent refreshed).
+- **Every golden-writing invocation requires a `tasks/worklog.md` note** — the
+  CLI cannot enforce this.
+- Each run writes a **run-unique** report at
+  `<output-dir>/reports/tier2-report-<UTC timestamp>.json`; a prior run's
+  report is never overwritten (same-day back-to-back runs get distinct files,
+  and a path collision is refused).
 
 ## evaluate-extractors
 

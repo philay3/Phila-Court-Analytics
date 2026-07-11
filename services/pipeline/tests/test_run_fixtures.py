@@ -13,6 +13,7 @@ Privacy: the tier-2 console assertions prove field values never reach stdout.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
 from pipeline import cli
 from pipeline import run_fixtures as rf
@@ -120,13 +121,20 @@ class _Tier2Harness:
             raise RuntimeError("synthetic parse crash")
         return dict(self._envelopes.get(docket_number, _envelope()))
 
-    def run(self, update_goldens=False) -> int:
+    def run(self, update_goldens=False, init_goldens=False) -> int:
         return rf.run_tier2(
-            self.corpus, self.output, salt="realsalt", update_goldens=update_goldens
+            self.corpus,
+            self.output,
+            salt="realsalt",
+            init_goldens=init_goldens,
+            update_goldens=update_goldens,
         )
 
+    def reports(self) -> list:
+        return sorted((self.output / "reports").glob("tier2-report-*.json"))
+
     def report(self) -> dict:
-        return json.loads((self.output / "run-fixtures-tier2-report.json").read_text())
+        return json.loads(self.reports()[-1].read_text())
 
 
 # ---------------------------------------------------------------------------
@@ -270,15 +278,143 @@ def test_tier1_diverged_with_flag_updates(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_tier2_new_writes_without_flag(tmp_path, monkeypatch):
+def test_tier2_missing_without_flag_reports_not_writes(tmp_path, monkeypatch):
+    # 19.3 contract: no golden-writing flag NEVER writes a golden, even for a
+    # first-seen docket. Present-golden dockets are still compared in the same
+    # run (per-docket isolation — one missing golden never aborts the corpus).
     h = _Tier2Harness(tmp_path, monkeypatch)
-    h.add_pdf("mc1")
+    h.add_pdf("mc_present")
+    h.write_golden("mc_present", h.projection_for("mc_present"))
+    h.add_pdf("mc_absent")
 
-    rc = h.run(update_goldens=False)
+    rc = h.run(update_goldens=False)  # no golden-writing flag
+
+    assert rc == 1  # a missing golden fails the run
+    totals = h.report()["totals"]
+    assert totals[rf.T2_MISSING] == 1
+    assert totals[rf.T2_MATCH] == 1  # present-golden docket still compared
+    # Zero golden files written for the absent docket — filesystem assertion.
+    assert not h.golden_path("mc_absent").exists()
+
+
+def test_tier2_init_writes_only_absent(tmp_path, monkeypatch):
+    # --init-goldens establishes ONLY absent goldens; existing ones are untouched.
+    h = _Tier2Harness(tmp_path, monkeypatch)
+    h.add_pdf("mc_present")
+    h.write_golden("mc_present", h.projection_for("mc_present"))
+    present_before = h.golden_path("mc_present").read_text()
+    h.add_pdf("mc_absent")
+
+    rc = h.run(init_goldens=True)
+
+    assert rc == 0  # establishment is a clean run
+    totals = h.report()["totals"]
+    assert totals[rf.T2_NEW] == 1
+    assert totals[rf.T2_MATCH] == 1
+    # The absent golden is now written with the expected projection...
+    assert json.loads(h.golden_path("mc_absent").read_text()) == h.projection_for(
+        "mc_absent"
+    )
+    # ...and the pre-existing golden is left byte-identical.
+    assert h.golden_path("mc_present").read_text() == present_before
+
+
+def test_tier2_init_does_not_overwrite_existing_divergent(tmp_path, monkeypatch):
+    # Least privilege: --init-goldens covers absent only; a divergent existing
+    # golden is reported, never silently clobbered.
+    h = _Tier2Harness(tmp_path, monkeypatch)
+    h.add_pdf("mc1", envelope=_envelope(record=_record("MC-51-CR-0000000-2025")))
+    h.write_golden(
+        "mc1", rf.project_envelope(_envelope(record=_record("MC-51-CR-0000001-2025")))
+    )
+    before = h.golden_path("mc1").read_text()
+
+    rc = h.run(init_goldens=True)
+
+    assert rc == 1
+    assert h.report()["totals"][rf.T2_DIVERGED] == 1
+    assert h.golden_path("mc1").read_text() == before  # not overwritten
+
+
+def test_tier2_update_does_not_create_absent(tmp_path, monkeypatch):
+    # Least privilege: --update-goldens covers existing only; an absent golden is
+    # golden_missing (nonzero), never created.
+    h = _Tier2Harness(tmp_path, monkeypatch)
+    h.add_pdf("mc_absent")
+
+    rc = h.run(update_goldens=True)
+
+    assert rc == 1
+    assert h.report()["totals"][rf.T2_MISSING] == 1
+    assert not h.golden_path("mc_absent").exists()
+
+
+def test_tier2_both_flags_write_absent_and_divergent(tmp_path, monkeypatch):
+    # Combined flags = explicit full-write mode: absent created, divergent
+    # refreshed, matching left alone.
+    h = _Tier2Harness(tmp_path, monkeypatch)
+    h.add_pdf("mc_absent")
+    h.add_pdf("mc_div", envelope=_envelope(record=_record("MC-51-CR-0000000-2025")))
+    fresh_div = h.projection_for("mc_div")
+    h.write_golden(
+        "mc_div",
+        rf.project_envelope(_envelope(record=_record("MC-51-CR-0000001-2025"))),
+    )
+    h.add_pdf("mc_match")
+    h.write_golden("mc_match", h.projection_for("mc_match"))
+
+    rc = h.run(init_goldens=True, update_goldens=True)
 
     assert rc == 0
-    assert h.report()["totals"][rf.T2_NEW] == 1
-    assert json.loads(h.golden_path("mc1").read_text()) == h.projection_for("mc1")
+    totals = h.report()["totals"]
+    assert totals[rf.T2_NEW] == 1
+    assert totals[rf.T2_UPDATED] == 1
+    assert totals[rf.T2_MATCH] == 1
+    assert json.loads(h.golden_path("mc_absent").read_text()) == h.projection_for(
+        "mc_absent"
+    )
+    assert json.loads(h.golden_path("mc_div").read_text()) == fresh_div
+
+
+def test_tier2_report_is_run_unique_and_non_clobbering(tmp_path, monkeypatch):
+    # Two consecutive runs → two distinct report files, and run one's report is
+    # byte-identical afterward (names distinct + first content untouched).
+    h = _Tier2Harness(tmp_path, monkeypatch)
+    h.add_pdf("mc1")
+    h.write_golden("mc1", h.projection_for("mc1"))
+    stamps = iter(
+        [
+            datetime(2026, 7, 11, 16, 34, 12, 100000, tzinfo=UTC),
+            datetime(2026, 7, 11, 16, 34, 12, 200000, tzinfo=UTC),
+        ]
+    )
+    monkeypatch.setattr(rf, "_now_utc", lambda: next(stamps))
+
+    assert h.run(update_goldens=False) == 0
+    after_one = h.reports()
+    assert len(after_one) == 1
+    first = after_one[0]
+    first_content = first.read_text()
+
+    assert h.run(update_goldens=False) == 0
+    after_two = h.reports()
+    assert len(after_two) == 2  # distinct artifacts
+    assert first.exists()
+    assert first.read_text() == first_content  # run one's report untouched
+
+
+def test_tier2_report_refuses_overwrite_on_timestamp_collision(tmp_path, monkeypatch):
+    # Belt-and-suspenders: if the run-unique path somehow already exists, the run
+    # refuses (rc 2) rather than clobbering the prior report.
+    h = _Tier2Harness(tmp_path, monkeypatch)
+    h.add_pdf("mc1")
+    h.write_golden("mc1", h.projection_for("mc1"))
+    fixed = datetime(2026, 7, 11, 16, 34, 12, 123456, tzinfo=UTC)
+    monkeypatch.setattr(rf, "_now_utc", lambda: fixed)
+
+    assert h.run(update_goldens=False) == 0
+    assert h.run(update_goldens=False) == 2  # same timestamp → refuse
+    assert len(h.reports()) == 1  # only the first survives
 
 
 def test_tier2_match_is_clean(tmp_path, monkeypatch):
@@ -370,13 +506,14 @@ def test_tier2_unexpected_exception_does_not_abort_run(tmp_path, monkeypatch):
     h = _Tier2Harness(tmp_path, monkeypatch)
     h.add_pdf("mc_bad", raises=True)
     h.add_pdf("mc_ok")
+    h.write_golden("mc_ok", h.projection_for("mc_ok"))  # healthy docket has a golden
 
     rc = h.run(update_goldens=False)
 
     assert rc == 1
     totals = h.report()["totals"]
     assert totals[rf.T2_FAILED] == 1  # the crash was captured
-    assert totals[rf.T2_NEW] == 1  # the healthy docket still ran
+    assert totals[rf.T2_MATCH] == 1  # the healthy docket still ran
 
 
 def test_tier2_empty_corpus_refuses(tmp_path, monkeypatch):
