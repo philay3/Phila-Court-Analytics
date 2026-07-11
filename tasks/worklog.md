@@ -2709,3 +2709,49 @@ the record field there.
 - **Sixth gate added:** "Clean-environment gate timing" — the four functional
   gates must run LAST, after all edits are saved + staged and stale bytecode is
   cleared, and the report's gate output must come from that post-staging run.
+
+## Task 20.1 — Parser Proof-of-Concept Report (2026-07-11)
+
+- **What was built:** `agent-docs/parser-proof-of-concept.md`, the Sprint 4
+  closing report assessing whether UJS CP/MC docket PDFs can reliably feed the
+  product's charge-level analytics, with explicit per-court readiness verdicts
+  for Sprint 5. Documentation only — no parser/pipeline/test/fixture/CI change.
+  The report covers all twelve required sections: extraction approach (ADR
+  0001), port summary, extraction-seam equivalence (17.1), baseline equivalence
+  (17.3), the six hardening deltas with corpus-validated counts, the ten-code
+  warning framework, the privacy classification, supported/unsupported
+  patterns, major ambiguity cases, the OCR assessment, fixture-corpus coverage
+  and gaps, and the per-court verdicts.
+- **Cross-check performed (task requirement):** every pinned figure was
+  reconciled against the worklog before writing. All reconciled with zero
+  discrepancies: 17.1 seam 1,596/1,596 (CP 1,556 / MC 40, version_mismatch
+  false); 17.3 baseline 100% equiv, CP 1,556/1,556, MC 40/40; Class D 3 nulls
+  vs `SUSPECT_JUDGE_LINE` 5 (warnings-vs-diffs explained); Class E 16
+  Transferred repairs; Item 3 zero diffs / zero specimens; Class A 926 keys /
+  104 dockets held-case; Class B 1,842 min_assumed / 1,095 dockets; sentinel
+  cost 7/1,603 ≈ 0.44%; quarantine 1; recovered 7 = 2 clean + 5 flagged;
+  `ENVELOPE_PARSER_VERSION` 4 / record `parser_version` 2; court_type None
+  corpus-wide; tier-1 32 fixtures with 2 `layout_unverified` MC; tier-2 1,603 =
+  1,596 + 7. No STOP-AND-REPORT triggered.
+- **Verdicts (evidence-led, per the PINNED requirement):** CP READY (1,556
+  baseline, 100% equiv, all deltas classified); MC CORRECT-ON-EVIDENCE BUT
+  UNDER-EVIDENCED (40 baseline records + 2 unverified layouts — parser correct
+  on all available MC records but the evidence base is too thin to certify MC
+  analytics; supplementation named as the path). "CP ready, MC needs more
+  evidence."
+- **Files touched:** `agent-docs/parser-proof-of-concept.md` (new),
+  `CLAUDE.md` (workflow references repointed `docs/current-task.md` →
+  `tasks/current-task.md`, 3 occurrences), `tasks/worklog.md` (this entry).
+- **Deviations from plan / task scope (human-authorized):** two changes the
+  task's Allowed-files list did not name, both explicitly approved by the human
+  before implementation: (1) the report was written to `agent-docs/` rather
+  than the task's stated `docs/parser-proof-of-concept.md`, resolving the
+  conflict with CLAUDE.md's Documentation rule ("never create files in
+  `docs/`"; agent-generated docs go to `agent-docs/`); (2) CLAUDE.md's workflow
+  step 1 and two related references were repointed from `docs/current-task.md`
+  to `tasks/current-task.md` (the actual live task-file location). No code,
+  pipeline, or corpus change; no pinned decision reopened.
+- **Notes for next task:** the six Sprint 5 handoff items are named (not
+  planned) at the end of the report — judge normalization/validation,
+  disposition-map cleanup, court_type populate-vs-drop, restitution taxonomy
+  mapping, MC evidence deepening, and (Sprint 7) duration display units.
