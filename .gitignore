@@ -21,6 +21,9 @@ htmlcov/
 # Privacy-critical: raw dockets and extracted text must never enter the repo
 *.pdf
 fixtures/
+# tier-1 synthetic fixtures are the ONE committed fixtures path;
+# content policed by tests/tier1/test_hygiene.py
+!services/pipeline/tests/tier1/fixtures/
 extracted-text/
 *.local.*
 
