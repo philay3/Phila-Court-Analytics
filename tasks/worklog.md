@@ -3283,3 +3283,58 @@ the record field there.
   loader fills them; `court_type_recorded` takes `case.court_type` as-is. Parsed
   tables are `Immutable<>` — a docket reload is delete-and-reinsert (CASCADE
   clears the tree), never an UPDATE/upsert. `cross_court_dockets` is jsonb.
+
+## Task 21.2 — `fact.*` + `review.queue_items` Table Migrations
+
+- **Date:** 2026-07-11
+- **What was built:** Two Kysely migrations, `db/src/types.ts` typing for the
+  four tables, one Python vocabulary module + tests, and a `db/tests`
+  constraint-violation suite.
+  - `20260711230001_create_fact_tables.ts` — `fact.fact_build_runs` (MUTABLE:
+    created_at + updated_at + reused `public.set_updated_at()` trigger),
+    `fact.charge_outcomes` and `fact.charge_sentences` (IMMUTABLE facts,
+    created_at only). Per-run natural keys `UNIQUE (build_run_id,
+    parsed_charge_id)` and `UNIQUE (build_run_id, parsed_sentence_id)`. FK ON
+    DELETE: CASCADE from the build run and from the parent outcome fact; RESTRICT
+    into `parsed.*` and `ref.*`.
+  - `20260711230002_create_review_queue_items.ts` — `review.queue_items`
+    (MUTABLE, trigger). `dedup_key` NOT NULL UNIQUE. FK ON DELETE: RESTRICT (NOT
+    NULL) to `raw.source_documents`; SET NULL (nullable) to the three `parsed.*`
+    pointers. `raw_value` / `candidate_context` carry Postgres column comments
+    marking them structural-only.
+  - `services/pipeline/src/pipeline/fact_review_vocab.py` — the five closed
+    vocabularies (12 review item types, 3 severities, 4 item statuses, 3
+    fact-build-run statuses, 12 eligibility reason codes) + the documented
+    `dedup_key` composition. `test_fact_review_vocab.py` asserts uniqueness,
+    non-emptiness, and the severity anti-collision guards.
+- **Verification (against local Postgres 5433):** `migrate:latest` → `down` ×2 →
+  `latest` clean; a `pg_constraint`/`pg_indexes` dump confirmed every pinned FK
+  ON DELETE (c/r/n), both natural-key UNIQUEs, the `dedup_key` UNIQUE, both
+  `set_updated_at` triggers, and the FK-index rule (build_run_id fronts its
+  UNIQUE on both fact tables and gets no standalone index; every other FK column
+  does). Gates: `ruff check` clean, `ruff format --check` clean, `pytest -q`
+  green, `pnpm format:check` clean, db `typecheck` clean, db `vitest` 18/18
+  (6 new rolled-back constraint tests).
+- **Pinned-decision mirroring recorded in the report:** `parser_version` and
+  `envelope_parser_version` on `fact_build_runs` are `integer`, EXACTLY the 21.1
+  `parsed.dockets.record_parser_version`/`envelope_parser_version` types (no
+  cross-layer mismatch, per approval item 4). Severities are `high`/`medium`/
+  `low`, renamed away from `blocking`/`warning` to avoid colliding with the
+  `blocking_warning` eligibility code and the parser warning-code severity
+  vocabulary (approval item 3). `min_days` AND `max_days` are both nullable,
+  mirroring `parsed.sentences` (approval item 2).
+- **Files touched:** `db/migrations/20260711230001_create_fact_tables.ts` (new),
+  `db/migrations/20260711230002_create_review_queue_items.ts` (new),
+  `db/src/types.ts`, `db/tests/fact-review-schema.test.ts` (new — allowed-files
+  list extended to cover it per approval item 1), `db/README.md`,
+  `services/pipeline/src/pipeline/fact_review_vocab.py` (new),
+  `services/pipeline/tests/test_fact_review_vocab.py` (new), `tasks/worklog.md`.
+- **Deviations from plan:** none — all six required fixes applied as approved;
+  no scope beyond the approved file list.
+- **Notes for next task:** Nothing writes to these tables yet. 22.1 implements
+  the `dedup_key` builder (composition documented in `fact_review_vocab.py`) and
+  the review-item construction helpers that enforce these vocabularies; the DB
+  stores the results. The per-run UNIQUEs are the "one fact candidate per parsed
+  charge/sentence per build run" guarantee — the 23.2/23.3 builders reinsert via
+  the build-run FK CASCADE, never `ON CONFLICT DO UPDATE` (fact rows are
+  `Immutable<>`). `counts` is nullable jsonb (null while `in_progress`).
