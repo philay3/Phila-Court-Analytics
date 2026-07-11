@@ -31,6 +31,41 @@ def hash_defendant(name: str, birth_year: int, *, salt: str) -> str:
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
 
+def matches_as_token(sentinel: str, text_lower: str) -> bool:
+    """True if ``sentinel`` occurs in ``text_lower`` bounded by a non-alphanumeric
+    character (or string edge) on BOTH sides — a whole-token, case-insensitive
+    containment test (Task 18.3 Q1, replacing the prior >=3-char substring test).
+
+    ``text_lower`` MUST already be lowercased by the caller. Sentinels shorter
+    than three characters never match (too collision-prone). A whole-token match
+    is a strict subset of a substring match, so this rule can only *unblock*,
+    never newly block, relative to the substring test it replaces.
+
+    This is the SINGLE matching rule shared by the post-parse leak backstop
+    (``assert_no_leak``) and the parse-time third-party name guard
+    (``collides_with_sentinels``), so the guard nulls exactly what the backstop
+    would otherwise hard-block.
+    """
+    s = sentinel.strip().lower()
+    if len(s) < 3:
+        return False
+    pattern = r"(?<![a-z0-9])" + re.escape(s) + r"(?![a-z0-9])"
+    return re.search(pattern, text_lower) is not None
+
+
+def collides_with_sentinels(value: str, sentinels: list[str]) -> bool:
+    """True if any sentinel occurs as a whole token inside ``value``.
+
+    The parse-time third-party name guard (Task 18.3 Q2) calls this on a
+    name-shaped judge-slot capture: a collision means the capture would carry an
+    identifying string, so the field is nulled and flagged rather than passed
+    through. Same boundary-anchored rule as ``assert_no_leak``, so a caught
+    collision is precisely what the post-parse backstop would otherwise block.
+    """
+    value_lower = value.lower()
+    return any(matches_as_token(s, value_lower) for s in sentinels)
+
+
 def _iter_values(obj):
     """Yield every leaf VALUE in a record, recursively, coerced to str. Key
     names are never yielded: they are structural constants defined in the
@@ -54,20 +89,22 @@ def assert_no_leak(sentinels: list[str], record) -> None:
 
     Scans values only, recursively across nested dicts and lists; key names
     are never scanned (they are structural constants, never document text).
-    This keeps the check from tripping on a defendant name fragment that
-    coincides with a structural key substring (for example a 4-letter fragment
-    inside "cross_court_dockets") while still catching any real name or DOB
-    that reaches a value. A bare str may be passed and is treated as one value.
+    Matching is whole-token (boundary-anchored), so a defendant name fragment
+    that coincides only with a sub-span of a larger legitimate token no longer
+    trips the check, while any real name or DOB reaching a value as its own
+    token is still caught (Task 18.3 Q1). A bare str may be passed and is
+    treated as one value.
 
-    Sentinels are the defendant's printed name, its parts, and the DOB
-    string. A collision (for example, a defendant who shares a surname with
-    the judge) raises too; that is intentional. Investigate, record the
-    collision in notes, and require owner confirmation before writing.
+    Sentinels are the defendant's printed name, its parts, and the DOB string.
+    This remains the fail-closed BACKSTOP: the parse-time third-party name guard
+    (``collides_with_sentinels``) already nulls a colliding value in the known
+    judge label contexts, so on a well-formed record this assertion should not
+    fire; if it does, an identifying string reached an unguarded value and the
+    write must stop.
     """
     hay = " ".join(_iter_values(record)).lower()
     for s in sentinels:
-        s = s.strip()
-        if len(s) >= 3 and s.lower() in hay:
+        if matches_as_token(s, hay):
             raise RuntimeError(
                 "privacy assertion failed: identifying string found in output"
             )

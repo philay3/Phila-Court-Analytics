@@ -1,18 +1,21 @@
-"""Docket parser — ported from Capstone (17.2), hardened in 18.2.
+"""Docket parser — ported from Capstone (17.2), hardened in 18.2 and 18.3.
 
-This began as a behavior-preserving PORT (Task 17.2). Task 18.2 lands the first
-targeted hardening changes on top of that port: a junk-judge guard (Item 1), a
-disposition line-wrap capture fix (Item 2), and an amended/downgraded/replaced
-charge warning signal (Item 3). Output VALUES now deliberately diverge from the
-Capstone baseline for those three cases; the record SCHEMA/shape is unchanged
-(values-diverge, schema-unchanged). Remaining known defects (un-annotated
-min-days fill, the KeyError crash on one unsupported disposition layout) are
-still carried unchanged; each is a named Phase 18 deliverable. See
-tasks/worklog.md for the defect inventory with line references.
+This began as a behavior-preserving PORT (Task 17.2). Task 18.2 landed the first
+targeted hardening changes: a junk-judge guard (Item 1), a disposition line-wrap
+capture fix (Item 2), and an amended/downgraded/replaced charge warning signal
+(Item 3). Task 18.3 adds held-case ``event_date``/``event_name`` capture on
+non-terminal charges, a ``min_assumed`` annotation on filled sentence bounds, and
+a third-party name guard that nulls-and-flags a judge capture colliding with an
+identifying sentinel (SENTINEL_COLLISION). Output VALUES deliberately diverge
+from the Capstone baseline for the hardened cases, and 18.3 adds two conditional
+record fields (``event_date``/``event_name`` on non-terminal charges,
+``min_assumed`` on filled sentences) — the first record-SCHEMA change since the
+port, so the record's internal ``parser_version`` is 2. See tasks/worklog.md for
+the defect inventory and the declared per-task delta classes.
 
-The three hardening items emit structural-only warnings (18.1 vocabulary, no new
-codes) surfaced as the third element of ``parse_docket_text``'s return tuple;
-they NEVER carry docket text.
+The hardening items emit structural-only warnings (18.1 vocabulary; 18.3 adds
+SENTINEL_COLLISION with plan approval) surfaced as the third element of
+``parse_docket_text``'s return tuple; they NEVER carry docket text.
 
 Pure stdlib only: no pdfplumber import anywhere in this module's path. The
 PDF-opening wrapper ``parse_docket`` lives in ``docket_parser_pdf``. The
@@ -30,9 +33,11 @@ from pipeline.helpers import GRADES, ParseError, parse_date, to_days
 from pipeline.identity import (
     assert_no_leak,
     assert_related_cases_clean,
+    collides_with_sentinels,
     hash_defendant,
 )
 from pipeline.warning_codes import (
+    SENTINEL_COLLISION,
     SUSPECT_JUDGE_LINE,
     SUSPECTED_AMENDED_CHARGE,
     make_warning,
@@ -430,12 +435,20 @@ def parse_docket_text(
             )
             if m_judge:
                 candidate = m_judge.group(1).strip()
-                # Item 1 guard: a sentence fragment in the judge slot is rejected
-                # (field left null); an empty or name-shaped capture is kept as
-                # before. Only the judge field is affected.
+                # 18.2 Item 1 guard: a sentence fragment in the judge slot is
+                # rejected (field left null). 18.3 third-party name guard: a
+                # name-shaped capture that whole-token-collides with an
+                # identifying sentinel is nulled and flagged SENTINEL_COLLISION
+                # (the colliding value never passes through as a judge name).
+                # Otherwise the name-shaped capture is kept as before. Only the
+                # judge field is affected.
                 if candidate and _is_junk_judge(candidate):
                     warnings.append(
                         make_warning(SUSPECT_JUDGE_LINE, section="CASE INFORMATION")
+                    )
+                elif candidate and collides_with_sentinels(candidate, sentinels):
+                    warnings.append(
+                        make_warning(SENTINEL_COLLISION, section="CASE INFORMATION")
                     )
                 else:
                     assigned_judge_raw = candidate
@@ -557,6 +570,7 @@ def parse_docket_text(
     current_sentence_comp = None
     in_valid_event = False
     current_event_name = ""
+    current_event_date = None
 
     def save_current_sentence():
         nonlocal current_sentence_comp
@@ -565,6 +579,12 @@ def parse_docket_text(
 
             min_days = None
             max_days = None
+            # 18.3 Item 2 annotation: min_assumed is True when min_days was FILLED
+            # from the maximum or from a flat value (min was not itself parsed).
+            # It is False when min_days was parsed directly (max may be filled from
+            # min) or when both bounds parsed. Parsed values are unchanged — this
+            # is a pure annotation, no warning, no review_needed impact.
+            min_assumed = False
             type_lower = current_sentence_comp["sentence_type"].lower()
 
             if type_lower not in ("no further penalty", "fines and costs"):
@@ -585,21 +605,27 @@ def parse_docket_text(
                     if flat_days is not None:
                         min_days = flat_days
                         max_days = flat_days
+                        min_assumed = True
                 elif min_days is None and max_days is not None:
                     min_days = max_days
+                    min_assumed = True
                 elif max_days is None and min_days is not None:
                     max_days = min_days
 
-            parsed_charges[current_charge_seq]["sentences"].append(
-                {
-                    "sentence_type": current_sentence_comp["sentence_type"],
-                    "min_days": min_days,
-                    "max_days": max_days,
-                    "program": current_sentence_comp["program"],
-                    "sentence_date": current_sentence_comp["sentence_date"],
-                    "raw_text": raw_text,
-                }
-            )
+            sentence: dict[str, object] = {
+                "sentence_type": current_sentence_comp["sentence_type"],
+                "min_days": min_days,
+                "max_days": max_days,
+                "program": current_sentence_comp["program"],
+                "sentence_date": current_sentence_comp["sentence_date"],
+                "raw_text": raw_text,
+            }
+            # Added only when True (absent otherwise) so unaffected sentences stay
+            # byte-identical to the Capstone baseline; each occurrence is one
+            # declared "min_assumed addition" delta.
+            if min_assumed:
+                sentence["min_assumed"] = True
+            parsed_charges[current_charge_seq]["sentences"].append(sentence)
             current_sentence_comp = None
 
     disposition_lines = sections.get("DISPOSITION SENTENCING/PENALTIES", [])
@@ -628,6 +654,12 @@ def parse_docket_text(
         if date_line_match:
             save_current_sentence()
             current_charge_seq = None
+            # 18.3 Item 1: capture the event-header date (the leading date on the
+            # date line) so a non-terminal/held charge can record it below.
+            m_event_date = re.match(r"^(\d{2}/\d{2}/\d{4})", line_str)
+            current_event_date = (
+                parse_date(m_event_date.group(1)) if m_event_date else None
+            )
             if (
                 date_line_match.group(1) == "Final Disposition"
                 or "ard" in current_event_name.lower()
@@ -640,10 +672,20 @@ def parse_docket_text(
         charge_match = re.match(r"^(\d+)\s*/\s*(.*)$", line_str)
         if charge_match:
             save_current_sentence()
+            seq = int(charge_match.group(1))
             if not in_valid_event:
+                # 18.3 Item 1: a non-terminal/held event. Record the event name
+                # and event date on the charge; disposition_raw/disposition_date/
+                # disposition_judge_raw stay null and sentences stays [] (held
+                # cases have no disposition — the output stays honest).
+                # NON_TERMINAL_CASE is emitted by the envelope observation layer.
+                # Both keys are added only here (absent on terminal charges), so
+                # terminal output stays byte-identical to the Capstone baseline.
+                if seq in parsed_charges:
+                    parsed_charges[seq]["event_name"] = current_event_name
+                    parsed_charges[seq]["event_date"] = current_event_date
                 current_charge_seq = None
                 continue
-            seq = int(charge_match.group(1))
             current_charge_seq = seq
             expecting_judge_line = True
 
@@ -676,14 +718,25 @@ def parse_docket_text(
                     judge_name = judge_match.group(1).strip()
                     disp_date = parse_date(judge_match.group(2))
                     if current_charge_seq in parsed_charges:
-                        # Item 1 guard: reject a sentence fragment in the judge
-                        # slot (leave disposition_judge_raw null). Only the judge
+                        # 18.2 Item 1 guard: reject a sentence fragment in the
+                        # judge slot (leave disposition_judge_raw null). 18.3
+                        # third-party name guard: a name-shaped capture that
+                        # whole-token-collides with an identifying sentinel is
+                        # nulled and flagged SENTINEL_COLLISION. Only the judge
                         # field is affected — the disposition_date on this line is
                         # still recorded and control flow is unchanged.
                         if _is_junk_judge(judge_name):
                             warnings.append(
                                 make_warning(
                                     SUSPECT_JUDGE_LINE,
+                                    section="DISPOSITION SENTENCING/PENALTIES",
+                                    charge_sequence=current_charge_seq,
+                                )
+                            )
+                        elif collides_with_sentinels(judge_name, sentinels):
+                            warnings.append(
+                                make_warning(
+                                    SENTINEL_COLLISION,
                                     section="DISPOSITION SENTENCING/PENALTIES",
                                     charge_sequence=current_charge_seq,
                                 )
@@ -800,7 +853,7 @@ def parse_docket_text(
 
     record = {
         "docket_number": docket_number,
-        "parser_version": 1,
+        "parser_version": 2,
         "parsed_at": datetime.now().replace(microsecond=0).isoformat(),
         "case": {
             "county": "Philadelphia",

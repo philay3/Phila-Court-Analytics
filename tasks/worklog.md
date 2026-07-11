@@ -2211,3 +2211,118 @@ the record field there.
   commands as the first pass (`pipeline equivalence-check`, then `pipeline
   parse` + warning counts). Item 3 warning-count validation (deferred at the
   failed rerun) lands with this repeated run once envelopes are regenerated.
+
+## Task 18.3 — Hardening: Dates, Sentencing, Privacy
+
+- **Date:** 2026-07-10
+- **What was built:** The three locked Sprint 4 hardening items plus the two
+  banked quarantine design questions (Q1/Q2), all as declared, corpus-attributable
+  delta classes.
+  - **Item 1 — held-case event dates.** A non-terminal (Not Final, non-ARD) event
+    now records `event_date` (the event-header date) and `event_name` on the
+    charge; `disposition_raw`/`disposition_date`/`disposition_judge_raw` stay null
+    and `sentences` stays `[]` (held cases have no disposition — output stays
+    honest). `NON_TERMINAL_CASE` continues to be emitted by the envelope
+    observation layer (`event_date` does not affect `_charge_has_disposition`).
+    Both keys are added ONLY on non-terminal charges (absent on terminal charges),
+    so terminal output is byte-identical to the Capstone baseline. Cross-court
+    capture unchanged (raw).
+  - **Item 2 — `min_assumed` annotation.** A sentence records `min_assumed: true`
+    exactly when `min_days` was FILLED from the maximum or from a flat value; it is
+    absent (not `false`) when min was parsed directly (max may be filled from min)
+    or when both bounds parsed. Parsed duration values are byte-identical to
+    pre-task output — pure annotation, no warning, no `review_needed` impact.
+    Added only when true, so unaffected sentences stay byte-identical.
+  - **Q1 — sentinel matching precision.** `identity.assert_no_leak` now matches
+    whole-token (boundary-anchored: `(?<![a-z0-9]) escaped-sentinel (?![a-z0-9])`,
+    case-insensitive, min length 3) instead of raw substring. A whole-token match
+    is a strict subset of a substring match, so the change can only *unblock*,
+    never newly block — this discharges "zero previously-passing dockets may newly
+    block" by construction. It recovers the 2 quarantine fragment false positives
+    while the 5 real collisions still match. **Surrendered leak class (for the POC
+    report):** a sentinel that appears only as a proper sub-span inside a larger
+    alphanumeric token is no longer blocked; accepted because a fragment embedded
+    in a larger word is not a retrievable identifier, and that benign class is
+    exactly the 2 false positives removed. Full names and DOB strings remain
+    exact-matched (internal punctuation via `re.escape`, outer edges anchored).
+  - **Q2 / Item 3 — third-party name guard (`SENTINEL_COLLISION`, new code, plan-
+    approved, severity `review`).** In the two known judge label contexts
+    (`CASE INFORMATION` assigned-judge, `DISPOSITION` disposition-judge), a
+    name-shaped capture that whole-token-collides with a sentinel is NULLED and
+    flagged `SENTINEL_COLLISION` (structural context only: section, charge_sequence
+    — never the colliding text). The colliding value never passes through as a
+    judge name; `review_needed` derives to true automatically. `assert_no_leak`
+    (now whole-token) is retained as the fail-closed backstop. The 18.2 junk-judge
+    guard was NOT touched. Residual coverage gap (contexts outside the two judge
+    slots; NER out of scope) is documented here for 20.1 to lift: the guard covers
+    the assigned-judge and disposition-judge slots only; attorney/participant
+    free-text contexts are not pattern-guarded and rely on the backstop plus
+    upstream capture bounds. False-negative bias is deliberate.
+  - **Versioning.** `ENVELOPE_PARSER_VERSION` 3 → 4; record internal
+    `parser_version` 1 → 2 (first record-SCHEMA change since the port — the two
+    conditional fields). `EXCLUDED_FIELDS` already excludes `parser_version`, so
+    the record-version bump produces no comparator diff.
+- **Declared delta classes for the corpus rerun (18.2 inversion discipline):**
+  - **Main-corpus comparison (1,596 baseline records), CP/MC separate — every diff
+    must be exactly one of:**
+    - **Class A — event_date/event_name additions:** `key_missing_in_baseline` at
+      `charges[i].event_date` and `charges[i].event_name`, non-terminal charges
+      only. Expected count = held-charge count (unknown pre-run; human reports).
+    - **Class B — min_assumed additions:** `key_missing_in_baseline` at
+      `charges[i].sentences[j].min_assumed`, value `true`, filled-min sentences
+      only.
+    - **Class C — sentinel-disposition changes:** **expected count ZERO in the
+      main corpus.** All 1,596 currently pass (no live collision); whole-token only
+      unblocks; the guard nulls nothing where nothing collides.
+  - **STOP-AND-REPORT** (never fix in place, never explain away): any main-corpus
+    status change; any `value` diff; any key diff outside Classes A/B; any *new*
+    hard block on a previously-passing docket; any Class-C-shaped diff anywhere in
+    the main corpus; any real leak.
+- **Quarantine rerun report — STATUS-TRANSITION based (Fix 1; the 7 sentinel
+  dockets have NO Capstone baseline, so there is nothing to diff against — this is
+  NOT a baseline comparison):**
+  - 2 fragment false positives: `privacy_assertion` block → **pass** (parse to a
+    clean record).
+  - 5 whole-token collisions: `privacy_assertion` block → **parsed-and-flagged**
+    (judge field null, `SENTINEL_COLLISION`, `review_needed = true`).
+  - 1 KeyError docket: **untouched, stays quarantined** (POC unsupported-format
+    specimen; out of scope).
+  Report emits docket ids, sections, counts, statuses ONLY — never the colliding
+  capture or any docket text.
+- **Amended standing invariant (Fix 2, worklog-bound):** after this task the 7
+  recovered sentinel dockets move into `~/court-data/fixtures/` (human step, Chops).
+  The invariant becomes **fixtures = baseline (1,596) ∪ recovered sentinel dockets
+  (7)**. `equivalence_check.py` already expresses a fixture PDF with no baseline
+  JSON as `STATUS_BASELINE_MISSING` — an explicit, reconciled, non-aborting,
+  non-silent entry — so it satisfies "explicit no-baseline informational entry,
+  never a failure, never a silent skip" without code change; the module was
+  deliberately NOT modified (weakening its strict port-gate verdict would mask a
+  genuinely-missing baseline, and the 7 expected entries cannot be auto-classified
+  without embedding docket ids in repo code, which privacy forbids). At rerun the
+  human confirms `baseline_missing` count == 7 (the recovered set).
+- **Files touched:** `services/pipeline/src/pipeline/identity.py` (whole-token
+  predicate `matches_as_token` + `collides_with_sentinels`; `assert_no_leak`
+  switched to it), `services/pipeline/src/pipeline/warning_codes.py`
+  (`SENTINEL_COLLISION`, severity `review`; vocabulary 9 → 10),
+  `services/pipeline/src/pipeline/docket_parser.py` (event_date/event_name capture,
+  min_assumed, third-party name guard in both judge contexts, record
+  `parser_version` 2), `services/pipeline/src/pipeline/envelope.py`
+  (`ENVELOPE_PARSER_VERSION = 4`; comments), tests
+  (`test_identity.py`, `test_docket_parser.py`, `test_envelope.py`,
+  `test_warning_codes.py`), `tasks/worklog.md`. `equivalence_check.py` NOT modified
+  (see Fix 2 above).
+- **Deviations from plan:** (1) Quarantine report reframed status-transition based,
+  not baseline-diff (Fix 1). (2) `event_name` added alongside `event_date` on
+  non-terminal charges per approved answer (Decision 4's field list was not
+  exhaustive); Class A covers both keys. (3) `equivalence_check.py` left unmodified
+  with justification (Fix 2). No other deviation.
+- **Notes for next task:** The corpus/quarantine reruns are a STANDING LOCAL human
+  step (Chops), same as 18.2 — fixtures live outside the repo. Real Class A/B
+  counts and the quarantine per-docket outcomes land from that run; the expected
+  shape and stop conditions are declared above. Sprint 5 judge normalization is the
+  durable "is this value actually a judge" fix; the guard here only removes the
+  leak. 20.1 lifts the residual-gap documentation above verbatim.
+- **Verification (all three pipeline CI gates green):**
+  - `.venv/bin/ruff check src tests` — All checks passed.
+  - `.venv/bin/ruff format --check .` — 30 files already formatted.
+  - `.venv/bin/python -m pytest -q` — 206 passed.

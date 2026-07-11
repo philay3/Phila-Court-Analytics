@@ -125,6 +125,25 @@ AMENDED_CHARGE = build(
     "Judge B. 01/15/2025",
 )
 
+# 18.3 Item 1: a held (Not Final) event -> charge carries event_date/event_name,
+# disposition stays null, and NON_TERMINAL_CASE is emitted.
+HELD_FOR_COURT = build(
+    "DISPOSITION SENTENCING/PENALTIES",
+    "Held for Court",
+    "06/15/2024 Not Final",
+    "1 / Simple Assault",
+)
+
+# 18.3 Q2: a disposition judge whose surname equals the defendant's ->
+# third-party name guard nulls the field and emits SENTINEL_COLLISION.
+JUDGE_COLLISION = build(
+    "DISPOSITION SENTENCING/PENALTIES",
+    "Trial",
+    "01/15/2025 Final Disposition",
+    "1 / Simple Assault Guilty",
+    "Example, Judge A. 01/15/2025",
+)
+
 # Name present, DOB absent: parse_docket_text raises ParseError.
 PARSEERROR_SPECIMEN = "\n".join(
     [
@@ -183,7 +202,7 @@ def _all_keys(obj) -> set:
 def test_envelope_shape_has_exactly_the_pinned_fields():
     envelope = make_envelope(DISPOSED_CLEAN)
     assert set(envelope) == EXPECTED_ENVELOPE_KEYS
-    assert envelope["parser_version"] == env.ENVELOPE_PARSER_VERSION == 3
+    assert envelope["parser_version"] == env.ENVELOPE_PARSER_VERSION == 4
     assert set(envelope["extraction_artifact"]) == {
         "artifact_id",
         "text_hash",
@@ -336,6 +355,30 @@ def test_envelope_emits_suspected_amended_charge_and_flags_review():
     assert envelope["review_needed"] is True
     # Warning-only: the parsed disposition_raw is unchanged.
     assert envelope["record"]["charges"][0]["disposition_raw"] == "Amended"
+
+
+# --- 18.3: held-case event_date and the third-party name guard ----------------
+
+
+def test_envelope_held_case_carries_event_date_and_flags_non_terminal():
+    envelope = make_envelope(HELD_FOR_COURT)
+    assert wc.NON_TERMINAL_CASE in codes_of(envelope)
+    charge = envelope["record"]["charges"][0]
+    assert charge["event_date"] == "2024-06-15"
+    assert charge["event_name"] == "Held for Court"
+    assert charge["disposition_date"] is None
+
+
+def test_envelope_emits_sentinel_collision_and_flags_review():
+    envelope = make_envelope(JUDGE_COLLISION)
+    assert wc.SENTINEL_COLLISION in codes_of(envelope)
+    assert envelope["review_needed"] is True
+    charge = envelope["record"]["charges"][0]
+    # The colliding value is nulled; the disposition_date is still captured.
+    assert charge["disposition_judge_raw"] is None
+    assert charge["disposition_date"] == "2025-01-15"
+    # No colliding text anywhere in the envelope's warnings.
+    assert "Example" not in json.dumps(envelope["warnings"])
 
 
 # --- criterion 1: closed vocabulary; MISSING_CHARGE_SECTION defined-but-unemitted
