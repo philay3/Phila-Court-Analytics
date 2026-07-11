@@ -22,7 +22,17 @@ MODULES = [
     "pipeline.seam_check",
     "pipeline.docket_parser",
     "pipeline.docket_parser_pdf",
+    "pipeline.collector.enumeration",
+    "pipeline.collector.classification",
+    "pipeline.collector.guard",
+    "pipeline.collector.engine",
+    "pipeline.collector.transport",
+    "pipeline.collector.run",
 ]
+
+# Collector modules must import WITHOUT the optional Playwright dependency: the
+# whole test suite and default install stay Playwright-free (Task COL-1).
+COLLECTOR_MODULES = [m for m in MODULES if m.startswith("pipeline.collector.")]
 
 
 @pytest.mark.parametrize("module_name", MODULES)
@@ -46,3 +56,22 @@ def test_import_has_no_env_or_fs_side_effects(module_name, monkeypatch):
         # Leave a normally-imported module in place for other tests.
         if saved is not None:
             sys.modules[module_name] = saved
+
+
+@pytest.mark.parametrize("module_name", COLLECTOR_MODULES)
+def test_collector_import_does_not_import_playwright(module_name):
+    saved = sys.modules.pop(module_name, None)
+    had_playwright = "playwright" in sys.modules
+    sys.modules.pop("playwright", None)
+    try:
+        importlib.import_module(module_name)
+        assert "playwright" not in sys.modules, (
+            f"{module_name} imported Playwright at import time"
+        )
+    finally:
+        if saved is not None:
+            sys.modules[module_name] = saved
+        if had_playwright:  # pragma: no cover - only if env had it preloaded
+            import importlib as _il
+
+            sys.modules["playwright"] = _il.import_module("playwright")

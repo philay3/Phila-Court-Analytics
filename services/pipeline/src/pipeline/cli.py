@@ -30,6 +30,7 @@ SUBCOMMANDS = (
         "Diff ported extraction+parse output against the Capstone baseline.",
     ),
     ("parse", "Parse extraction artifacts into per-docket envelope artifacts."),
+    ("collect", "Collect docket-sheet PDFs from the portal into an intake dir."),
     ("evaluate-extractors", "Compare candidate PDF text extractors."),
     ("run-fixtures", "Run the pipeline against local fixture PDFs."),
 )
@@ -42,6 +43,7 @@ IMPLEMENTED_COMMANDS = frozenset(
         "seam-check",
         "equivalence-check",
         "parse",
+        "collect",
     }
 )
 
@@ -218,6 +220,74 @@ def build_parser() -> argparse.ArgumentParser:
                     "~/court-data/envelopes/."
                 ),
             )
+        if name == "collect":
+            subparser.add_argument(
+                "--court",
+                choices=["MC"],
+                default="MC",
+                help=(
+                    "Court to enumerate (only Philadelphia Municipal Court, "
+                    "MC-51-CR, is in scope for this task). Default: MC."
+                ),
+            )
+            subparser.add_argument(
+                "--year", type=int, default=2025, help="Filing year. Default: 2025."
+            )
+            subparser.add_argument(
+                "--start-seq",
+                type=int,
+                default=1,
+                help="First docket sequence to enumerate (1-based). Default: 1.",
+            )
+            subparser.add_argument(
+                "--count",
+                type=int,
+                default=600,
+                help=(
+                    "How many consecutive sequences to enumerate. The time cap "
+                    "usually ends the run first. Default: 600."
+                ),
+            )
+            subparser.add_argument(
+                "--max-minutes",
+                type=int,
+                default=60,
+                help=(
+                    "Wall-clock stop in minutes. Hard-capped at the "
+                    "counsel-locked 240-minute ceiling regardless of value. "
+                    "Default: 60."
+                ),
+            )
+            subparser.add_argument(
+                "--intake-dir",
+                type=Path,
+                # Resolved here, at the CLI/run boundary — never at import.
+                default=Path.home() / "court-data" / "intake",
+                help=(
+                    "Where collected PDFs land (<docket>.pdf); created if "
+                    "needed and must be outside any git working tree. Default: "
+                    "~/court-data/intake/."
+                ),
+            )
+            subparser.add_argument(
+                "--report-dir",
+                type=Path,
+                default=Path.home() / "court-data" / "collection-runs",
+                help=(
+                    "Parent for per-run report dirs (<report-dir>/<run-id>/ "
+                    "with attempts.jsonl + run-report.json); created if needed "
+                    "and must be outside any git working tree. Default: "
+                    "~/court-data/collection-runs/."
+                ),
+            )
+            subparser.add_argument(
+                "--headless",
+                action="store_true",
+                help=(
+                    "Run the browser headless. Default is headful (off): the "
+                    "proven configuration and the honest posture."
+                ),
+            )
         if name == "evaluate-extractors":
             subparser.add_argument(
                 "--fixtures-dir",
@@ -302,6 +372,28 @@ def main(argv: list[str] | None = None) -> int:
             salt=salt,
             salt_parity_confirmed=args.salt_parity_confirmed,
             extra_exclusions=args.exclude_fields,
+        )
+    if args.command == "collect":
+        if running_in_ci():
+            logger.error(
+                "collect performs live portal network access and must never "
+                "run in a CI environment; refusing",
+                extra={"command": args.command},
+            )
+            return 2
+        # Imported here (not at module top) so the CLI stays importable — and
+        # the whole test suite runs — without the optional collector group.
+        from pipeline.collector.run import run_collect
+
+        return run_collect(
+            court=args.court,
+            year=args.year,
+            start_seq=args.start_seq,
+            count=args.count,
+            max_minutes=args.max_minutes,
+            intake_dir=args.intake_dir,
+            report_dir=args.report_dir,
+            headless=args.headless,
         )
     if args.command == "extract-text":
         return run_extraction(

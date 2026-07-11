@@ -97,6 +97,94 @@ A file that fails to open is recorded and skipped; it never aborts the run.
   only hashes, counts, durations, and error types. Logging the fixtures
   _directory_ path once at startup is the only path that appears.
 
+## collect (docket collection)
+
+Automated collection command around the ported UJS-portal collector (Task
+COL-1). It enumerates `MC-51-CR-#######-YYYY` docket numbers, fetches each
+docket-sheet PDF into an intake directory, and enforces **all** pacing and
+stop conditions in code — no operator-watched shell loop. Chops runs it
+manually on a weekend; this is the tooling only.
+
+Playwright is an **optional** dependency in the `collector` group. It is
+**not** installed by default and **not** installed in CI, and `collect`
+**refuses to run in a CI environment**. Install it only on the collection
+machine:
+
+```sh
+uv sync --group collector
+uv run playwright install chromium
+```
+
+### Run procedure (weekend baseline)
+
+```sh
+uv run pipeline collect \
+  --court MC --year 2025 --start-seq 1 --count 600 --max-minutes 60
+```
+
+Defaults match the baseline run: court `MC`, year `2025`, start sequence `1`,
+count `600` (the time cap ends the run before the range does), `--max-minutes
+60`, intake dir `~/court-data/intake/`, report dir
+`~/court-data/collection-runs/`. The browser runs **headful by default** (the
+proven configuration and the honest posture); `--headless` exists but is off.
+
+Watch the browser and the live console progress (JSON lines on stderr): each
+attempt logs its docket number, outcome, batch number, and running
+hits/misses/blocks counts; cooldowns log a notice. **Ctrl-C is graceful** — it
+finishes the in-flight request, writes the report, and exits.
+
+### Enforced pacing and stops (not overridable by any flag)
+
+- **Hard 240-minute ceiling** on any run — `--max-minutes` can only shorten it.
+- **2-minute cooldown** after any block/bot-check response, before the next
+  request.
+- Jittered **2.0–5.0s delay after every real portal request**.
+- **40 dockets per batch**, **4-minute inter-batch cooldown** (batch boundaries
+  count real portal requests, not already-present skips).
+- **Consecutive-block streak** stop at **N=5** (`block_streak`): increments on
+  block/bot-check, resets on a hit or a clean miss.
+- **Consecutive-error streak** stop at **N=5** (`error_streak`): increments on
+  transport errors, resets on any live response (hit/miss/blocked). Guards
+  against a broken selector burning the whole range.
+- A **bot check / captcha is always treated as a block** and is never solved,
+  bypassed, or automated.
+- A **clean miss** (docket number does not exist) is a successful request and a
+  logged coverage data point — never a block or a failure.
+- **Resumable**: a docket whose `<docket>.pdf` is already in the intake dir is
+  skipped and logged `already_present`; reruns over an overlapping range are
+  safe.
+
+### Outputs
+
+- PDFs → `<intake-dir>/<docket>.pdf`.
+- Per run → `<report-dir>/<run-id>/`:
+  - `attempts.jsonl` — one line per attempted docket number (docket number,
+    outcome, detail, batch, timestamp).
+  - `run-report.json` — run id, timestamps, wall-clock duration (for ≤4h/≤8h
+    session accounting), parameters used, counts, max block/error streaks, stop
+    reason (`time_cap` / `range_exhausted` / `block_streak` / `error_streak` /
+    `operator_abort`), cooldowns taken, and the coverage statement (`N hits of M
+attempted in range X–Y`).
+
+Both directories must be **outside every git working tree** (enforced) so
+nothing derived from real dockets is committed. Docket numbers appear in logs
+and reports (good-faith record); **page content, defendant names, and any text
+beyond outcome classification appear nowhere**, and the collector captures **no
+screenshots, tracing, HAR, or video** in any code path.
+
+### Operational parameters flagged for re-evaluation
+
+Two Capstone behaviors were intentionally changed and should be revisited after
+the baseline run, alongside the batch/cooldown/N values:
+
+- **Browser-restart-every-150-fetches was dropped.** Capstone restarted the
+  browser periodically to guard memory. For a 60-minute baseline (≤ ~600
+  requests) this is unnecessary; re-evaluate if extended collection lands.
+- **Block/bot-check DOM signatures are best-effort.** Capstone had no block
+  detection to port, so the selectors/phrases in `collector/transport.py` are
+  unverified against the live portal and must be confirmed on the headful
+  baseline run before any extended collection.
+
 ## Tests
 
 ```sh
