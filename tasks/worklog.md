@@ -3124,3 +3124,72 @@ the record field there.
   `agent-docs/parser-proof-of-concept.md` (the 18.5-flagged docs/ move was
   not in play for this task). §6 and the executive summary are now consistent
   on the 11-code vocabulary; the Sprint 5 handoff list is items 1–7.
+
+## Task 19.3 — `run-fixtures` Contract Hardening (Tier 2) (2026-07-11)
+
+- **Scope:** Closed the two tier-2 `run-fixtures` contract gaps confirmed in the
+  20.2 exit demo (silent generate-on-missing; report clobbering). Tier-1
+  behavior, `equivalence_check.py`, parser modules, golden CONTENT, envelope/
+  record versions (`ENVELOPE_PARSER_VERSION=5`, record `parser_version=2`), and
+  the 11-code warning vocabulary are all unchanged.
+- **Contract changes + chosen mechanisms:**
+  - **GAP 1 — golden writes are always flag-gated (disjoint, least-privilege
+    flags).** A tier-2 run with NO golden-writing flag now writes ZERO goldens
+    under all conditions, including an empty goldens dir. A docket lacking a
+    golden gets the new per-docket status `golden_missing` (added to the tier-2
+    vocabulary and `_T2_ORDER`) and the run exits nonzero; present-golden
+    dockets are still compared in the same run (per-docket isolation holds — one
+    missing golden never aborts the corpus). Two disjoint flags replace the old
+    silent first-creation path: `--init-goldens` writes ONLY absent goldens
+    (first-time establishment) and NEVER overwrites a divergent existing golden;
+    `--update-goldens` refreshes ONLY existing goldens that diverge (semantics
+    unchanged) and NEVER creates an absent one. Passing both together is an
+    explicit full-write mode (absent created, divergent refreshed). Rationale of
+    record: least privilege — an establishment run must not be able to silently
+    clobber an existing golden, and a refresh must not silently create a new
+    baseline; overloading one flag re-opens the "tool self-adjudicates what's
+    fine" failure shape. Help text for BOTH flags states the combined full-write
+    behavior and that EVERY golden-writing invocation requires a
+    `tasks/worklog.md` note.
+  - **GAP 2 — dated, non-clobbering reports.** Each tier-2 run now writes its
+    report to a run-unique path `<output-dir>/reports/tier2-report-<UTC
+    timestamp>.json` (microsecond precision — `%Y%m%dT%H%M%S_%fZ`), matching the
+    corpus-run "new dated artifact, never overwrite" convention and moving
+    reports out of the goldens dir (goldens stays hash-named-files only). A
+    single clock read per run (`_now_utc`, wrapped so tests can force the stamp)
+    names both the file and the report's `generated_at`. Belt-and-suspenders: if
+    the computed path already exists the run refuses (rc 2) rather than
+    overwrite. Console prints the report path at end of run (path/counts/
+    statuses only — hygiene preserved).
+- **Retroactive golden-establishment note (owed from the 20.2 exit demo):** the
+  tier-2 goldens on disk are the post-18.5 set — all 1,603, established
+  2026-07-11, back-to-back verification 1,603 match / 0 diverged. This 19.3 task
+  did NOT change golden content.
+- **Superseded artifact:** the old fixed
+  `~/court-data/goldens/run-fixtures-tier2-report.json` is no longer written; it
+  remains on disk as a stale, superseded artifact (out-of-repo). New reports
+  land under `~/court-data/goldens/reports/`.
+- **Real-corpus verification run (verbatim tool output):**
+
+  ```
+  tier1: match=34 diverged=0 updated=0 new=0 missing=0
+  tier2: match=1603 diverged=0 updated=0 new=0 golden_missing=0 failed=0
+  tier2 report: /Users/phillipanthony/court-data/goldens/reports/tier2-report-20260711T213310_122609Z.json
+  EXIT_CODE=0
+  ```
+
+  1,603 match / 0 diverged against the existing goldens; zero goldens written
+  (dir still holds 1,603); report landed at the new run-unique path.
+- **Files touched:** `services/pipeline/src/pipeline/run_fixtures.py`,
+  `services/pipeline/src/pipeline/cli.py`,
+  `services/pipeline/tests/test_run_fixtures.py`,
+  `services/pipeline/README.md`, `tasks/worklog.md`.
+- **Deviations from plan:** none. (README carried run-fixtures only as a stale
+  "placeholder"; per FIX 4 the authoritative flag docs live in the CLI `--help`
+  and a focused run-fixtures section was added to the README documenting the
+  19.3 flag/report contract — no silent gap between `--help` and README.)
+- **Notes for next task:** no new committed file tree is introduced — reports
+  live out-of-repo under `~/court-data/goldens/reports/`. `golden_missing` is a
+  dirty (nonzero-exit) tier-2 status. First-time tier-2 establishment now
+  requires `--init-goldens` explicitly; a plain comparison run over a dir with
+  any absent golden fails with `golden_missing` by design.

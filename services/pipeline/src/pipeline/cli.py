@@ -385,11 +385,32 @@ def build_parser() -> argparse.ArgumentParser:
                 "--update-goldens",
                 action="store_true",
                 help=(
-                    "Overwrite goldens for whichever tier(s) ran, instead of "
-                    "reporting drift. Every tier-1 write is gated by this flag "
-                    "(the goldens are committed to git). REQUIRES a "
-                    "tasks/worklog.md note recording the regeneration — the CLI "
-                    "cannot enforce that, so it is on you."
+                    "Refresh EXISTING goldens that diverge, instead of reporting "
+                    "drift. Tier 1: gates every tier-1 golden write (its goldens "
+                    "are committed to git). Tier 2: refreshes only goldens that "
+                    "already exist and diverge — it NEVER creates an absent "
+                    "golden (use --init-goldens to establish first-time tier-2 "
+                    "goldens). Passing --init-goldens AND --update-goldens "
+                    "together is an explicit full-write mode: absent goldens are "
+                    "created and divergent existing goldens are refreshed in the "
+                    "same run. EVERY golden-writing invocation REQUIRES a "
+                    "tasks/worklog.md note recording the write — the CLI cannot "
+                    "enforce that, so it is on you."
+                ),
+            )
+            subparser.add_argument(
+                "--init-goldens",
+                action="store_true",
+                help=(
+                    "Tier-2 only: establish goldens for dockets that have NONE "
+                    "yet (writes ONLY absent goldens). Existing goldens are never "
+                    "touched — a divergent existing golden is still reported, not "
+                    "overwritten. Without this flag a tier-2 run NEVER writes an "
+                    "absent golden: the docket is reported golden_missing and the "
+                    "run exits nonzero. Combined with --update-goldens it becomes "
+                    "full-write mode (absent created, divergent refreshed). Like "
+                    "--update-goldens, EVERY golden-writing invocation REQUIRES a "
+                    "tasks/worklog.md note recording the write."
                 ),
             )
             subparser.add_argument(
@@ -399,9 +420,10 @@ def build_parser() -> argparse.ArgumentParser:
                 default=Path.home() / "court-data" / "goldens",
                 help=(
                     "Tier-2 only: where hash-named goldens ({source_sha256}.json) "
-                    "and the tier-2 report are written (created if needed); must "
-                    "be outside any git working tree. Default: "
-                    "~/court-data/goldens/."
+                    "are written and, under reports/, a run-unique tier-2 report "
+                    "(tier2-report-<UTC timestamp>.json) per run — a prior run's "
+                    "report is never overwritten. Created if needed; must be "
+                    "outside any git working tree. Default: ~/court-data/goldens/."
                 ),
             )
     return parser
@@ -533,6 +555,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_fixtures(
             corpus_dir=args.corpus_dir,
             output_dir=args.output_dir,
+            init_goldens=args.init_goldens,
             update_goldens=args.update_goldens,
             tier2_salt=tier2_salt,
         )

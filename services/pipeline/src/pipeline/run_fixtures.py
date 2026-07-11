@@ -311,9 +311,10 @@ T2_MATCH = "match"
 T2_DIVERGED = "diverged"
 T2_UPDATED = "updated"
 T2_NEW = "new"
+T2_MISSING = "golden_missing"
 T2_FAILED = "failed"
 
-_T2_ORDER = (T2_MATCH, T2_DIVERGED, T2_UPDATED, T2_NEW, T2_FAILED)
+_T2_ORDER = (T2_MATCH, T2_DIVERGED, T2_UPDATED, T2_NEW, T2_MISSING, T2_FAILED)
 
 # Structural failure reasons (never carry docket text).
 REASON_EXTRACTION_FAILED = "extraction_failed"
@@ -342,9 +343,26 @@ def _source_hash(pdf_path: Path) -> str:
 
 
 def _compare_one_tier2(
-    pdf_path: Path, output_dir: Path, *, salt: str, update_goldens: bool
+    pdf_path: Path,
+    output_dir: Path,
+    *,
+    salt: str,
+    init_goldens: bool,
+    update_goldens: bool,
 ) -> Tier2Entry:
     """Extract → parse_document → project one PDF, then compare/write its golden.
+
+    Golden writes are ALWAYS flag-gated (19.3 contract) and the two flags are
+    disjoint, least-privilege operations:
+
+    * ``--init-goldens`` writes ONLY absent goldens (first-time establishment).
+    * ``--update-goldens`` writes ONLY existing goldens that diverge (refresh).
+
+    With NEITHER flag, an absent golden yields a ``golden_missing`` entry and no
+    write — silent generate-on-missing is gone. Passing both flags is an
+    explicit full-write mode (absent created, divergent refreshed). Neither flag
+    creates the other's write: ``--init-goldens`` never overwrites a divergent
+    existing golden, and ``--update-goldens`` never creates an absent one.
 
     Per-docket exception capture (mandatory): extraction failure, a ``failed``
     envelope, or any unexpected exception all yield a ``failed`` entry — one bad
@@ -404,17 +422,40 @@ def _compare_one_tier2(
             _hash_prefix(source_sha256), T2_DIVERGED, divergences=divergences
         )
 
-    # New golden: first time we have seen this source. Created without the flag
-    # (the flag guards OVERWRITES of existing goldens, not first creation).
-    golden_path.write_text(golden_bytes(got))
-    return Tier2Entry(_hash_prefix(source_sha256), T2_NEW)
+    # Absent golden. A write happens ONLY under --init-goldens (establishment of
+    # a new baseline). With no init flag the docket is reported golden_missing
+    # and NEVER written — silent generate-on-missing is gone (19.3 contract).
+    # --update-goldens governs existing goldens only and never creates an absent
+    # one; per-docket isolation means one missing golden never aborts the run.
+    if init_goldens:
+        golden_path.write_text(golden_bytes(got))
+        return Tier2Entry(_hash_prefix(source_sha256), T2_NEW)
+    return Tier2Entry(_hash_prefix(source_sha256), T2_MISSING)
 
 
 def _hash_prefix(source_hash: str | None) -> str:
     return (source_hash or "unknown")[:_HASH_PREFIX_LEN]
 
 
-def _tier2_report(entries: list[Tier2Entry], corpus_dir: Path) -> dict[str, object]:
+def _now_utc() -> datetime:
+    """Single clock read per tier-2 run — wrapped so tests can force the
+    timestamp that names the run-unique report."""
+    return datetime.now(UTC)
+
+
+def _report_path(output_dir: Path, now: datetime) -> Path:
+    """Run-unique tier-2 report path:
+    ``<output_dir>/reports/tier2-report-<UTC timestamp>.json`` at microsecond
+    precision. A new artifact per run (matching the corpus-run convention) so a
+    prior run's report is never overwritten — same-day back-to-back runs get
+    distinct filenames, and ``run_tier2`` additionally refuses a collision."""
+    stamp = now.strftime("%Y%m%dT%H%M%S_%f") + "Z"
+    return output_dir / "reports" / f"tier2-report-{stamp}.json"
+
+
+def _tier2_report(
+    entries: list[Tier2Entry], corpus_dir: Path, now: datetime
+) -> dict[str, object]:
     """Full report (carries field values in divergences) — out-of-repo file
     ONLY. ``baseline`` in each divergence is the stored golden; ``corpus`` is the
     fresh parse (diff_records naming, reused unchanged)."""
@@ -437,7 +478,7 @@ def _tier2_report(entries: list[Tier2Entry], corpus_dir: Path) -> dict[str, obje
             item["divergences"] = entry.divergences
         dockets.append(item)
     return {
-        "generated_at": datetime.now(UTC).isoformat(),
+        "generated_at": now.isoformat(),
         "corpus_dir": str(corpus_dir),
         "totals": counts,
         "dockets": dockets,
@@ -463,11 +504,18 @@ def _print_tier2(entries: list[Tier2Entry]) -> None:
 
 
 def run_tier2(
-    corpus_dir: Path, output_dir: Path, *, salt: str, update_goldens: bool
+    corpus_dir: Path,
+    output_dir: Path,
+    *,
+    salt: str,
+    init_goldens: bool,
+    update_goldens: bool,
 ) -> int:
-    """Run tier 2 over ``corpus_dir`` and write goldens + report under
-    ``output_dir``. Returns 2 on a guard failure, 1 on any drift/failure, 0 on a
-    clean run.
+    """Run tier 2 over ``corpus_dir`` and write goldens + a run-unique report
+    under ``output_dir``. Golden writes are flag-gated (``--init-goldens`` for
+    absent, ``--update-goldens`` for divergent existing). Returns 2 on a guard
+    failure (including a report-path collision), 1 on any drift/failure/missing
+    golden, 0 on a clean run.
     """
     if not corpus_dir.is_dir():
         logger.error(
@@ -499,7 +547,11 @@ def run_tier2(
     entries: list[Tier2Entry] = []
     for pdf_path in pdf_paths:
         entry = _compare_one_tier2(
-            pdf_path, output_dir, salt=salt, update_goldens=update_goldens
+            pdf_path,
+            output_dir,
+            salt=salt,
+            init_goldens=init_goldens,
+            update_goldens=update_goldens,
         )
         entries.append(entry)
         logger.info(
@@ -512,15 +564,27 @@ def run_tier2(
             },
         )
 
-    report = _tier2_report(entries, corpus_dir)
-    (output_dir / "run-fixtures-tier2-report.json").write_text(
-        json.dumps(report, indent=2, sort_keys=True) + "\n"
-    )
+    # Run-unique report path (single clock read). Refuse to overwrite a prior
+    # run's report — same-day back-to-back runs must each keep their own record.
+    now = _now_utc()
+    report_path = _report_path(output_dir, now)
+    if report_path.exists():
+        logger.error(
+            "tier-2 report path already exists; refusing to overwrite a prior "
+            "run's report",
+            extra={"report_path": str(report_path)},
+        )
+        return 2
+    report = _tier2_report(entries, corpus_dir, now)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     _print_tier2(entries)
+    print(f"tier2 report: {report_path}")
 
-    # Non-zero on any diverged (unflagged) or failed (always, even under the
-    # flag — a refresh cannot absolve a per-docket failure).
-    dirty = any(e.status in (T2_DIVERGED, T2_FAILED) for e in entries)
+    # Non-zero on any diverged (unflagged), golden_missing (no --init-goldens),
+    # or failed (always, even under a flag — a refresh cannot absolve a
+    # per-docket failure).
+    dirty = any(e.status in (T2_DIVERGED, T2_MISSING, T2_FAILED) for e in entries)
     logger.info("tier-2 run complete", extra={"file_count": len(pdf_paths)})
     return 1 if dirty else 0
 
@@ -534,6 +598,7 @@ def run_fixtures(
     *,
     corpus_dir: Path | None,
     output_dir: Path,
+    init_goldens: bool,
     update_goldens: bool,
     tier2_salt: str | None,
 ) -> int:
@@ -542,6 +607,8 @@ def run_fixtures(
     ``tier2_salt`` is the real ``DEFENDANT_HASH_SALT`` (already validated
     non-empty by the CLI) and is required whenever ``corpus_dir`` is set. Tier 1
     always uses ``TIER1_TEST_SALT`` and ignores the environment entirely.
+    ``init_goldens`` is tier-2 only (its establishment write path); tier 1 gates
+    every golden write behind ``update_goldens`` and never sees ``init_goldens``.
     Returns a process exit code (2 = guard failure, 1 = drift/failure, 0 = clean).
     """
     tier1 = run_tier1(update_goldens)
@@ -551,7 +618,11 @@ def run_fixtures(
     if corpus_dir is not None:
         assert tier2_salt is not None  # CLI guarantees this pairing
         rc = run_tier2(
-            corpus_dir, output_dir, salt=tier2_salt, update_goldens=update_goldens
+            corpus_dir,
+            output_dir,
+            salt=tier2_salt,
+            init_goldens=init_goldens,
+            update_goldens=update_goldens,
         )
         if rc == 2:
             return 2
