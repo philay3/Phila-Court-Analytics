@@ -17,6 +17,7 @@ from pipeline.evaluation.harness import run_evaluation
 from pipeline.extraction import DEFAULT_LOW_TEXT_THRESHOLD, run_extraction
 from pipeline.logging_utils import configure_logging
 from pipeline.manual_import import run_manual_import
+from pipeline.run_fixtures import run_fixtures
 from pipeline.seam_check import run_seam_check, running_in_ci
 
 logger = logging.getLogger("pipeline.cli")
@@ -32,7 +33,11 @@ SUBCOMMANDS = (
     ("parse", "Parse extraction artifacts into per-docket envelope artifacts."),
     ("collect", "Collect docket-sheet PDFs from the portal into an intake dir."),
     ("evaluate-extractors", "Compare candidate PDF text extractors."),
-    ("run-fixtures", "Run the pipeline against local fixture PDFs."),
+    (
+        "run-fixtures",
+        "Regression-check the tier-1 fixture corpus (always) and, with "
+        "--corpus-dir, drift-check real PDFs against local goldens (tier 2).",
+    ),
 )
 
 IMPLEMENTED_COMMANDS = frozenset(
@@ -44,6 +49,7 @@ IMPLEMENTED_COMMANDS = frozenset(
         "equivalence-check",
         "parse",
         "collect",
+        "run-fixtures",
     }
 )
 
@@ -363,6 +369,41 @@ def build_parser() -> argparse.ArgumentParser:
                     "side-by-side human review (required for the Task 5.3 evaluation)."
                 ),
             )
+        if name == "run-fixtures":
+            subparser.add_argument(
+                "--corpus-dir",
+                type=Path,
+                default=None,
+                help=(
+                    "Local directory of real docket PDFs (searched "
+                    "non-recursively). When given, tier 2 additionally runs: it "
+                    "requires DEFENDANT_HASH_SALT and never runs in CI. Omitted: "
+                    "tier 1 only."
+                ),
+            )
+            subparser.add_argument(
+                "--update-goldens",
+                action="store_true",
+                help=(
+                    "Overwrite goldens for whichever tier(s) ran, instead of "
+                    "reporting drift. Every tier-1 write is gated by this flag "
+                    "(the goldens are committed to git). REQUIRES a "
+                    "tasks/worklog.md note recording the regeneration — the CLI "
+                    "cannot enforce that, so it is on you."
+                ),
+            )
+            subparser.add_argument(
+                "--output-dir",
+                type=Path,
+                # Resolved here, at the CLI/run boundary — never at import.
+                default=Path.home() / "court-data" / "goldens",
+                help=(
+                    "Tier-2 only: where hash-named goldens ({source_sha256}.json) "
+                    "and the tier-2 report are written (created if needed); must "
+                    "be outside any git working tree. Default: "
+                    "~/court-data/goldens/."
+                ),
+            )
     return parser
 
 
@@ -466,5 +507,34 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         return run_parse(args.artifacts_dir, args.output_dir, salt=salt)
+    if args.command == "run-fixtures":
+        # Tier 1 always runs (offline, repo-local, TIER1_TEST_SALT). Tier 2 runs
+        # only with --corpus-dir and carries the local-court-data guards.
+        tier2_salt: str | None = None
+        if args.corpus_dir is not None:
+            if running_in_ci():
+                logger.error(
+                    "run-fixtures --corpus-dir runs over local court data and "
+                    "must never run in a CI environment; refusing",
+                    extra={"command": args.command},
+                )
+                return 2
+            # Salt read at the run boundary (never at import); value never logged.
+            salt = os.environ.get(SALT_ENV_VAR, "")
+            if not salt.strip():
+                logger.error(
+                    "DEFENDANT_HASH_SALT is required for tier 2 (--corpus-dir); "
+                    "set it in the environment (its value is never printed or "
+                    "written)",
+                    extra={"command": args.command},
+                )
+                return 2
+            tier2_salt = salt
+        return run_fixtures(
+            corpus_dir=args.corpus_dir,
+            output_dir=args.output_dir,
+            update_goldens=args.update_goldens,
+            tier2_salt=tier2_salt,
+        )
     logger.info("command not implemented", extra={"command": args.command})
     return 0

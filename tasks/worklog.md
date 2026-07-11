@@ -2619,3 +2619,93 @@ the record field there.
   - `.venv/bin/ruff format --check .` — 48 files already formatted.
   - `.venv/bin/python -m pytest -q` — 337 passed.
   - repo-root `pnpm format:check` — passed (YAML/MD in play; goldens ignored).
+
+## Task 19.2 — Golden tooling + `run-fixtures` CLI + fifth gate (2026-07-11)
+
+- **What was built:** the `pipeline run-fixtures` subcommand — a two-tier golden
+  comparator/regenerator sharing ONE projection path — plus the fifth mandatory
+  verification gate in CLAUDE.md.
+  - **Shared projection (pinned decision 3):** new
+    `src/pipeline/run_fixtures.py::project_envelope` reduces a full
+    `envelope.parse_document` envelope to the deterministic golden subset
+    `{status, record, warnings, review_needed, error}`. BOTH tiers now build
+    their projection by calling the real `parse_document` and projecting — no
+    second serialization path. `build_golden` (tier 1) was re-implemented on top
+    of `parse_document`; the retired inline `parse_docket_text`+`observe` path is
+    gone. Regenerating all 32 tier-1 goldens through the new path produced a
+    byte-identical result (`git diff` empty — see verification).
+  - **Tier 1 (always runs):** compares the committed `tests/tier1/` corpus vs its
+    goldens; readable field diffs (values safe — synthetic); every write gated by
+    `--update-goldens` (committed-to-git files get NO unflagged write path — a
+    missing golden without the flag is `missing`/refused, not silently created).
+  - **Tier 2 (`--corpus-dir` only):** reuses the 16.2 `extraction.extract` + 18.1
+    `envelope.parse_document` stages, per-docket exception capture (extraction
+    failure, `failed` envelope, or any raise → `failed`, never aborts the run),
+    goldens written OUTSIDE the repo as `{source_sha256}.json` (mirrors the
+    `~/court-data/envelopes/` naming), default dir `~/court-data/goldens/`.
+    Statuses: `match`/`diverged`/`updated`/`new`/`failed`. `new` writes without
+    the flag (first creation); `diverged` needs the flag to overwrite (→
+    `updated`, a distinct summary status, never folded into `match`); `failed`
+    stays non-zero even WITH the flag. Console shows counts/statuses/hash-prefix
+    ids/field PATHS only — the value-bearing diff goes to the out-of-repo report
+    (`run-fixtures-tier2-report.json`). CI + missing-salt guards mirror `parse`.
+  - **Retired:** `tests/tier1/generate_goldens.py` (folded into `run-fixtures
+    --update-goldens`) and `tests/tier1/support.py` (folded into
+    `pipeline.run_fixtures`); tier-1 tests now import from the src module.
+  - **Fifth gate:** CLAUDE.md now requires `git status --short <paths>` +
+    `git ls-files --others --exclude-standard <paths>` in every completion report
+    for tasks adding committed files (the 19.1 gitignore incident).
+- **Reuse decisions:** (a) `generate_goldens.py` RETIRED (one tier-1 write path).
+  (b) Reused `equivalence_check.diff_records` (17.3 deep field-diff-with-
+  exclusions) for tier-2, `extraction.extract` + `envelope.parse_document` for
+  tier-2 envelopes (both already importable — no refactor), `seam_check.
+  running_in_ci`, `paths.inside_git_worktree`, `equivalence_check.SALT_ENV_VAR`.
+  Did NOT reuse `equivalence_check.compare_one`/`load_baseline` (baseline-shaped,
+  wrong reference). (c) Tier-2 golden filename `{source_sha256}.json`, found in
+  `envelope.run_parse` (the `~/court-data/envelopes/` convention). (d) NO
+  `ci.yml` change — `tests/tier1/test_regression.py` (committed in 19.1) already
+  runs the full 32-fixture regression under the existing pytest job.
+- **Files touched:** `src/pipeline/run_fixtures.py` (new), `src/pipeline/cli.py`
+  (run-fixtures wired: args + CI/salt guards + dispatch), `tests/test_run_fixtures.py`
+  (new, synthetic-only), `tests/tier1/test_regression.py` + `test_index.py`
+  (imports repointed), deleted `tests/tier1/generate_goldens.py` +
+  `tests/tier1/support.py`, `CLAUDE.md` (fifth gate), `tasks/worklog.md`.
+- **No parser/extraction/identity/helpers change.** No test reads/writes
+  `~/court-data/`. No CI reference to `~/court-data/`.
+- **Deviations from plan:** none. All three plan-review confirm-points
+  implemented as approved (tier-1 fully gated incl. missing-golden refusal;
+  `failed` non-zero even with the flag; `updated` a distinct status; support.py
+  deleted outright).
+- **Notes for next task:** tier-2 goldens are established by Chops's post-merge
+  human run of `run-fixtures --corpus-dir ~/court-data/fixtures/` (feeds 20.2) —
+  first run is all `new`; drift shows on later runs.
+- **Verification (all five gates):**
+  - `uv run ruff check src tests` — All checks passed.
+  - `uv run ruff format --check .` — 48 files already formatted.
+  - `uv run pytest -q` — 355 passed, 1 skipped.
+  - repo-root `pnpm format:check` — passed (CLAUDE.md / worklog MD in play).
+  - Staging completeness — `git status --short` / `git ls-files --others
+    --exclude-standard` over the task paths show nothing untracked or ignored
+    (output in the completion report).
+
+### 19.2 fix (2026-07-11) — CI red: incomplete commit + sixth gate
+
+- **Root cause:** the first 19.2 commit (`b36790b`) captured ONLY the two file
+  deletions (`support.py`, `generate_goldens.py`). Those were staged early by the
+  implementation-time `git rm` (which writes the index immediately); every OTHER
+  change — `run_fixtures.py`, the `cli.py` wiring, the two test-import repoints,
+  `test_run_fixtures.py`, the CLAUDE.md gate, this worklog — was only ever written
+  to the working tree and never staged. The commit therefore deleted `support.py`
+  while leaving `test_index.py`/`test_regression.py` still importing from it, and
+  never added `pipeline.run_fixtures`. CI failed at collection
+  (`ModuleNotFoundError: No module named 'support'`). The reported "355 passed"
+  was genuine but run against the full working tree, not the staged/committed
+  subset — precisely the gap the new sixth gate closes. The staging-completeness
+  section of the original report even showed `run_fixtures.py`/`test_run_fixtures.py`
+  as `??`; that signal was misread as "the git add will catch them."
+- **Fix:** the follow-up commit stages the complete 19.2 change set (the prior
+  commit's deletions stand). Imports already targeted `pipeline.run_fixtures` on
+  disk; confirmed no remaining `from support import` anywhere (`git grep` clean).
+- **Sixth gate added:** "Clean-environment gate timing" — the four functional
+  gates must run LAST, after all edits are saved + staged and stale bytecode is
+  cleared, and the report's gate output must come from that post-staging run.
