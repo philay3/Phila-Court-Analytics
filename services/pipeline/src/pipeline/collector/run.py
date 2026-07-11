@@ -44,9 +44,11 @@ def run_collect(
     max_minutes: int,
     intake_dir: Path,
     report_dir: Path,
+    ledger_dir: Path,
     headless: bool,
     batch_size: int,
     batch_cooldown_seconds: int,
+    recheck_misses: bool,
 ) -> int:
     """Validate inputs, run one collection, print a summary. Returns exit code.
 
@@ -78,7 +80,7 @@ def run_collect(
         )
         return 2
 
-    dir_error = engine.validate_output_dirs(intake_dir, report_dir)
+    dir_error = engine.validate_output_dirs(intake_dir, report_dir, ledger_dir)
     if dir_error is not None:
         logger.error(
             "refusing to write inside a git working tree",
@@ -87,6 +89,7 @@ def run_collect(
         return 2
 
     report_dir.mkdir(parents=True, exist_ok=True)
+    ledger_dir.mkdir(parents=True, exist_ok=True)
 
     params = CollectParams(
         court=court,
@@ -96,9 +99,11 @@ def run_collect(
         max_minutes=max_minutes,
         intake_dir=intake_dir,
         report_dir=report_dir,
+        ledger_dir=ledger_dir,
         headless=headless,
         batch_size=batch_size,
         batch_cooldown_seconds=batch_cooldown_seconds,
+        recheck_misses=recheck_misses,
     )
 
     abort_event = Event()
@@ -127,7 +132,8 @@ def run_collect(
     print(
         f"collect: {report['stop_reason']} — {report['coverage_statement']}; "
         f"blocks={counts['blocks']} errors={counts['errors']} "
-        f"already_present={counts['already_present']}; "
+        f"already_present={counts['already_present']} "
+        f"known_miss={counts['known_miss']}; "
         f"duration={report['duration_hms']}; outputs under {report['output_dir']}"
     )
     return 0

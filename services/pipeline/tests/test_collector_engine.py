@@ -61,6 +61,7 @@ def make_params(tmp_path, **overrides) -> CollectParams:
         max_minutes=240,
         intake_dir=tmp_path / "intake",
         report_dir=tmp_path / "runs",
+        ledger_dir=tmp_path / "coverage",
         headless=False,
     )
     defaults.update(overrides)
@@ -311,6 +312,7 @@ def test_report_and_attempt_log_shapes(tmp_path):
         "hits": 1,
         "misses": 2,
         "already_present": 0,
+        "known_miss": 0,
         "blocks": 0,
         "errors": 0,
     }
@@ -453,13 +455,17 @@ def test_validate_output_dirs_refuses_git_worktree(tmp_path):
     assert engine.validate_output_dirs(inside, safe) is not None
     assert engine.validate_output_dirs(safe, inside) is not None
     assert engine.validate_output_dirs(safe, tmp_path / "runs") is None
+    # A ledger dir inside a worktree is refused too (COL-1b).
+    err = engine.validate_output_dirs(safe, tmp_path / "runs", inside)
+    assert err is not None and "ledger-dir" in err
+    assert engine.validate_output_dirs(safe, tmp_path / "runs", safe) is None
 
 
 def test_empty_range_would_never_happen_but_coverage_is_safe(tmp_path):
     # docket_range enforces count>=1, but the coverage helper must not crash on
     # an empty attempt list defensively.
     assert "0 hits of 0 attempted" in engine._coverage_statement(
-        {k: 0 for k in ("hits", "misses", "already_present", "blocks", "errors")},
+        dict.fromkeys(engine._COUNT_KEYS, 0),
         [],
     )
 
@@ -470,3 +476,174 @@ def test_empty_range_would_never_happen_but_coverage_is_safe(tmp_path):
 )
 def test_format_hms(seconds, expected):
     assert engine._format_hms(seconds) == expected
+
+
+# --- persistent miss ledger (COL-1b) --------------------------------------
+
+
+def _read_ledger(params) -> list[dict]:
+    path = engine.ledger_path_for(params)
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+def _seed_ledger(params, dockets, *, run_id="run-seed"):
+    path = engine.ledger_path_for(params)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        json.dumps(
+            {
+                "docket_number": d,
+                "run_id": run_id,
+                "timestamp": "2026-07-11T04:52:30+00:00",
+                "classifier_note": "no_results",
+            }
+        )
+        for d in dockets
+    ]
+    path.write_text("".join(f"{line}\n" for line in lines))
+
+
+def test_ledger_appends_only_on_fail_closed_miss(tmp_path):
+    clock = FakeClock()
+
+    def signal_for(d):
+        seq = int(d.split("-")[3])
+        if seq == 1:
+            return FetchSignal(pdf_ok=True, pdf_bytes=b"%PDF-1.7 x")
+        if seq == 2:
+            return FetchSignal(no_results=True)  # miss -> ledger
+        if seq == 3:
+            return FetchSignal(rate_limited=True)  # blocked -> no ledger
+        return FetchSignal(no_results=True)  # miss -> ledger
+
+    transport = FakeTransport(signal_for)
+    params = make_params(tmp_path, count=4)
+    run_engine(params, transport, clock)
+    ledger = _read_ledger(params)
+    dockets = sorted(e["docket_number"] for e in ledger)
+    assert dockets == ["MC-51-CR-0000002-2025", "MC-51-CR-0000004-2025"]
+    for entry in ledger:
+        assert entry["classifier_note"] == "no_results"
+        assert set(entry) == {
+            "docket_number",
+            "run_id",
+            "timestamp",
+            "classifier_note",
+        }
+
+
+def test_loader_dedupes_duplicate_lines(tmp_path):
+    params = make_params(tmp_path, count=3)
+    doc = "MC-51-CR-0000002-2025"
+    _seed_ledger(params, [doc, doc, doc])
+    known = engine.load_miss_ledger(
+        engine.ledger_path_for(params), params.court, params.year
+    )
+    assert known == {doc}
+
+
+def test_known_miss_skips_without_fetch_or_delay(tmp_path):
+    clock = FakeClock()
+    params = make_params(tmp_path, count=3)
+    known = "MC-51-CR-0000002-2025"
+    _seed_ledger(params, [known])
+    transport = FakeTransport(lambda d: FetchSignal(no_results=True))
+    report = run_engine(params, transport, clock)
+    assert known not in transport.calls  # no portal request
+    assert report["counts"]["known_miss"] == 1
+    # 2 real requests -> 2 per-request delays; the skip spent none.
+    assert report["per_request_delays_taken"] == 2
+    # streak-neutral: the run finished cleanly.
+    assert report["stop_reason"] == "range_exhausted"
+
+
+def test_known_miss_excluded_from_batch_boundary(tmp_path):
+    clock = FakeClock()
+    params = make_params(tmp_path, count=BATCH_SIZE_DEFAULT + 1)
+    from pipeline.collector.enumeration import docket_range
+
+    dockets = docket_range("MC", 2025, 1, BATCH_SIZE_DEFAULT + 1)
+    _seed_ledger(params, dockets[:10])  # 10 known misses
+    transport = FakeTransport(lambda d: FetchSignal(no_results=True))
+    report = run_engine(params, transport, clock)
+    # 41 dockets, 10 known-miss skips -> 31 real requests -> no inter-batch.
+    assert report["counts"]["known_miss"] == 10
+    assert report["cooldowns_taken"]["inter_batch"] == 0
+    assert len(transport.calls) == BATCH_SIZE_DEFAULT + 1 - 10
+
+
+def test_recheck_misses_bypasses_ledger_and_reappends(tmp_path):
+    clock = FakeClock()
+    params = make_params(tmp_path, count=2, recheck_misses=True)
+    doc = "MC-51-CR-0000001-2025"
+    _seed_ledger(params, [doc])
+    transport = FakeTransport(lambda d: FetchSignal(no_results=True))
+    report = run_engine(params, transport, clock)
+    # Ledger ignored: the seeded docket is re-attempted, not skipped.
+    assert doc in transport.calls
+    assert report["counts"]["known_miss"] == 0
+    assert report["counts"]["misses"] == 2
+    # And confirmed misses re-append (duplicate lines are fine).
+    ledger = _read_ledger(params)
+    assert sum(1 for e in ledger if e["docket_number"] == doc) == 2
+
+
+def test_report_and_coverage_include_known_miss(tmp_path):
+    clock = FakeClock()
+    params = make_params(tmp_path, count=3)
+    _seed_ledger(params, ["MC-51-CR-0000002-2025"])
+    transport = FakeTransport(lambda d: FetchSignal(no_results=True))
+    report = run_engine(params, transport, clock)
+    counts = report["counts"]
+    assert "known_miss" in counts
+    # attempted denominator includes the known_miss.
+    assert counts["attempted"] == 3
+    assert counts["known_miss"] == 1
+    assert counts["misses"] == 2
+    assert "of 3 attempted" in report["coverage_statement"]
+    assert report["parameters"]["recheck_misses"] is False
+    assert report["parameters"]["ledger_path"].endswith("miss-ledger-MC-2025.jsonl")
+
+
+def test_load_miss_ledger_skips_malformed_line_loudly(tmp_path, caplog):
+    import logging
+
+    params = make_params(tmp_path)
+    path = engine.ledger_path_for(params)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    good = json.dumps({"docket_number": "MC-51-CR-0000002-2025"})
+    path.write_text(good + "\n" + "{not valid json\n")
+    with caplog.at_level(logging.WARNING, logger="pipeline.collector"):
+        known = engine.load_miss_ledger(path, "MC", 2025)
+    assert known == {"MC-51-CR-0000002-2025"}
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert warnings[0].skipped == 1
+    assert warnings[0].ledger_path == str(path)
+
+
+def test_load_miss_ledger_filters_to_court_year(tmp_path, caplog):
+    import logging
+
+    params = make_params(tmp_path)
+    path = engine.ledger_path_for(params)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entries = [
+        {"docket_number": "MC-51-CR-0000002-2025"},  # in scope
+        {"docket_number": "CP-51-CR-0000002-2025"},  # wrong court
+        {"docket_number": "MC-51-CR-0000002-2024"},  # wrong year
+    ]
+    path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+    with caplog.at_level(logging.WARNING, logger="pipeline.collector"):
+        known = engine.load_miss_ledger(path, "MC", 2025)
+    assert known == {"MC-51-CR-0000002-2025"}
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert warnings[0].skipped == 2
+
+
+def test_load_miss_ledger_missing_file_is_empty(tmp_path):
+    params = make_params(tmp_path)
+    assert engine.load_miss_ledger(engine.ledger_path_for(params), "MC", 2025) == set()

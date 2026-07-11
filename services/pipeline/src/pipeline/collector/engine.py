@@ -39,10 +39,11 @@ from pipeline.collector.classification import (
     OUTCOME_BLOCKED,
     OUTCOME_ERROR,
     OUTCOME_HIT,
+    OUTCOME_MISS,
     FetchSignal,
     classify,
 )
-from pipeline.collector.enumeration import docket_range
+from pipeline.collector.enumeration import COURT_PREFIXES, docket_range
 from pipeline.collector.guard import (
     BLOCK_STREAK_STOP,
     ERROR_STREAK_STOP,
@@ -72,19 +73,24 @@ STOP_RANGE_EXHAUSTED = "range_exhausted"
 STOP_OPERATOR_ABORT = "operator_abort"
 # (block_streak / error_streak stop reasons come from RunGuard.)
 
-# Attempt outcomes as they appear in the log/report. ``already_present`` is a
-# local intake skip (no portal request); the rest come from classify().
+# Local skip outcomes (no portal request); the rest come from classify().
+# ``already_present`` — an intake PDF already on disk.
+# ``known_miss`` — a docket confirmed as a miss on a prior fail-closed run
+# (persistent miss ledger, COL-1b).
 OUTCOME_ALREADY_PRESENT = "already_present"
+OUTCOME_KNOWN_MISS = "known_miss"
 
 ATTEMPT_LOG_FILENAME = "attempts.jsonl"
 RUN_REPORT_FILENAME = "run-report.json"
+MISS_LEDGER_CLASSIFIER_NOTE = "no_results"
 
 # Count keys in the run report, in a stable display order.
-_COUNT_KEYS = ("hits", "misses", "already_present", "blocks", "errors")
+_COUNT_KEYS = ("hits", "misses", "already_present", "known_miss", "blocks", "errors")
 _OUTCOME_TO_COUNT = {
     OUTCOME_HIT: "hits",
-    "miss": "misses",
+    OUTCOME_MISS: "misses",
     OUTCOME_ALREADY_PRESENT: "already_present",
+    OUTCOME_KNOWN_MISS: "known_miss",
     OUTCOME_BLOCKED: "blocks",
     OUTCOME_ERROR: "errors",
 }
@@ -101,9 +107,11 @@ class CollectParams:
     max_minutes: int
     intake_dir: Path
     report_dir: Path
+    ledger_dir: Path
     headless: bool = False
     batch_size: int = BATCH_SIZE_DEFAULT
     batch_cooldown_seconds: int = BATCH_COOLDOWN_DEFAULT_SECONDS
+    recheck_misses: bool = False
 
 
 class Transport:
@@ -117,20 +125,85 @@ class Transport:
         raise NotImplementedError
 
 
-def validate_output_dirs(intake_dir: Path, report_dir: Path) -> str | None:
-    """Return an error message if either output dir is inside a git worktree.
+def validate_output_dirs(
+    intake_dir: Path, report_dir: Path, ledger_dir: Path | None = None
+) -> str | None:
+    """Return an error message if any output dir is inside a git worktree.
 
-    PDFs land only under the intake dir and reports only under the report dir;
-    both must sit outside every repository so nothing derived from real
-    dockets can be committed. Returns ``None`` when both are safe.
+    PDFs land only under the intake dir, reports only under the report dir, and
+    the miss ledger only under the ledger dir; all must sit outside every
+    repository so nothing derived from real dockets can be committed. Returns
+    ``None`` when they are safe.
     """
-    for label, path in (("intake-dir", intake_dir), ("report-dir", report_dir)):
+    checks = [("intake-dir", intake_dir), ("report-dir", report_dir)]
+    if ledger_dir is not None:
+        checks.append(("ledger-dir", ledger_dir))
+    for label, path in checks:
         if inside_git_worktree(path):
             return (
                 f"{label} resolves to a path inside a git working tree; choose "
                 "a location outside any repository"
             )
     return None
+
+
+def ledger_path_for(params: CollectParams) -> Path:
+    """Path to the court+year-scoped miss ledger under the ledger dir."""
+    return params.ledger_dir / f"miss-ledger-{params.court}-{params.year}.jsonl"
+
+
+def load_miss_ledger(path: Path, court: str, year: int) -> set[str]:
+    """Load confirmed-miss docket numbers for this run's court+year.
+
+    Append-only JSONL, one confirmed miss per line. Robust to a corrupt or
+    mis-scoped ledger: a line that does not parse, lacks a string
+    ``docket_number``, or whose docket number is not for THIS run's court+year
+    (FIX 2 — a renamed/misdirected ledger must never suppress attempts in a
+    different run) is skipped. Skipped lines are counted and, if nonzero, a
+    WARNING is logged (FIX 1) — a silently shrinking skip set would burn portal
+    budget with no visible signal.
+    """
+    if not path.exists():
+        return set()
+    prefix = f"{COURT_PREFIXES[court]}-"
+    suffix = f"-{year:04d}"
+    known: set[str] = set()
+    skipped = 0
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            docket = json.loads(line)["docket_number"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            skipped += 1
+            continue
+        if not isinstance(docket, str) or not (
+            docket.startswith(prefix) and docket.endswith(suffix)
+        ):
+            skipped += 1
+            continue
+        known.add(docket)
+    if skipped:
+        logger.warning(
+            "miss ledger: skipped unreadable or out-of-scope entries",
+            extra={"skipped": skipped, "ledger_path": str(path)},
+        )
+    return known
+
+
+def _append_miss(
+    path: Path, docket: str, run_id: str, timestamp: str, note: str
+) -> None:
+    """Append one confirmed miss to the ledger (append-only; creates parent)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "docket_number": docket,
+        "run_id": run_id,
+        "timestamp": timestamp,
+        "classifier_note": note,
+    }
+    with path.open("a") as handle:
+        handle.write(json.dumps(entry) + "\n")
 
 
 def _format_hms(seconds: float) -> str:
@@ -191,6 +264,16 @@ def run(
 
     dockets = docket_range(params.court, params.year, params.start_seq, params.count)
     guard = RunGuard()
+
+    # Persistent miss ledger (COL-1b): skip docket numbers already confirmed as
+    # misses on a prior fail-closed run. --recheck-misses ignores the ledger
+    # (but still re-appends confirmed misses this run).
+    ledger_path = ledger_path_for(params)
+    known_misses: set[str] = (
+        set()
+        if params.recheck_misses
+        else load_miss_ledger(ledger_path, params.court, params.year)
+    )
 
     attempts: list[dict] = []
     counts = dict.fromkeys(_COUNT_KEYS, 0)
@@ -255,6 +338,23 @@ def run(
             )
             continue
 
+        # Miss ledger: a docket confirmed missing on a prior fail-closed run is
+        # skipped (no portal request, no batch advance, no delay). Neutral to
+        # both streaks. Still an enumerated, resolved docket number.
+        if docket in known_misses:
+            _record(docket, OUTCOME_KNOWN_MISS, None)
+            guard.record(OUTCOME_KNOWN_MISS)
+            logger.info(
+                "attempt",
+                extra={
+                    "docket_number": docket,
+                    "outcome": OUTCOME_KNOWN_MISS,
+                    "batch": batch_number,
+                    "attempted": len(attempts),
+                },
+            )
+            continue
+
         # Inter-batch cooldown fires before the first real request of a new
         # batch — i.e. once a full batch of real requests has completed.
         if requests_in_batch == params.batch_size:
@@ -283,6 +383,17 @@ def run(
 
         if outcome == OUTCOME_HIT and signal.pdf_bytes is not None:
             (params.intake_dir / f"{docket}.pdf").write_bytes(signal.pdf_bytes)
+        elif outcome == OUTCOME_MISS:
+            # Append-only: a positively-identified no-results state. Appended on
+            # every fail-closed miss, including under --recheck-misses (the
+            # loader dedupes, so duplicate lines are harmless).
+            _append_miss(
+                ledger_path,
+                docket,
+                run_id,
+                now().isoformat(),
+                MISS_LEDGER_CLASSIFIER_NOTE,
+            )
 
         # Jittered per-request delay after EVERY real portal request (FIX 1).
         delay = jitter()
@@ -417,6 +528,8 @@ def _build_report(
             "max_minutes": params.max_minutes,
             "hard_ceiling_minutes": HARD_CEILING_MINUTES,
             "headful": not params.headless,
+            "ledger_path": str(ledger_path_for(params)),
+            "recheck_misses": params.recheck_misses,
         },
         "counts": {
             "attempted": counts_total(counts),

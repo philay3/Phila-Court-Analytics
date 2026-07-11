@@ -175,19 +175,54 @@ finishes the in-flight request, writes the report, and exits.
   skipped and logged `already_present`; reruns over an overlapping range are
   safe.
 
+### Persistent miss ledger (rerun skips confirmed misses)
+
+Because resumability keys on PDF existence and a miss writes no PDF, reruns
+would otherwise re-attempt every previously-missed docket number — at the
+observed ~40% miss rate in low sequences, a large share of each rerun's budget
+spent re-confirming known answers. The miss ledger fixes that:
+
+- **Ledger file:** `<ledger-dir>/miss-ledger-<court>-<year>.jsonl`, append-only,
+  one line per confirmed miss (`docket_number`, `run_id`, `timestamp`,
+  `classifier_note`). `--ledger-dir` defaults to `~/court-data/coverage/` — under
+  the data root, **outside** the intake PDF dir (so it never pollutes the 16.3
+  import scan) and outside every git working tree (enforced).
+- **Written only on a fail-closed miss** (a positively-identified no-results
+  state). Blocks, hits, errors, and skips never append. Run-1 (fail-open era)
+  misses are **not** valid seeds and are never backfilled; the ledger populates
+  naturally from fail-closed runs going forward.
+- **On rerun**, a docket in the ledger is skipped and logged `known_miss` — no
+  portal request, no per-request delay, no batch-boundary advance, streak-neutral
+  — but it still counts as an enumerated, resolved docket in the report counts
+  and the coverage denominator (`hits` + `misses` + `known_miss` all feed
+  "N of M in range"). The loader dedupes by docket number and **loudly warns**
+  (with a skipped-line count) on any unreadable or out-of-scope
+  (wrong-court/year) ledger line, so a corrupted ledger can't silently shrink
+  the skip set and burn budget.
+- **`--recheck-misses`** ignores the ledger for one run and re-attempts
+  everything (confirmed misses re-append; duplicate lines are fine).
+
+**Current-year caveat:** for a year still in progress, a docket that misses today
+can become a hit later as new cases are filed. Ledger-based skipping is sound for
+**closed years**; for a year still accruing filings, use `--recheck-misses` to
+revalidate.
+
 ### Outputs
 
 - PDFs → `<intake-dir>/<docket>.pdf`.
+- Persistent miss ledger → `<ledger-dir>/miss-ledger-<court>-<year>.jsonl`
+  (append-only, spans runs).
 - Per run → `<report-dir>/<run-id>/`:
   - `attempts.jsonl` — one line per attempted docket number (docket number,
-    outcome, detail, batch, timestamp).
+    outcome — including `already_present` and `known_miss` — detail, batch,
+    timestamp).
   - `run-report.json` — run id, timestamps, wall-clock duration (for ≤4h/≤8h
-    session accounting), parameters used, counts, max block/error streaks, stop
-    reason (`time_cap` / `range_exhausted` / `block_streak` / `error_streak` /
-    `operator_abort`), cooldowns taken, and the coverage statement (`N hits of M
-attempted in range X–Y`).
+    session accounting), parameters used, counts (incl. `known_miss`), max
+    block/error streaks, stop reason (`time_cap` / `range_exhausted` /
+    `block_streak` / `error_streak` / `operator_abort`), cooldowns taken, and the
+    coverage statement (`N hits of M attempted in range X–Y`).
 
-Both directories must be **outside every git working tree** (enforced) so
+All three directories must be **outside every git working tree** (enforced) so
 nothing derived from real dockets is committed. Docket numbers appear in logs
 and reports (good-faith record); **page content, defendant names, and any text
 beyond outcome classification appear nowhere**, and the collector captures **no
