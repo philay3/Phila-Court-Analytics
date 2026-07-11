@@ -89,6 +89,38 @@ that is three separate gates:
 Lint passing does not imply format passing; they are independent checks.
 If CI gains a new gate, this list gains it in the same task.
 
+## Staging completeness (fifth mandatory gate)
+
+For any task that introduces or modifies a committed file tree, the completion
+report must include the output of
+
+  git status --short <task paths>
+  git ls-files --others --exclude-standard <task paths>
+
+proving nothing under those paths is untracked or ignored. This gate exists
+because the first four gates (`ruff check`, `ruff format --check`, `pytest -q`,
+`pnpm format:check`) verify the working tree, not what was actually
+staged/committed — see the 19.1 incident, where committed tier-1 fixtures were
+silently `.gitignore`'d out locally and only CI caught it. This applies going
+forward to ALL tasks that add committed files, not just the one that introduced
+the gate.
+
+## Clean-environment gate timing (sixth mandatory gate)
+
+The four functional gates (`ruff check`, `ruff format --check`, `pytest -q`,
+`pnpm format:check`) must be the LAST thing run before writing the completion
+report, in this order: (a) all edits for the task saved; (b) all intended
+changes staged with `git add`; (c) stale bytecode/build caches cleared for any
+touched language (e.g. `find <touched-dirs> -name '__pycache__' -exec rm -rf {}
++` for Python); (d) gates run fresh from that state. A gate result from an
+earlier point in the session — before a later edit, before a file deletion,
+before staging — does not satisfy this requirement, even if it was genuinely
+green at the time. The completion report's gate output must be from this final,
+post-staging run, not a running tally from earlier in the task. This gate exists
+because gate 5 proves everything intended is staged, but not that what was
+locally verified matches what was actually staged — see the 19.2 incident, where
+the committed tree still imported a module the same task had already deleted.
+
 ## Data source & collector status
 
 Collector status: UNPARKED per ADR 0002 (agent-docs/decisions/0002-source-access.md) — collection conditions live there; the baseline-run task will carry the operational spec.

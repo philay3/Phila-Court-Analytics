@@ -20,15 +20,15 @@ Field types (``layout_unverified`` bool, ``synthetic`` always true) are checked 
 from __future__ import annotations
 
 import yaml
-from support import (
+
+from pipeline.envelope import EMITTED_CODES
+from pipeline.run_fixtures import (
     FIXTURES_DIR,
     GOLDENS_DIR,
     INDEX_PATH,
     golden_filename,
     load_golden,
 )
-
-from pipeline.envelope import EMITTED_CODES
 from pipeline.warning_codes import MISSING_CHARGE_SECTION
 
 _INDEX = yaml.safe_load(INDEX_PATH.read_text())

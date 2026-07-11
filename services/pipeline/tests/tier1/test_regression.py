@@ -17,7 +17,8 @@ from pathlib import Path
 
 import pytest
 import yaml
-from support import (
+
+from pipeline.run_fixtures import (
     INDEX_PATH,
     build_golden,
     diff_fields,
