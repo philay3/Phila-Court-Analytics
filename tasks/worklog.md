@@ -2442,3 +2442,64 @@ the record field there.
   - `.venv/bin/ruff check src tests` — All checks passed.
   - `.venv/bin/ruff format --check .` — 42 files already formatted.
   - `.venv/bin/python -m pytest -q` — 274 passed.
+
+## Task COL-1a — Collector fixes from baseline run 1
+
+- **Date:** 2026-07-11
+- **Baseline run 1 record (good-faith, stated plainly):** run-20260711-034851 —
+  129 attempted / 63 hits / 66 logged misses / 0 logged blocks; ended
+  `operator_abort` at 29:30. The portal began serving an "unauthorized
+  request"-style block page around sequence 0000122. The classifier, which was
+  **fail-open** (any page lacking a docket-sheet link → `miss`), logged those
+  block pages as misses — so blocks counted 0 for the whole run and attempts
+  ~122–129 are misclassified blocks. Because they were not recognized as blocks,
+  the **mandatory 2-minute post-block cooldown never fired** during that window.
+  Fixed by this task. (The flagged "unverified DOM signatures" risk from COL-1 is
+  thereby confirmed: block detection failed entirely.) Additionally, the Ctrl-C
+  abort wrote the report correctly but then threw "Browser.close: Connection
+  closed while reading from the driver" from `PlaywrightTransport.__exit__`.
+- **What was built (5 fixes):**
+  - **FIX 1 — fail-closed classification (core).** `miss` now REQUIRES positive
+    identification of the portal's genuine no-results state (`FetchSignal.no_results`,
+    set by the transport only when the search UI rendered with zero docket-sheet
+    links and no block signature). Any response that is neither a successful PDF
+    nor a positively-identified no-results page classifies as `blocked`. Unknown
+    pages are blocks, never misses — robust to unseen block pages.
+  - **FIX 2 — observed block signature.** Case-insensitive `unauthorized` /
+    `not authorized` substrings recognized explicitly (either ⇒ blocked), on top
+    of FIX 1's fail-closed default. Substring (not exact-phrase) matching chosen:
+    operator recall is "unauthorized request" but is not screenshot-verified, and
+    a false positive costs only a conservative cooldown.
+  - **FIX 3 — graceful browser close.** `PlaywrightTransport.__exit__` now
+    swallows/logs close()/stop() failures (SIGINT can kill the driver before we
+    close); operator abort exits cleanly after the report is written.
+  - **FIX 4 — operational flags.** Added `--batch-size` (default 40) and
+    `--batch-cooldown-seconds` (default 240, enforced 60s floor). The
+    counsel-locked 240-minute ceiling and 120s post-block cooldown stay hardcoded
+    constants — no flags, unoverridable.
+  - **FIX 5 — this worklog record.**
+- **Files touched:** `collector/classification.py` (new `no_results`/`unauthorized`
+  fields, fail-closed `classify`), `collector/transport.py` (positive no-results
+  marker, unauthorized signature, graceful `__exit__`), `collector/engine.py`
+  (batch flags via `CollectParams`; blocked detail incl. `unauthorized` /
+  `unrecognized_page`), `collector/run.py` (batch args + floor enforcement),
+  `cli.py` (two flags), `README.md` (fail-closed wording, flags, documented
+  residual), `tests/test_collector_{classification,engine,cli}.py` (updated) +
+  new `tests/test_collector_transport.py`.
+- **Documented residual (README):** a block page that renders the *full* search
+  UI with zero sheet links AND none of the recognized block text would still
+  classify as `miss`. The observed block page is covered by its signature;
+  interstitials without the search UI are covered by fail-closed. Operator
+  confirms block-page appearance on the next headful run.
+- **Deviations from plan:** none. Block signature uses the approved two-substring
+  option (`unauthorized` OR `not authorized`).
+- **Notes for next task:** the positive no-results marker and block signatures in
+  `transport.py` are still live-unverified; the next headful run should confirm
+  them. Fail-closed means a *wrong* no-results marker fails safe (over-blocks,
+  triggering conservative cooldowns / an early `block_streak` stop) rather than
+  leaking blocks as misses.
+- **Verification (all four gates green):**
+  - `.venv/bin/ruff check src tests` — All checks passed.
+  - `.venv/bin/ruff format --check .` — 43 files already formatted.
+  - `.venv/bin/python -m pytest -q` — 289 passed.
+  - repo-root `pnpm format:check` — passed (MD/config touched).

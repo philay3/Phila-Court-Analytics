@@ -43,6 +43,8 @@ def test_collect_help_lists_flags(capsys):
         "--intake-dir",
         "--report-dir",
         "--headless",
+        "--batch-size",
+        "--batch-cooldown-seconds",
     ):
         assert flag in out
 
@@ -57,6 +59,43 @@ def test_collect_defaults_parse():
     assert args.count == 600
     assert args.max_minutes == 60
     assert args.headless is False  # headful by default (FIX 3)
+    assert args.batch_size == 40
+    assert args.batch_cooldown_seconds == 240
+
+
+def test_collect_batch_flags_parse():
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        ["collect", "--batch-size", "10", "--batch-cooldown-seconds", "120"]
+    )
+    assert args.batch_size == 10
+    assert args.batch_cooldown_seconds == 120
+
+
+def test_collect_rejects_cooldown_below_floor(monkeypatch, capsys):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    # 59 < the 60s floor -> exit 2, loud log, no browser launched.
+    assert cli.main(["collect", "--batch-cooldown-seconds", "59"]) == 2
+    entry = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert entry["floor_seconds"] == 60
+    assert "floor" in entry["message"]
+
+
+def test_legal_conditions_are_not_flags_and_are_hardcoded():
+    from pipeline.collector import engine
+
+    parser = cli.build_parser()
+    # No flag exists to change the counsel-locked ceilings.
+    for bad in ("--hard-ceiling-minutes", "--post-block-cooldown-seconds"):
+        try:
+            parser.parse_args(["collect", bad, "10"])
+        except SystemExit as exc:
+            assert exc.code == 2
+        else:  # pragma: no cover - would mean the flag leaked in
+            raise AssertionError(f"{bad} should not be a recognized flag")
+    assert engine.HARD_CEILING_MINUTES == 240
+    assert engine.POST_BLOCK_COOLDOWN_SECONDS == 120
 
 
 def test_collect_rejects_non_mc_court(capsys):
