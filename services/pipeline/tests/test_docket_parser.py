@@ -669,6 +669,51 @@ def test_terminal_charge_has_no_event_fields():
     assert "event_name" not in charge
 
 
+def test_progression_charge_disposed_after_nonterminal_has_no_event_keys():
+    """Check-2 regression: a charge listed under a non-terminal event and then
+    disposed under a terminal event on the same docket must end with NO event
+    keys and a populated disposition (the placement sweep strips the transient
+    event keys once the charge is disposed)."""
+    page = build_mc(
+        "Preliminary Hearing",
+        "06/15/2024 Not Final",
+        "1 / Simple Assault",
+        "Trial",
+        "01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Torres, Judge A. 01/15/2025",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert "event_date" not in charge
+    assert "event_name" not in charge
+    assert charge["disposition_raw"] == "Guilty"
+    assert charge["disposition_date"] == "2025-01-15"
+    assert charge["disposition_judge_raw"] == "Torres, Judge A."
+
+
+def test_held_charge_under_multiple_nonterminal_events_latest_wins():
+    """Pinned semantic: a held charge listed under two non-terminal events keeps
+    the LATEST event-header's date and name (assignment overwrites); disposition
+    stays null."""
+    page = build_mc(
+        "Preliminary Hearing",
+        "06/15/2024 Not Final",
+        "1 / Simple Assault",
+        "Continued Hearing",
+        "09/20/2024 Not Final",
+        "1 / Simple Assault",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["event_name"] == "Continued Hearing"
+    assert charge["event_date"] == "2024-09-20"
+    assert charge["disposition_raw"] is None
+    assert charge["disposition_date"] is None
+    assert charge["disposition_judge_raw"] is None
+    assert charge["sentences"] == []
+
+
 # --- Item 2: min_assumed annotation -----------------------------------------
 
 
