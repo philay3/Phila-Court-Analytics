@@ -1,0 +1,35 @@
+{
+  "error": null,
+  "record": {
+    "case": {
+      "assigned_judge_raw": "",
+      "case_status": "Closed",
+      "county": "Philadelphia",
+      "court_type": "Common Pleas",
+      "cross_court_dockets": null,
+      "dc_number": null,
+      "defendant_hash": "26935c1e572374f700fcaa41a38f63b063c9a9f0bdd40be872f4f78bdae24e72",
+      "filed_date": "2010-03-03",
+      "otn": null
+    },
+    "charges": [
+      {
+        "disposition_date": "2010-04-01",
+        "disposition_judge_raw": "Reyes, Judge M.",
+        "disposition_raw": "Guilty",
+        "grade": null,
+        "offense": "Simple Assault",
+        "sentences": [],
+        "sequence": 1,
+        "statute": "18 \u00a7 2701 M1"
+      }
+    ],
+    "docket_number": "CP-51-CR-0000000-2025",
+    "notes": [],
+    "parser_version": 2,
+    "related_cases": []
+  },
+  "review_needed": false,
+  "status": "parsed",
+  "warnings": []
+}

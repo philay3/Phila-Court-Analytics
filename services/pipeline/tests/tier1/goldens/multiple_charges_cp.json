@@ -1,0 +1,73 @@
+{
+  "error": null,
+  "record": {
+    "case": {
+      "assigned_judge_raw": "Torres, Judge A.",
+      "case_status": "Closed",
+      "county": "Philadelphia",
+      "court_type": "Common Pleas",
+      "cross_court_dockets": null,
+      "dc_number": "1122334455",
+      "defendant_hash": "4d66b9141e1f8282d6f5cea32ea3e8c86010ab0a9d73ed226c62c0d2b03b4357",
+      "filed_date": "2025-02-03",
+      "otn": "X 7654321-1"
+    },
+    "charges": [
+      {
+        "disposition_date": "2025-03-10",
+        "disposition_judge_raw": "Torres, Judge A.",
+        "disposition_raw": "Guilty",
+        "grade": null,
+        "offense": "Burglary",
+        "sentences": [
+          {
+            "max_days": 720,
+            "min_days": 360,
+            "program": "Confinement",
+            "raw_text": "Confinement, Min of 12.00 Months Max of 24.00 Months",
+            "sentence_date": "2025-03-10",
+            "sentence_type": "Confinement"
+          }
+        ],
+        "sequence": 1,
+        "statute": "18 \u00a7 3502 F1"
+      },
+      {
+        "disposition_date": "2025-03-10",
+        "disposition_judge_raw": "Torres, Judge A.",
+        "disposition_raw": "Guilty",
+        "grade": null,
+        "offense": "Theft",
+        "sentences": [
+          {
+            "max_days": 360,
+            "min_days": 180,
+            "program": "Probation",
+            "raw_text": "Probation, Min of 6.00 Months Max of 12.00 Months",
+            "sentence_date": "2025-03-10",
+            "sentence_type": "Probation"
+          }
+        ],
+        "sequence": 2,
+        "statute": "18 \u00a7 3921 M1"
+      },
+      {
+        "disposition_date": "2025-03-10",
+        "disposition_judge_raw": "Torres, Judge A.",
+        "disposition_raw": "Nolle Prossed",
+        "grade": null,
+        "offense": "Simple Assault",
+        "sentences": [],
+        "sequence": 3,
+        "statute": "18 \u00a7 2701 M2"
+      }
+    ],
+    "docket_number": "CP-51-CR-0000000-2025",
+    "notes": [],
+    "parser_version": 2,
+    "related_cases": []
+  },
+  "review_needed": false,
+  "status": "parsed",
+  "warnings": []
+}
