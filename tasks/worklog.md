@@ -3193,3 +3193,93 @@ the record field there.
   dirty (nonzero-exit) tier-2 status. First-time tier-2 establishment now
   requires `--init-goldens` explicitly; a plain comparison run over a dir with
   any absent golden fails with `golden_missing` by design.
+
+## Task 21.1 — `raw.source_documents` + `parsed.*` Table Migrations (2026-07-11)
+
+- **What was built:** Two Kysely migrations creating the internal document
+  layer and the parsed layer — the 21.3 loader's write target; nothing writes
+  to them in this task. `db/migrations/20260711225105_create_raw_source_documents.ts`
+  creates **`raw.source_documents`** (MUTABLE, pin 2): uuid PK
+  `gen_random_uuid()`, `file_hash` (unique `source_documents_file_hash_key`),
+  and the 16.3 manual-import metadata record mirrored exactly —
+  `original_filename`, `file_size_bytes` (bigint), `imported_at`, `import_mode`
+  (record `mode` → column `import_mode`, confirmed), `status`, `error_code`
+  (null), and the `derive_provenance` triple `docket_number_provenance`/
+  `court_type`/`county` (all nullable — null on docket-number no-match); plus
+  `created_at`/`updated_at` reusing the shared `public.set_updated_at()`
+  trigger (6.1-owned; NOT recreated). `court_type` here is the raw CP/MC
+  filename code — deliberately distinct from `parsed.dockets.court_type_recorded`.
+  `db/migrations/20260711225106_create_parsed_tables.ts` creates the five
+  **`parsed.*`** tables (all IMMUTABLE load artifacts, pin 3 — `created_at`
+  only, no `updated_at`, no trigger; `loaded_at` additionally on dockets):
+  `parsed.dockets` (FK → `raw.source_documents` **RESTRICT**, unique
+  `source_document_id`), `parsed.charges` (FK → dockets **CASCADE**, unique
+  `(docket_id, sequence)`), `parsed.sentences` (FK → charges **CASCADE**),
+  `parsed.warnings` (FK → dockets **CASCADE**), `parsed.related_cases` (FK →
+  dockets **CASCADE**). `db/src/types.ts` gained six interfaces + `Database`
+  keys: `RawSourceDocumentsTable` mutable (trigger-typed `updated_at`), all
+  five parsed tables `Immutable<>` on every column (aggregate-row precedent).
+  `db/tests/parsed-schema.test.ts` (6 checks, all inside rolled-back
+  transactions, 6.1 precedent): duplicate `file_hash`; orphan
+  `source_document_id`/`docket_id`/`charge_id` FK violations; duplicate
+  `parsed.dockets.source_document_id`; duplicate `parsed.charges (docket_id,
+  sequence)`. `db/tsconfig.json` include gained `"tests"` (trivially
+  necessary). `db/README.md` gained a Migrations table (all five files) and the
+  FK-index reading (pin 5 satisfied by leading unique indexes on
+  `dockets.source_document_id` and `charges.docket_id`).
+- **Reading of the committed shapes (per-table nullability, all derived from
+  the committed 16.3 record / 17.2 parser record / 18.1 envelope):**
+  - `raw.source_documents`: NOT NULL — `id`, `file_hash`, `original_filename`,
+    `file_size_bytes`, `imported_at`, `import_mode`, `status`, `created_at`,
+    `updated_at`; NULL — `error_code`, `docket_number_provenance`, `court_type`,
+    `county` (the provenance triple is null on docket-number no-match).
+  - `parsed.dockets`: NOT NULL — `id`, `source_document_id`, `docket_number`,
+    `record_parser_version`, `envelope_parser_version`, `parsed_at`, `county`
+    (record hardcodes "Philadelphia"), `defendant_hash` (always computed,
+    docket_parser.py:508), `envelope_status`, `review_needed`, `created_at`;
+    NULL — `court_type_recorded` (nullable per pin though detect_court_type
+    always returns a value), `court_type_derived` (21.3 populates),
+    `case_status`, `filed_date`, `otn`, `dc_number`, `cross_court_dockets`
+    (jsonb), `assigned_judge_raw`, `loaded_at` (21.3 populates). All the NULL
+    docket fields default to `None` in the parser (docket_parser.py:523-583,
+    972).
+  - `parsed.charges`: NOT NULL — `id`, `docket_id`, `sequence`, `created_at`;
+    NULL — `statute`, `grade`, `offense`, `disposition_raw`, `disposition_date`,
+    `disposition_judge_raw`, `event_name`, `event_date` (event_* are the
+    conditional held-charge keys, SD 12).
+  - `parsed.sentences`: NOT NULL — `id`, `charge_id`, `component_order` (load-
+    assigned list position), `sentence_type`, `min_assumed` (default false),
+    `raw_text`, `created_at`; NULL — `min_days`, `max_days`, `program`,
+    `sentence_date`. `raw_text` NOT NULL verified against the parser:
+    `raw_text_parts` always initializes to `[line_str]` (the non-empty
+    sentence-type line, docket_parser.py:926) and `raw_text = ", ".join(...)`
+    (:696) — no code path emits a sentence without `raw_text`, so the standing
+    NOT NULL decision holds with no parser finding.
+  - `parsed.warnings`: NOT NULL — `id`, `docket_id`, `code`, `created_at`;
+    NULL — `section`, `charge_sequence`, `page`, `field` (exactly the
+    make_warning optional structural fields, warning_codes.py:89-114).
+  - `parsed.related_cases`: NOT NULL — `id`, `docket_id`, `docket_number`,
+    `created_at`; NULL — `court`, `association_reason`.
+- **Files touched:** `db/migrations/20260711225105_create_raw_source_documents.ts`
+  (new), `db/migrations/20260711225106_create_parsed_tables.ts` (new),
+  `db/src/types.ts`, `db/tests/parsed-schema.test.ts` (new), `db/tsconfig.json`,
+  `db/README.md`, `tasks/worklog.md`.
+- **Deviations from plan:** (1) `assigned_judge_raw text null` ADDED to
+  `parsed.dockets` per human answer — confirmed spec gap; 23.1 judge
+  attribution + 22.3 roster curation need the docket-level assigned judge
+  alongside the charge-level disposition judge. (2) The always-empty record
+  `notes` field is INTENTIONALLY not stored (no producer) — recorded per human
+  instruction. (3) `created_at` added to ALL five parsed tables, not just
+  dockets: the descriptive Tables list showed it only on dockets, but pin 3
+  ("created_at ... only, NO updated_at") reads as authoritative over the shape
+  sketch and every immutable aggregate table carries `created_at` (6.2
+  precedent); flagged in the completion report rather than silently chosen.
+- **Notes for next task (21.3 loader):** absence → NULL/false is the loader's
+  job (SD 12): held-charge `event_name`/`event_date` and `min_assumed` are
+  ABSENT in JSON when inapplicable; map to NULL / false explicitly. `mode` →
+  `import_mode` and `file_size_bytes` mirror the 16.3 record names. `component_order`
+  is NOT in the record — assign it from the sentence list position at load.
+  `court_type_derived` and `loaded_at` are unpopulated (nullable) until the
+  loader fills them; `court_type_recorded` takes `case.court_type` as-is. Parsed
+  tables are `Immutable<>` — a docket reload is delete-and-reinsert (CASCADE
+  clears the tree), never an UPDATE/upsert. `cross_court_dockets` is jsonb.
