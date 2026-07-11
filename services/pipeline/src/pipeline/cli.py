@@ -309,6 +309,28 @@ def build_parser() -> argparse.ArgumentParser:
                     "flags and cannot be changed."
                 ),
             )
+            subparser.add_argument(
+                "--ledger-dir",
+                type=Path,
+                # Resolved here, at the CLI/run boundary — never at import.
+                default=Path.home() / "court-data" / "coverage",
+                help=(
+                    "Where the persistent miss ledger lives "
+                    "(miss-ledger-<court>-<year>.jsonl); created if needed and "
+                    "must be outside any git working tree. Default: "
+                    "~/court-data/coverage/."
+                ),
+            )
+            subparser.add_argument(
+                "--recheck-misses",
+                action="store_true",
+                help=(
+                    "Ignore the miss ledger for this run and re-attempt every "
+                    "docket number (confirmed misses are re-appended). Use to "
+                    "revalidate a year still in progress, where a prior miss "
+                    "may since have become a hit."
+                ),
+            )
         if name == "evaluate-extractors":
             subparser.add_argument(
                 "--fixtures-dir",
@@ -414,9 +436,11 @@ def main(argv: list[str] | None = None) -> int:
             max_minutes=args.max_minutes,
             intake_dir=args.intake_dir,
             report_dir=args.report_dir,
+            ledger_dir=args.ledger_dir,
             headless=args.headless,
             batch_size=args.batch_size,
             batch_cooldown_seconds=args.batch_cooldown_seconds,
+            recheck_misses=args.recheck_misses,
         )
     if args.command == "extract-text":
         return run_extraction(

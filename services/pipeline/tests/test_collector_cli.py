@@ -45,6 +45,8 @@ def test_collect_help_lists_flags(capsys):
         "--headless",
         "--batch-size",
         "--batch-cooldown-seconds",
+        "--ledger-dir",
+        "--recheck-misses",
     ):
         assert flag in out
 
@@ -61,6 +63,8 @@ def test_collect_defaults_parse():
     assert args.headless is False  # headful by default (FIX 3)
     assert args.batch_size == 40
     assert args.batch_cooldown_seconds == 240
+    assert args.ledger_dir.name == "coverage"
+    assert args.recheck_misses is False
 
 
 def test_collect_batch_flags_parse():
@@ -70,6 +74,15 @@ def test_collect_batch_flags_parse():
     )
     assert args.batch_size == 10
     assert args.batch_cooldown_seconds == 120
+
+
+def test_collect_ledger_flags_parse(tmp_path):
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        ["collect", "--ledger-dir", str(tmp_path / "cov"), "--recheck-misses"]
+    )
+    assert args.ledger_dir == tmp_path / "cov"
+    assert args.recheck_misses is True
 
 
 def test_collect_rejects_cooldown_below_floor(monkeypatch, capsys):

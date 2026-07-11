@@ -2503,3 +2503,53 @@ the record field there.
   - `.venv/bin/ruff format --check .` — 43 files already formatted.
   - `.venv/bin/python -m pytest -q` — 289 passed.
   - repo-root `pnpm format:check` — passed (MD/config touched).
+
+## Task COL-1b — Persistent miss ledger (skip confirmed misses on rerun)
+
+- **Date:** 2026-07-11
+- **Run-2 note:** run-20260711-045230 deliberately re-confirmed run-1-era misses
+  under the fixed fail-closed classifier. Those re-confirmations ARE valid ledger
+  seeds. This task does **not** backfill the ledger from old logs (run-1 fail-open
+  miss records must never seed it); the ledger populates naturally from
+  fail-closed runs going forward, starting with run 2's confirmed misses.
+- **Problem:** reruns re-attempted every previously-missed docket because
+  resumability keys on PDF existence and a miss writes no file. At the observed
+  ~40% miss rate in low MC-51-CR-2025 sequences, that wasted a large share of each
+  rerun's portal budget re-confirming known answers.
+- **What was built:**
+  - **Miss ledger** — append-only JSONL per court+year at
+    `<ledger-dir>/miss-ledger-<court>-<year>.jsonl`, `--ledger-dir` default
+    `~/court-data/coverage/` (under the data root, outside the intake PDF dir and
+    outside every git worktree — guard extended to cover it). One line per
+    confirmed miss: `docket_number`, `run_id`, `timestamp`, `classifier_note`
+    (`no_results`).
+  - **Append only on a fail-closed miss** (positively-identified no-results).
+    Blocks/hits/errors/skips never append.
+  - **`known_miss` outcome** — on rerun, a docket in the ledger is skipped: no
+    portal request, no per-request delay, no batch-boundary advance,
+    streak-neutral (mirrors `already_present`), but still an enumerated resolved
+    docket in counts and the coverage denominator.
+  - **`--recheck-misses`** ignores the ledger and re-attempts everything;
+    confirmed misses re-append (loader dedupes by docket number).
+  - **FIX 1 (loud skips):** `load_miss_ledger` counts skipped lines and logs a
+    WARNING with the count and ledger path when nonzero — a corrupted ledger
+    can't silently shrink the skip set and burn budget.
+  - **FIX 2 (court/year scoping):** the loader ignores entries whose docket
+    number is not this run's court+year (prefix `MC-51-CR-`, suffix `-<year>`),
+    folding them into the same skipped-line warning — a renamed/misdirected
+    ledger can't suppress attempts in a different run.
+- **Files touched:** `collector/engine.py` (ledger load/append, `known_miss`
+  outcome + counts, `CollectParams.ledger_dir`/`recheck_misses`, report params,
+  `validate_output_dirs` ledger arg), `collector/run.py` (plumbing + ledger dir
+  guard/mkdir + summary), `cli.py` (`--ledger-dir`, `--recheck-misses`),
+  `README.md` (ledger docs + current-year caveat), `tests/test_collector_engine.py`
+  and `tests/test_collector_cli.py` (ledger + flag tests).
+- **Deviations from plan:** none. Both approved loader fixes incorporated.
+- **Notes for next task:** the ledger is sound for CLOSED years; for a year still
+  accruing filings a miss can later become a hit, so `--recheck-misses` is the
+  revalidation path (documented in the README).
+- **Verification (all four gates green):**
+  - `.venv/bin/ruff check src tests` — All checks passed.
+  - `.venv/bin/ruff format --check .` — 44 files already formatted.
+  - `.venv/bin/python -m pytest -q` — 299 passed.
+  - repo-root `pnpm format:check` — passed (MD touched).
