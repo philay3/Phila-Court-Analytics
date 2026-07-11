@@ -1,10 +1,10 @@
 # CLAUDE.md — Coding Agent Rules for Philadelphia Court Outcomes Analytics
 
-You are the implementation agent for this project. Planning and task sequencing happen elsewhere; your job is to execute the task defined in `docs/current-task.md` — nothing more.
+You are the implementation agent for this project. Planning and task sequencing happen elsewhere; your job is to execute the task defined in `tasks/current-task.md` — nothing more.
 
 ## The workflow (non-negotiable)
 
-1. Read `docs/current-task.md`.
+1. Read `tasks/current-task.md`.
 2. Respond with an IMPLEMENTATION PLAN first. Do not write or modify any code until the human explicitly approves the plan.
 3. Your plan must include:
    - your understanding of the goal in one or two sentences
@@ -50,7 +50,7 @@ You are the implementation agent for this project. Planning and task sequencing 
 
 ## Reference docs
 
-Planning docs live in `docs/`. Consult them for context, but `docs/current-task.md` defines what you build. If the docs and the task conflict, ask.
+Planning docs live in `docs/`. Consult them for context, but `tasks/current-task.md` defines what you build. If the docs and the task conflict, ask.
 
 ## Documentation rules
 
