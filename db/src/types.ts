@@ -211,6 +211,114 @@ export interface ParsedRelatedCasesTable {
   created_at: Immutable<Date, Date | string | undefined>;
 }
 
+/**
+ * The fact layer (task 21.2): the Phase 23 fact builder's write target.
+ *
+ * `fact.fact_build_runs` is MUTABLE (status transitions during a build):
+ * `updated_at` is trigger-managed (`ColumnType<Date, never, never>`, 6.1
+ * precedent). `parser_version` and `envelope_parser_version` are `integer`,
+ * mirroring the 21.1 `parsed.dockets` column types exactly. `counts` is
+ * nullable `jsonb` (null while in_progress).
+ */
+export type FactBuildRunStatus = 'in_progress' | 'completed' | 'failed';
+
+export interface FactBuildRunsTable {
+  id: Generated<string>;
+  status: FactBuildRunStatus;
+  parser_version: number;
+  envelope_parser_version: number;
+  taxonomy_version: string;
+  roster_snapshot_note: string | null;
+  started_at: ColumnType<Date, Date | string, Date | string>;
+  completed_at: ColumnType<Date | null, Date | string | null, Date | string | null>;
+  counts: ColumnType<unknown | null, unknown | null, unknown | null>;
+  created_at: Generated<Date>;
+  updated_at: ColumnType<Date, never, never>;
+}
+
+/**
+ * `fact.charge_outcomes` and `fact.charge_sentences` are IMMUTABLE fact
+ * artifacts — every column uses `Immutable<>` (update position `never`),
+ * matching the analytics aggregate-row precedent. A rebuild is delete-and-
+ * reinsert under a new run, never an UPDATE. `normalized_charge_id` /
+ * `normalized_judge_id` / `disposition_date` are nullable (unmatched charge /
+ * judge and missing disposition date still produce ineligible facts).
+ * `ineligibility_reason_codes` is `text[]` with a `'{}'` default (insert
+ * optional). `amount_cents` is `bigint`, which the `pg` driver returns as a
+ * string.
+ */
+export interface ChargeOutcomesTable {
+  id: Immutable<string, string | undefined>;
+  build_run_id: Immutable<string>;
+  parsed_charge_id: Immutable<string>;
+  parsed_docket_id: Immutable<string>;
+  normalized_charge_id: Immutable<string | null>;
+  outcome_category_code: Immutable<string>;
+  disposition_date: Immutable<Date | null, Date | string | null>;
+  normalized_judge_id: Immutable<string | null>;
+  judge_attribution_method: Immutable<string | null>;
+  attribution_method: Immutable<string>;
+  charge_match_method: Immutable<string>;
+  outcome_match_method: Immutable<string>;
+  mvp_eligible: Immutable<boolean>;
+  public_eligible: Immutable<boolean>;
+  judge_specific_eligible: Immutable<boolean>;
+  ineligibility_reason_codes: Immutable<string[], string[] | undefined>;
+  review_needed: Immutable<boolean>;
+  taxonomy_version: Immutable<string>;
+  created_at: Immutable<Date, Date | string | undefined>;
+}
+
+export interface ChargeSentencesTable {
+  id: Immutable<string, string | undefined>;
+  build_run_id: Immutable<string>;
+  charge_outcome_id: Immutable<string>;
+  parsed_sentence_id: Immutable<string>;
+  normalized_charge_id: Immutable<string | null>;
+  sentencing_category_code: Immutable<string>;
+  sentence_date: Immutable<Date | null, Date | string | null>;
+  min_days: Immutable<number | null>;
+  max_days: Immutable<number | null>;
+  min_assumed: Immutable<boolean, boolean | undefined>;
+  amount_cents: Immutable<string | null, number | string | null>;
+  normalized_judge_id: Immutable<string | null>;
+  judge_attribution_method: Immutable<string | null>;
+  attribution_method: Immutable<string>;
+  component_match_method: Immutable<string>;
+  mvp_eligible: Immutable<boolean>;
+  public_eligible: Immutable<boolean>;
+  judge_specific_eligible: Immutable<boolean>;
+  ineligibility_reason_codes: Immutable<string[], string[] | undefined>;
+  review_needed: Immutable<boolean>;
+  taxonomy_version: Immutable<string>;
+  created_at: Immutable<Date, Date | string | undefined>;
+}
+
+/**
+ * The review queue (task 21.2): the deduplicated worklist Sprint 6 consumes.
+ * MUTABLE — Sprint 6 triage transitions `status` (default `open`, hence insert
+ * optional + update-writable); `updated_at` is trigger-managed. `raw_value`
+ * and `candidate_context` carry structural values only (never defendant-
+ * identifying data). `dedup_key` is the DB-unique idempotency key.
+ */
+export interface ReviewQueueItemsTable {
+  id: Generated<string>;
+  item_type: string;
+  severity: string;
+  source_document_id: string;
+  parsed_docket_id: string | null;
+  parsed_charge_id: string | null;
+  parsed_sentence_id: string | null;
+  entity_type: string | null;
+  raw_value: string | null;
+  candidate_context: ColumnType<unknown | null, unknown | null, unknown | null>;
+  reason_code: string;
+  status: ColumnType<string, string | undefined, string>;
+  dedup_key: string;
+  created_at: Generated<Date>;
+  updated_at: ColumnType<Date, never, never>;
+}
+
 export interface Database {
   'raw.source_documents': RawSourceDocumentsTable;
   'parsed.dockets': ParsedDocketsTable;
@@ -218,6 +326,10 @@ export interface Database {
   'parsed.sentences': ParsedSentencesTable;
   'parsed.warnings': ParsedWarningsTable;
   'parsed.related_cases': ParsedRelatedCasesTable;
+  'fact.fact_build_runs': FactBuildRunsTable;
+  'fact.charge_outcomes': ChargeOutcomesTable;
+  'fact.charge_sentences': ChargeSentencesTable;
+  'review.queue_items': ReviewQueueItemsTable;
   'ref.normalized_charges': NormalizedChargesTable;
   'ref.charge_aliases': ChargeAliasesTable;
   'ref.normalized_judges': NormalizedJudgesTable;

@@ -75,13 +75,25 @@ Example: `20260708030321_create_core_schemas.ts`
 
 Migration files, in execution (lexicographic) order:
 
-| File                                                   | What it creates                                                                                                                                                                   |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `20260708030321_create_core_schemas.ts`                | The eight core schemas.                                                                                                                                                           |
-| `20260708220303_create_ref_charge_and_judge_tables.ts` | `ref.*` charge/judge tables + `public.set_updated_at()`.                                                                                                                          |
-| `20260708223601_create_analytics_aggregate_tables.ts`  | `analytics.*` run + aggregate tables.                                                                                                                                             |
-| `20260711225105_create_raw_source_documents.ts`        | `raw.source_documents` (mutable; reuses the `set_updated_at` trigger).                                                                                                            |
-| `20260711225106_create_parsed_tables.ts`               | The `parsed.*` family (`dockets`, `charges`, `sentences`, `warnings`, `related_cases`) — immutable load artifacts; CASCADE within the family, RESTRICT to `raw.source_documents`. |
+| File                                                   | What it creates                                                                                                                                                                                                    |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `20260708030321_create_core_schemas.ts`                | The eight core schemas.                                                                                                                                                                                            |
+| `20260708220303_create_ref_charge_and_judge_tables.ts` | `ref.*` charge/judge tables + `public.set_updated_at()`.                                                                                                                                                           |
+| `20260708223601_create_analytics_aggregate_tables.ts`  | `analytics.*` run + aggregate tables.                                                                                                                                                                              |
+| `20260711225105_create_raw_source_documents.ts`        | `raw.source_documents` (mutable; reuses the `set_updated_at` trigger).                                                                                                                                             |
+| `20260711225106_create_parsed_tables.ts`               | The `parsed.*` family (`dockets`, `charges`, `sentences`, `warnings`, `related_cases`) — immutable load artifacts; CASCADE within the family, RESTRICT to `raw.source_documents`.                                  |
+| `20260711230001_create_fact_tables.ts`                 | `fact.fact_build_runs` (mutable; reuses `set_updated_at`) + `fact.charge_outcomes`, `fact.charge_sentences` (immutable facts). Per-run natural keys; CASCADE from the build run, RESTRICT into `parsed.*`/`ref.*`. |
+| `20260711230002_create_review_queue_items.ts`          | `review.queue_items` (mutable; reuses `set_updated_at`) — the deduplicated review worklist; `dedup_key` UNIQUE, RESTRICT to `raw.source_documents`, SET NULL to `parsed.*`.                                        |
+
+## Structural-only review columns
+
+`review.queue_items.raw_value` and `review.queue_items.candidate_context` carry
+**structural values only** — an unmapped statute code, a `sentence_type`, or a
+set of ambiguous-match candidate ids/slugs. They never carry raw docket text,
+docket numbers, or any defendant-identifying data. This is enforced by
+convention (the 22.1 review-item helpers) and documented as Postgres column
+comments in the creating migration; no defendant-identifying column exists or is
+invited anywhere in `fact.*` or `review.*`.
 
 ## Bookkeeping tables
 
