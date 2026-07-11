@@ -62,6 +62,26 @@ Example: `20260708030321_create_core_schemas.ts`
 - Names spell out the full column list, abbreviated only when that would
   exceed Postgres's 63-character identifier limit (e.g.
   `charge_outcome_aggregates_run_charge_category_key`).
+- Every foreign-key column is indexed (Postgres does not auto-index FKs), but
+  a `UNIQUE` constraint whose index _leads_ with the FK column already provides
+  that index — so no separate `*_idx` is created in that case. Examples from
+  21.1: `parsed.dockets.source_document_id` (its `_source_document_id_key`
+  unique index covers the FK) and `parsed.charges.docket_id` (leading column of
+  the `_docket_id_sequence_key` unique index) get no standalone FK index; only
+  FK columns _not_ fronted by a unique index do (e.g. `sentences_charge_id_idx`,
+  `warnings_docket_id_idx`, `related_cases_docket_id_idx`).
+
+## Migrations
+
+Migration files, in execution (lexicographic) order:
+
+| File                                                   | What it creates                                                                                                                                                                   |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `20260708030321_create_core_schemas.ts`                | The eight core schemas.                                                                                                                                                           |
+| `20260708220303_create_ref_charge_and_judge_tables.ts` | `ref.*` charge/judge tables + `public.set_updated_at()`.                                                                                                                          |
+| `20260708223601_create_analytics_aggregate_tables.ts`  | `analytics.*` run + aggregate tables.                                                                                                                                             |
+| `20260711225105_create_raw_source_documents.ts`        | `raw.source_documents` (mutable; reuses the `set_updated_at` trigger).                                                                                                            |
+| `20260711225106_create_parsed_tables.ts`               | The `parsed.*` family (`dockets`, `charges`, `sentences`, `warnings`, `related_cases`) — immutable load artifacts; CASCADE within the family, RESTRICT to `raw.source_documents`. |
 
 ## Bookkeeping tables
 
