@@ -143,7 +143,30 @@ describe.skipIf(!hasDb)('GET /charges/search against the seeded database', () =>
   }
 
   it('ranks exact above prefix above substring for q="theft"', async () => {
-    expect(await names({ q: 'theft' })).toEqual(['Theft', 'Theft of Services', 'Retail Theft']);
+    // Invariant, not a fixed list (the 22.2 roster seed grows the "theft" set):
+    // classify each returned display name by tier — 0 exact ("theft"), 1 prefix
+    // ("theft…"), 2 substring ("…theft…") — and assert the exact match is first,
+    // tiers are non-decreasing down the ranked list, and names are alphabetical
+    // within each tier. The temp rows supply the exact ("Theft") and a prefix
+    // ("Theft of Services"); the roster supplies prefixes ("Theft by …") and
+    // substrings ("Identity Theft", "Retail Theft"). Every current match has
+    // "theft" in the NAME, so name-tier tracks the repository's match_rank.
+    const tierOf = (name: string): number => {
+      const n = name.toLowerCase();
+      if (n === 'theft') return 0;
+      if (n.startsWith('theft')) return 1;
+      if (n.includes('theft')) return 2;
+      return 3; // alias/statute-only match (none in the current roster)
+    };
+    const results = await names({ q: 'theft' });
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]).toBe('Theft'); // the exact match ranks first
+    const tiers = results.map(tierOf);
+    expect(tiers).toEqual([...tiers].sort((a, b) => a - b)); // non-decreasing tier
+    for (const tier of new Set(tiers)) {
+      const inTier = results.filter((n) => tierOf(n) === tier);
+      expect(inTier).toEqual([...inTier].sort((a, b) => a.localeCompare(b))); // alpha within tier
+    }
   });
 
   it('returns the parent charge with matchedAlias for an alias match', async () => {
@@ -181,24 +204,41 @@ describe.skipIf(!hasDb)('GET /charges/search against the seeded database', () =>
 
   it('dedups a charge whose name and alias both match, without matchedAlias', async () => {
     // "assault" matches Simple Assault's display name AND its alias
-    // "assault (simple)" — one row, and the name match suppresses matchedAlias.
+    // "assault (simple)". The 22.2 roster adds other "assault" charges, so assert
+    // the invariant on the target row only (not the total count): it appears
+    // exactly once (no join fan-out), and the name match suppresses matchedAlias.
     const res = await search({ q: 'assault' });
     const { results } = res.json();
-    expect(results).toHaveLength(1);
-    expect(results[0].displayName).toBe('Simple Assault');
-    expect(results[0]).not.toHaveProperty('matchedAlias');
+    const target = results.filter((r: { slug: string }) => r.slug === 'simple-assault');
+    expect(target).toHaveLength(1);
+    expect(target[0].displayName).toBe('Simple Assault');
+    expect(target[0]).not.toHaveProperty('matchedAlias');
   });
 
   it('picks the alphabetically first alias when several match', async () => {
-    // "dr" matches both DUI aliases and Possession's "drug possession".
+    // Target: DUI: General Impairment, whose name has no "dr" (so matchedAlias is
+    // populated) and which has SEVERAL aliases matching "dr" ("driving under the
+    // influence", "drunk driving"). Derive the expected value from the DB rather
+    // than hardcoding it — order the charge's aliases by the same collation the
+    // repository's MIN(alias_text) uses — so roster growth cannot re-break this.
+    const targetSlug = 'dui-general-impairment';
+    const aliasRows = await setupDb
+      .selectFrom('ref.charge_aliases as a')
+      .innerJoin('ref.normalized_charges as c', 'c.id', 'a.normalized_charge_id')
+      .select('a.alias_text')
+      .where('c.slug', '=', targetSlug)
+      .orderBy('a.alias_text')
+      .execute();
+    const drAliases = aliasRows
+      .map((r) => r.alias_text)
+      .filter((alias) => alias.toLowerCase().includes('dr'));
+    expect(drAliases.length).toBeGreaterThan(1); // several aliases match "dr"
+
     const res = await search({ q: 'dr' });
     const { results } = res.json();
-    expect(results.map((r: { displayName: string }) => r.displayName)).toEqual([
-      'DUI: General Impairment',
-      'Possession of a Controlled Substance',
-    ]);
-    expect(results[0].matchedAlias).toBe('driving under the influence');
-    expect(results[1].matchedAlias).toBe('drug possession');
+    const target = results.find((r: { slug: string }) => r.slug === targetSlug);
+    expect(target, 'target charge missing from q="dr" results').toBeDefined();
+    expect(target.matchedAlias).toBe(drAliases[0]); // the alphabetically first
   });
 
   it('matches by statute code without populating matchedAlias', async () => {
