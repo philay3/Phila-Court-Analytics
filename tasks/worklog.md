@@ -4232,3 +4232,90 @@ the record field there.
   predicate). Replace-on-rebuild (delete-and-reinsert) is still deferred to 24.1 —
   each `build-facts` invocation appends a new run (there are now two completed runs
   in the corpus DB).
+
+## Task 23.4 — Review Item Generation + Dedup Wiring (2026-07-12)
+
+- **What was built:** wired every Phase 22–23 normalization + attribution review
+  path into `review.queue_items`, in the SAME `build-facts` pass, with DB-enforced
+  dedup that is idempotent and STATUS-PRESERVING across rebuilds. Before 23.4 the
+  build recorded `review_needed` on facts but wrote ZERO queue rows (deferred by
+  design). 23.4 ROUTES existing signals — no new signals invented.
+- **Seam (R2):** review items are built where the results already live in memory —
+  `_collect_outcome_rows` (charge / disposition-judge / assigned-judge / outcome /
+  23.1 ambiguous-attribution descriptor) and `_collect_sentence_rows` (22.5
+  component items + duration + additive) — plus one read-only `parsed.warnings` scan
+  (`_collect_warning_review_items`) for the two envelope-warning types. All 22.x /
+  23.1 / 23.2 / 23.3 module BODIES consumed UNCHANGED; only the `build_facts.py`
+  orchestrator (the plan-named integration path) was edited.
+- **Helpers (R3):** consumed the shipped 22.1 `build_review_item` and the per-domain
+  wrappers `build_charge_review_item` / `build_judge_review_item` (roles
+  assigned+disposition) / `build_outcome_review_item` / `build_sentencing_review_items`
+  / `build_duration_review_item` unchanged. The two envelope-warning types call the
+  canonical `build_review_item` directly (no wrapper exists for them).
+- **Vocabulary (plan-approved, the ONLY change):** added exactly ONE member,
+  `additive_sentencing_category`, to `REVIEW_ITEM_TYPES` in `fact_review_vocab.py`.
+  Its reason (`review_needed`) and severity (`low`) reuse EXISTING vocab members.
+  Emission guard: emit only when `len(result.categories) > 1` AND
+  `build_sentencing_review_items` produced no item for that component — never
+  double-flags a money/ambiguous multi-category component. 23.4 alters NO fact flag
+  (23.3 still owns the fact's `review_needed`).
+- **Envelope-warning items (R4), existing vocab:** `MISSING_DISPOSITION_DATE` →
+  `missing_disposition_date` / `disposition_date_missing` / medium; `SENTINEL_COLLISION`
+  → `sentinel_collision` / `judge_not_normalized` / medium. Confirmed
+  `MISSING_DISPOSITION_DATE` fires ONLY for a disposed charge with a null date
+  (`envelope.py:146` guards on `disposition_raw is not None`), so held / event-key
+  charges structurally never flood the queue — no exclusion needed. `SENTINEL_COLLISION`
+  is emitted at TWO grains (docket-grain CASE INFORMATION with null `charge_sequence`,
+  charge-grain DISPOSITION); the scan LEFT-JOINs charges and routes both — the
+  docket-grain case uses an EMPTY locator, so its count tracks the LOADED tally (17),
+  not the recovered-5 subset.
+- **Dedup + status preservation (R5, AC2):** `insert_review_items` collapses payloads
+  in memory by `dedup_key`, then inserts each with `ON CONFLICT (dedup_key) DO NOTHING`
+  against the shipped 21.2 unique constraint. Items are NOT run-scoped (SD 6): no
+  build-run id is stored on them. A pre-existing item is left untouched INCLUDING its
+  `status` (the no-op insert fires no UPDATE, so the `set_updated_at` trigger never
+  runs — proven: `updated_at` unchanged on re-run).
+- **Run report (AC3):** `_print_summary` gains a hygiene-clean `--- review items ---`
+  block — item TYPES + `generated / newly_inserted` counts only (no raw values, no
+  docket numbers); `counts["review_items"]` (generated + newly_inserted, each by type)
+  is persisted on the `fact_build_runs` row.
+- **Corpus acceptance run (verbatim, hygiene-clean, real `pca` corpus):**
+    - FIRST run — `review_items generated=710 newly_inserted=710`, by type:
+      additive_sentencing_category 26 / ambiguous_charge 1 /
+      ambiguous_sentencing_component 5 / duration_unparseable 280 /
+      missing_disposition_date 211 / money_unparseable 7 / sentinel_collision 17 /
+      unmapped_charge 156 / unmapped_disposition 7.
+    - SECOND identical run — `generated=710 newly_inserted=0` (every type 0 newly
+      inserted); queue total unchanged at 710; a status mutated to `resolved` between
+      runs SURVIVED (by_status open 709 / resolved 1 post-rerun); reverted to leave
+      the queue faithful (710 open).
+  - Reconciliation vs the 23.3 signal baselines (item ≤ signal; dedup-collapse):
+    charge_not_normalized 157 = unmapped_charge 156 + ambiguous_charge 1 ✓;
+    disposition_not_mapped 7 = 7 ✓; sentencing_component_not_normalized 5 =
+    ambiguous_sentencing_component 5 (all 5 were bare-hours ambiguous;
+    unmapped_sentencing_component 0 — signal fully surfaced) ✓; money_amount_unparseable
+    7 = 7 ✓; duration 280 = 280 ✓ (predicate_all=280, exact); missing_disposition_date
+    211 = 211 ✓; sentinel_collision 17 (LOADED tally) = 17 ✓; additive 33 → 26 items +
+    7 SUPPRESSED (read-only replay confirmed 26 additive + 7 suppressed == 33 multi,
+    all 7 suppressed = money_unparseable, i.e. restitution-additive components already
+    surfaced via money_unparseable — NO silent loss, the approved anti-double-flag
+    guard). No item type is zero where its 23.3 signal exists → no stop-and-report.
+- **Files touched:** `services/pipeline/src/pipeline/fact_review_vocab.py` (one
+  approved type member), `services/pipeline/src/pipeline/facts/build_facts.py`
+  (review-item wiring + `insert_review_items` + `_collect_warning_review_items` +
+  report block; extended `_load_all_sentences` with docket/sequence/source ids),
+  `services/pipeline/tests/test_review_item_wiring.py` (new tier-1 DB suite covering
+  all 13 types + idempotency + status preservation), `services/pipeline/tests/
+  test_fact_review_vocab.py` (13-member assertion), `services/pipeline/tests/
+  test_facts_build_facts.py` (the now-obsolete `queue == 0` assertion updated to the
+  4 items that seed produces), `tasks/worklog.md`. NO migrations, seeds, TS/web, or
+  22.x/23.1/23.2/23.3 module-body edits.
+- **Deviations:** none from the approved plan. During test authoring found the judge
+  roster loader forbids two identities sharing a canonical name key, so judge
+  ambiguity in the fixture is triggered via middle-name tolerance (a middle-less raw
+  value matching two identities that differ only by middle) rather than duplicate
+  display names — a fixture detail, no source-code impact.
+- **Notes for 23.5 / 24.1:** the review queue is now populated (710 items on the
+  canonical corpus, all `open`). Fact-build idempotency (delete-and-reinsert of
+  facts) remains 24.1's job — 23.4 touched only review-queue idempotency; each
+  `build-facts` still appends a new run.
