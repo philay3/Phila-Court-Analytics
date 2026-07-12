@@ -3863,3 +3863,63 @@ the record field there.
   spans tables in one report. `judge_coverage.py` counts nulls as a DISTINCT
   absent class from unmatched. Christopher Hall is in the roster pending Chops
   confirmation (keep unless told to hold).
+
+## Task 22.4 — Outcome Mapping (Disposition → Taxonomy) (2026-07-12)
+
+- **Date:** 2026-07-12
+- **What was built:** The disposition→outcome-code mapping layer. A pure,
+  DB-free `OutcomeMapper` (`services/pipeline/src/pipeline/normalization/outcome_mapper.py`)
+  maps `parsed.charges.disposition_raw` to a public outcome taxonomy code via a
+  corpus-evidenced EXACT-match table (`DISPOSITION_OUTCOME_MAP`, 19 keys → 7
+  codes). Three arms: (a) **held carve-out** — `disposition_raw IS NULL` →
+  `map()` returns `None`, NO fact and NO review item (the 18.1 terminality
+  predicate `_charge_has_disposition` replicated verbatim as
+  `charge_has_terminal_disposition`/`is_held_charge`, not imported — it is
+  module-private in envelope); (b) **mapped** → the table's code, `public_eligible`
+  per taxonomy, no review; (c) **unmapped** — a terminal value absent from the
+  table → code `unknown` + one `disposition_not_mapped` review item (medium),
+  never public-eligible. Purpose-built `OutcomeMappingResult` carries
+  `taxonomy_version` (read from taxonomy.json, stamped on every result) and the
+  unmapped→unknown+review state — 22.1's frozen `OutcomeNormalizationResult`
+  can carry neither and is read-only (approved Q2). Review items go through the
+  canonical 22.1 `build_review_item` only (`build_outcome_review_item`). A thin
+  `load_taxonomy_snapshot()` reads the generated taxonomy.json at the boundary;
+  the mapper is pure over the injected `TaxonomySnapshot`. New AC-8 acceptance-
+  authority tool `reports/outcome_coverage.py` (mirrors judge_coverage.py) runs
+  the mapper over the corpus and reports the mapped/unmapped/held split; CI-
+  guarded, `DATABASE_URL` at the boundary only, console counts/codes/version only
+  (raw values → report file). `disposition_not_mapped` added to
+  `ELIGIBILITY_REASON_CODES` (13→14).
+- **Corpus rerun (acceptance authority) — reproduced the approved split exactly:**
+  total 3625 rows; held (null) 463 / no fact, no review; mapped 3155 / 19 distinct
+  (guilty_plea 2315, guilty_verdict 467, dismissed 226, ard 65, other 61,
+  acquittal 17, withdrawn 4); unmapped→unknown 7 rows / 6 distinct. The 7 unmapped
+  rows are exactly the 6 malformed/garbage captures approved at the gate.
+- **Full reason_code set (14) after the additive change:** disposition_date_missing,
+  disposition_date_before_mvp_window, sentence_date_missing,
+  sentence_date_before_mvp_window, charge_not_normalized, judge_not_normalized,
+  disposition_not_mapped, outcome_category_not_public, sentencing_category_not_public,
+  sentencing_component_not_normalized, review_needed, blocking_warning,
+  judge_not_attributed, parent_outcome_ineligible.
+- **AC-5 hygiene:** the table carries only the full "Transferred to Another
+  Jurisdiction"; the truncated "Transferred to Another" key is absent (the 18.2
+  Class E repair, 16 rows, rewrites it before mapping) — asserted by test.
+- **Files touched:** `services/pipeline/src/pipeline/normalization/outcome_mapper.py`
+  (new), `services/pipeline/src/pipeline/reports/outcome_coverage.py` (new),
+  `services/pipeline/tests/test_outcome_mapper.py` (new),
+  `services/pipeline/src/pipeline/fact_review_vocab.py` (add
+  `disposition_not_mapped`, 13→14), `services/pipeline/tests/test_fact_review_vocab.py`
+  (13→14 guard — trivially necessary accompanying change to the vocab's own test),
+  `tasks/worklog.md`.
+- **Deviations from the approved plan:** none. Two pre-code STOP reports (entrypoint
+  + held-predicate) were withdrawn by planning ("you had it right"); implemented the
+  original approach — `python -m pipeline.reports.*` entrypoint, envelope 18.1 held
+  predicate replicated verbatim, no fix-3 reconciliation.
+- **Notes for next task (22.5 / Phase 23):** "Dismissed - Rule 600 (Speedy" is a
+  known UNREPAIRED mid-phrase parser truncation of "…(Speedy Trial)", mapped
+  verbatim to `dismissed` here; the durable fix is a parser truncated-disposition
+  repair-table entry (same class as the 18.2 Transferred repair) — a future
+  parser-repair candidate, out of scope for 22.4. The held carve-out is at the
+  disposition-value grain (`disposition_raw IS NULL`); Phase 23 owns reconciling
+  map results to `fact.*` persistence and the eligibility reason codes. 22.5 owns
+  sentencing mapping + money extraction.
