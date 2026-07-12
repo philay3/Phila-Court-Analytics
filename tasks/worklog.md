@@ -3923,3 +3923,83 @@ the record field there.
   disposition-value grain (`disposition_raw IS NULL`); Phase 23 owns reconciling
   map results to `fact.*` persistence and the eligibility reason codes. 22.5 owns
   sentencing mapping + money extraction.
+
+## Task 22.5 — Sentencing Mapping + Money Extraction (2026-07-12)
+
+- **Date:** 2026-07-12
+- **What was built:** The sentence-component→sentencing-category mapping layer plus
+  the first real consumer of the 22.1 money model. Three new pure, DB-free modules:
+  - `normalization/money_extractor.py` — `extract_amount(raw_text)` → 22.1
+    `MoneyExtractionResult`. LOCKED `$`-REQUIRED regex `MONEY_TOKEN` (the ONE
+    money-regex definition project-wide). Four-branch triage (option b): no `$` →
+    amount unset, NO warning (legitimate absence); `$` present but 0 parseable →
+    unset + `NORM_UNPARSEABLE_AMOUNT`; exactly one DISTINCT amount → set; ≥2 distinct
+    → unset + `NORM_UNPARSEABLE_AMOUNT`. Distinct-by-value (same amount twice → one →
+    SET); never sum, never max; integer cents only.
+  - `normalization/sentencing_mapper.py` — `SentencingMapper.map(sentence_type,
+    raw_text)` → purpose-built `SentencingComponentResult` (mirrors 22.4:
+    `taxonomy_version` on every result; 22.1's frozen `SentencingNormalizationResult`
+    is roster-shaped and unused, read-only). Base `SENTENCE_TYPE_CATEGORY_MAP`
+    (verbatim `dict.get`, no fuzzy): Confinement→incarceration, Probation→probation,
+    No Further Penalty→no_further_penalty, ARD→other, Fines and Costs→costs_fees,
+    IPP→other (unreachable-but-kept, 0 corpus rows); absent → `unknown` +
+    `unmapped_sentencing_component` review (`unknown` non-public, enforced at
+    construction). Additive detection on `raw_text` (append, NEVER collapse):
+    `\bRestitution\b` → +restitution; literal `\bCommunity Service\b` →
+    +community_service; bare `\b\d+\s*hours?\b` alone → `ambiguous_sentencing_component`
+    review, no silent add (conservative false-negative bias). Money runs only on a
+    component carrying a monetary category (costs_fees base or restitution additive).
+    `build_sentencing_review_items` (0+ items) + `build_duration_review_item` (helper
+    only; caller passes the warning — the mapper never scans the envelope, so
+    "durations consumed as parsed" holds; Phase 23 wires UNPARSEABLE_DURATION → this
+    helper over the corpus). Locator `(charge_sequence, component_order)`;
+    `parsed_sentence_id` payload-only, never in the dedup key.
+  - `reports/sentencing_coverage.py` — recon (Part A, map-independent) + coverage
+    (Part B, AC-8 authority) modes; `running_in_ci` guard, `DATABASE_URL` at the
+    boundary only, console = counts + `sentence_type` vocab/codes only. Single-sources
+    the money regex from `money_extractor` (keeps only the duration-contaminated
+    candidate diagnostic locally).
+  - `fact_review_vocab.py` — `money_amount_unparseable` + `sentence_duration_unparseable`
+    added to `ELIGIBILITY_REASON_CODES` (14→16).
+- **Part A recon finding (drove the gate):** the candidate `$`-OPTIONAL money regex
+  was duration-contaminated — of components with a `.NN` decimal, ~all were duration
+  figures ("11.00 months"; Probation 1811/1813, Confinement 1396/1397, ARD 98/100
+  duration-adjacent), only ~5 corpus-wide were not. Gate LOCKED `$`-required. `Fines
+  and Costs` (13/13) carry no discrete fine → `costs_fees`, no `fine` category.
+- **Corpus rerun (coverage mode, acceptance authority) — reproduced the locked split
+  EXACTLY:** total 4162 components. Base: probation 2059, incarceration 1550,
+  no_further_penalty 440, other 100 (ARD; IPP 0), costs_fees 13, unmapped→unknown 0.
+  Additive: +restitution 24, +community_service 9, ambiguous-CS→review 5. Money
+  (monetary subset 37; `$`-required, rule b): amount SET 12, absent/no-item 18,
+  money_unparseable (≥2 distinct) 7. Review items: unmapped 0, ambiguous 5, money 7.
+  No deviation, no unattributable result.
+- **Full reason_code set (16) after the additive change:** disposition_date_missing,
+  disposition_date_before_mvp_window, sentence_date_missing,
+  sentence_date_before_mvp_window, charge_not_normalized, judge_not_normalized,
+  disposition_not_mapped, outcome_category_not_public, sentencing_category_not_public,
+  sentencing_component_not_normalized, review_needed, blocking_warning,
+  judge_not_attributed, parent_outcome_ineligible, money_amount_unparseable,
+  sentence_duration_unparseable. 22.1–22.4 tests confirmed green after the additive
+  change (test_fact_review_vocab bumped 14→16).
+- **Files touched:** `services/pipeline/src/pipeline/normalization/money_extractor.py`
+  (new), `services/pipeline/src/pipeline/normalization/sentencing_mapper.py` (new),
+  `services/pipeline/src/pipeline/reports/sentencing_coverage.py` (new),
+  `services/pipeline/src/pipeline/fact_review_vocab.py` (add 2 reason codes, 14→16),
+  `services/pipeline/tests/test_money_extractor.py` (new),
+  `services/pipeline/tests/test_sentencing_mapper.py` (new),
+  `services/pipeline/tests/test_reports_sentencing_coverage.py` (new),
+  `services/pipeline/tests/test_fact_review_vocab.py` (14→16 guard — trivially
+  necessary accompanying change to the vocab's own test), `tasks/worklog.md`.
+- **Deviations from the approved plan/gate:** none. Built against the locked
+  artifacts exactly; recon-driven `$`-required regex and money triage (b) were the
+  gate's locked decisions, not deviations.
+- **Notes for next task (Phase 23 / fact build):** the money regex `$`-required
+  `alt3` (`\$\d+`) is a fallback that would parse a malformed `$1,2` as `$1`
+  (100 cents) — no such input in the corpus, noted for safety. `fine` taxonomy code
+  is defined but intentionally UNPOPULATED (recon: corpus has no discrete fine).
+  Money is a component-level reading (one amount per component, not allocated across
+  multiple monetary categories). Phase 23 owns: `fact.*` persistence of categories +
+  amount_cents, and wiring the parser UNPARSEABLE_DURATION warning →
+  `build_duration_review_item` over the corpus (helper + reason code land here; the
+  mapper never re-parses durations). Closes Phase 22 — its commit + the phase-close
+  PR (phase-22 → main) close the phase.
