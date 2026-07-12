@@ -3690,3 +3690,86 @@ the record field there.
   `*NormalizationResult` subclasses, omit `review_needed` (let it derive), and
   emit review items ONLY via `build_review_item`. Warning-vocabulary or
   match-method additions require plan-level approval before use.
+
+## Task 22.2 — Charge Roster + Charge Normalization (2026-07-12)
+
+- **What was built:** the real charge roster (committed seed, public-statute
+  sourced) plus the pure `ChargeMatcher` that normalizes
+  `parsed.charges.statute`/`offense` against a roster snapshot and emits 22.1
+  `ChargeNormalizationResult` objects + `build_review_item` review items for
+  unmatched/ambiguous values. Committed, repeatable corpus-reporting tooling
+  (distinct-value + coverage) accompanies it.
+- **Approved coverage floor: N = 5** (roster gate). 95 distinct statutes appear
+  ≥5× in the loaded corpus (94.5% of charges). Floor is binding and met.
+- **Modules (all new):**
+  - `services/pipeline/src/pipeline/normalization/charge_matcher.py` — pure, NO
+    psycopg. Two canonicalization functions (`canonicalize_text`,
+    `canonicalize_statute`), `RosterEntry`/`RosterSnapshot`, `ChargeMatcher.match`
+    (seven arms, precedence exact→alias→statute w/ conflict detection, never
+    emits `pattern`), and `build_charge_review_item` (delegates to 22.1
+    `build_review_item`; locator `(str(charge_sequence),)`).
+  - `services/pipeline/src/pipeline/normalization/charge_roster_loader.py` — thin
+    DB loader over `ref.normalized_charges`+`ref.charge_aliases` via the 21.3 DB
+    module; refuses in CI (`running_in_ci` guard).
+  - `services/pipeline/src/pipeline/reports/{__init__,distinct_values,charge_coverage}.py`
+    — committed tooling (Required Fix 1): field-parameterized distinct-value
+    report (22.3 reuses for judge fields), and the coverage run. Both refuse in
+    CI, read `DATABASE_URL` at the boundary only, keep console to counts/methods/
+    statute-cites (never offense free-text; full detail only to
+    `~/court-data/reports/`), and embed no corpus-derived data.
+  - `db/seeds/charge-roster-data.ts` (data + `DEMO_ALIAS_ADDITIONS`),
+    `db/seeds/charge-roster.ts` (idempotent upsert + fail-loud slug-collision
+    assertion + additive demo-alias upsert), wired into `db/seeds/run.ts`.
+  - Tests: `services/pipeline/tests/{test_charge_matcher,test_charge_roster_loader,test_reports_distinct_values}.py`
+    and `db/seeds/charge-roster.test.ts`.
+- **Statute canonicalization rule:** upper-case, keep only `[A-Z0-9.-]` — folds
+  `§`/`§§`, subsection parens (`(a)(1)`↔`§§ A1`), spaces, and CPCMS decorations;
+  preserves dots/hyphens (section identity).
+- **Required Fix 3 — the `*` finding (RECORDED):** trailing asterisk(s) on
+  Title 75 § 3802 DUI subsections (`§§ A1*`, `§§ D2***`) are dropped by
+  `canonicalize_statute`. Determination: in CPCMS DUI dockets the asterisk marks
+  the DUI **grading/sentencing tier** (prior-offense count / BAC level), NOT a
+  distinct statutory offense — § 3802(a)(1) is one offense regardless of tier.
+  The drop therefore collapses `A1*`→`A1` at correct offense-identity granularity
+  and never merges different subsections (`D1`/`D2` stay distinct). Documented at
+  the canonicalization site; if evidence emerges that `*` distinguishes offenses,
+  that is a STOP report.
+- **Titles reading (roster gate Decision 1):** pinned decision 6 named "Titles
+  18/35/75" as the expected PRIMARY sources, not an exclusivity rule. The binding
+  ≥5× floor also requires `23 § 6114(a)` (PFA contempt) and `62 § 1407(a)(1)`
+  (Medical Assistance provider fraud); both are public Pa. C.S. and are included.
+- **Demo-alias decision (roster gate Decision 4):** "demo rows untouched" means
+  the `ref.normalized_charges` demo ROWS are never modified; ADDITIVE
+  `ref.charge_aliases` rows FK'd to demo slugs are permitted and directed
+  (consistent with the Sprint 7 promotion standing decision). `DEMO_ALIAS_ADDITIONS`
+  attaches standardized-CPCMS descriptions to the demo `possession-controlled-
+  substance` row ("Int Poss Contr Subst By Per Not Reg") and the demo
+  `retail-theft` row ("Retail Theft-Take Mdse"). This resolved the bare-
+  `35 § 780-113` possession class (28 charges: unmatched → clean alias) and let
+  the retail-theft `[stmt-only]` workaround entry be removed (retail identity
+  absorbed by the demo row). Only ref.charge_aliases is written; demo seed
+  modules stay untouched; the alias upsert is idempotent (DO NOTHING).
+- **Coexistence (SD 8):** no roster row duplicates a demo canonical statute code
+  (TS + Python tests). The 4 remaining ambiguous pairs (10 charges) are demo-
+  bare-code vs real-subsection `NORM_STATUTE_TEXT_CONFLICT`s on `18 § 3503` and
+  `18 § 2709` — kept as review items per Decision 2 (correct conflict-arm
+  behavior, not noise).
+- **Alias sourcing basis (Decision 3):** every alias is public statute phrasing
+  or a standardized CPCMS charge-description string (the Commonwealth's own charge
+  dictionary, verifiable against public UJS references); never free text or
+  docket-specific content. Header comment states this.
+- **Final coverage headline (verbatim):** roster_entries=78, total_charges=3625,
+  distinct pairs=314. Match-method (distinct/charges): exact 36/1033, alias
+  74/2068, statute 71/328, ambiguous 4/10, unmatched 129/186, pattern 0/0.
+  ≥5× floor: 95 statutes, covered=95, uncovered=0. Clean-match rate **94.6%**
+  (3429/3625). Reports in `~/court-data/reports/` (never committed).
+- **Deviations from plan:** N=5 (not the plan's recommended 10); demo rows gained
+  additive aliases and the retail `[stmt-only]` entry was removed (Decision 4) —
+  all directed at the roster gate. No other deviations.
+- **Notes for next task (22.3):** the distinct-value tool is field-parameterized
+  (`--table/--column`) — reuse it for the judge fields. The charge matcher's
+  canonicalization + precedence pattern is the template; judge matcher returns
+  `JudgeNormalizationResult` and emits items via `build_review_item`. Sprint 7
+  sweep is fake judges + seeded aggregates ONLY; demo charge rows are PROMOTED to
+  roster membership, never deleted (they are load-bearing here and Phase 23 facts
+  FK to them).
