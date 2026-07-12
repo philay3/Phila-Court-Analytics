@@ -267,11 +267,76 @@ the baseline run, alongside the batch/cooldown/N values:
   unverified against the live portal and must be confirmed on the next headful
   run.
 
+## load (envelopes → database, Task 21.3)
+
+Loads per-docket envelope artifacts into the 21.1 `raw.source_documents` +
+`parsed.*` tables. The schema is FROZEN; the loader never alters it.
+
+```sh
+# DATABASE_URL is read at the CLI boundary only — never auto-loaded from .env.
+set -a; . ../../.env; set +a          # from services/pipeline
+uv run pipeline load \
+  --envelopes-dir ~/court-data/envelopes-<timestamp> \
+  --import-metadata-dir ~/court-data/imports
+```
+
+- **DB access** is psycopg 3 (sync), pinned exact; `src/pipeline/db.py` owns
+  connection construction only. A missing/empty `DATABASE_URL` is a hard
+  failure. `load` refuses to run in a CI environment (real loads are local
+  only; CI runs the synthetic loader tests against its own Postgres service).
+- **Load unit:** one docket, one transaction (raw upsert + full parsed graph
+  commit or roll back together). Per-docket exception isolation: one bad
+  envelope is counted and the run continues.
+- **Idempotency** (identity = source file hash; version =
+  `(envelope_parser_version, record_parser_version)` tuple): same version →
+  skip after a content re-check (zero writes); newer → transactional replace
+  (delete docket row, CASCADE clears children, reinsert); older → refuse
+  (never downgrade); same version but different content → per-docket failure
+  and stop-and-report (never overwrite).
+- **Accepted envelope versions:** `{5}`, read from each envelope; anything
+  else is a per-docket failure (never a guess).
+- **Run-report categories (seven; totals reconcile to the envelope count):**
+  `loaded`, `skipped_same_version`, `replaced_newer_version`,
+  `refused_older_version`, `failed_envelope_loaded`, `failed_exception`,
+  `missing_import_record`. A nonzero `failed_exception` or
+  `missing_import_record` makes the run exit nonzero (fail-loud).
+- **Failed-parse envelopes** (no record): the loader writes NO `parsed.*`
+  rows — fabricating NOT-NULL record values (`defendant_hash` especially)
+  would be dishonest data. It upserts only the `raw.source_documents` row with
+  status `parse_failed` (a load-time parse-outcome value owned by the loader,
+  distinct from the 16.3 import-status vocabulary) and the envelope's error
+  code. Review visibility comes from the raw row; exclusion from fact
+  generation is structural (no parsed rows).
+- **Missing 16.3 import record:** the loader never synthesizes a raw row from
+  envelope fields — a missing record means the provenance chain is broken, so
+  the envelope is a per-docket failure with NO rows written. There are **no
+  sentinel/"unknown" column values anywhere in the loader.** Recovery: re-run
+  the idempotent `import-manual` over the source PDF (it regenerates the
+  hash-keyed record), then reload.
+- **`court_type_recorded`** is the record's court-type value as-is. Note it is
+  itself derivation-sourced (`detect_court_type()` on the docket number), not
+  an independently captured banner value — so it is populated for every
+  docket, not near-empty. **`court_type_derived`** is the CP/MC docket-number
+  prefix; any other prefix → NULL plus a logged (not stored) warning, since
+  the parsed-warning vocabulary is closed.
+- **Intentional non-loads** (no target columns; listed, never silently
+  dropped): `record.notes` (always empty), and the envelope's
+  `extraction_artifact.text_hash` / `extraction_artifact.provenance_path`
+  (the `artifact_id` equals the source hash, which IS stored as `file_hash`).
+  `cross_court_dockets` (a string or null) is stored in the jsonb column as a
+  JSON scalar (`Json()` wrap; null → NULL).
+
 ## Tests
 
 ```sh
 uv run pytest
 ```
+
+The loader suite (`tests/test_load.py`) needs a real Postgres with the repo
+migrations applied. Locally: `pnpm db:up && pnpm db:migrate:latest`, then run
+with `DATABASE_URL` set. With `DATABASE_URL` unset it SKIPS locally (visible
+skip count) but HARD-FAILS in CI — a dropped DB env is a wiring regression,
+never a silent skip.
 
 Tests use tiny synthetic PDFs generated at test time — no real dockets ever
 appear in the test suite, and a test asserts that run logs contain neither

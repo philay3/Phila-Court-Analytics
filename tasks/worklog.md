@@ -3338,3 +3338,86 @@ the record field there.
   charge/sentence per build run" guarantee — the 23.2/23.3 builders reinsert via
   the build-run FK CASCADE, never `ON CONFLICT DO UPDATE` (fact rows are
   `Immutable<>`). `counts` is nullable jsonb (null while `in_progress`).
+
+## Task 21.3 — Python DB Access + `pipeline load` + Canonical Corpus Load (2026-07-11)
+
+- **What was built:** psycopg 3 (sync) DB access for the pipeline and the
+  `pipeline load` command, which reads per-docket envelope artifacts and writes
+  them into the frozen 21.1 `raw.source_documents` + `parsed.*` tables. Executed
+  the first canonical corpus load (all 1,603 envelopes) end-to-end against the
+  local DB and reconciled it against the known warning tallies.
+- **DB module (`db.py`):** owns connection construction only — no pool, no ORM.
+  `DATABASE_URL` is read at the CLI boundary (`cli.py`) and passed in; the module
+  never reads the environment and never auto-loads `.env`. Empty URL is a hard
+  failure. psycopg pinned EXACT: `psycopg[binary]==3.3.4` (`[binary]` ships libpq
+  so CI/local need no system libpq).
+- **Loader (`load.py`):** one docket = one transaction (raw upsert + full parsed
+  graph commit/roll back together); per-docket exception isolation. Idempotency
+  keyed on source file hash + `(envelope_parser_version, record_parser_version)`
+  tuple: same→skip after a re-SELECT canonical content re-check (zero writes),
+  newer→transactional replace (DELETE docket row, CASCADE clears children,
+  reinsert + UPDATE raw), older→refuse, equal-version-but-different-content→
+  per-docket failure + stop-and-report. Accepted envelope version set = `{5}`
+  (read from each envelope; anything else = per-docket failure). `component_order`
+  = sentence list index; `min_assumed` absent→false; `event_name/event_date`
+  absent→NULL; `cross_court_dockets` (str|null) → jsonb scalar via `Json()`.
+- **Rulings applied (this task's plan review):**
+  - **Q1** — failed-parse envelopes create NO `parsed.*` rows (fabricating
+    NOT-NULL `defendant_hash` etc. is dishonest data). They upsert only the raw
+    row with loader status `parse_failed` and the envelope's error code; review
+    visibility is via `raw.source_documents`, fact exclusion is structural.
+  - **Q1/Fix 1** — the minimal-row arm was DELETED: the loader never synthesizes
+    a raw row from envelope fields. A missing 16.3 import record = broken
+    provenance = per-docket failure with NO rows (recovery: re-run idempotent
+    `import-manual`). There are NO sentinel/"unknown" column values anywhere in
+    the loader.
+  - **Q2** — `court_type_recorded` ← `record.case.court_type` AS-IS. Note it is
+    itself derivation-sourced (`detect_court_type()` on the docket number), NOT
+    an independently captured banner value — so it is populated for every docket
+    (1,603), not near-empty; AC 8e amended to report actuals.
+  - **Fix 2** — the loader test suite HARD-FAILS in CI when `DATABASE_URL` is
+    unset (a wiring regression), and SKIPS locally with a visible skip count.
+  - **Fix 3** — seven run-report categories, reconciling to the envelope count:
+    `loaded / skipped_same_version / replaced_newer_version /
+    refused_older_version / failed_envelope_loaded / failed_exception /
+    missing_import_record`. Nonzero `failed_exception` or `missing_import_record`
+    → nonzero exit (fail-loud).
+  - Intentional non-loads (no target columns; listed in the README note, never
+    silent): `record.notes`, and `extraction_artifact.text_hash`/
+    `provenance_path` (artifact_id == source hash, stored as `file_hash`).
+- **CI:** the Python job gains a Postgres 17.10 service; the repo Kysely
+  migrations are applied via the real migrator (`pnpm db:migrate:latest`) before
+  `uv run pytest` (no hand-maintained SQL, no drift). CI never references
+  `~/court-data/`; the real `load` command refuses to run in CI.
+- **ACCEPTANCE RUN (verbatim in the completion report):** boot (`pnpm generate`
+  + `db:migrate:latest` = "No pending migrations"); full load =
+  `loaded=1603 ... total=1603`; row counts source_documents 1603 / dockets 1603
+  / charges 3625 / sentences 4162 / warnings 617 / related_cases 658; identical
+  re-run = `loaded=0 skipped_same_version=1603` with `updated_at`/`loaded_at`
+  max/min/count UNCHANGED (zero changed rows). Warning reconciliation ALL MATCH:
+  UNPARSEABLE_DURATION 280, MISSING_DISPOSITION_DATE 211, NON_TERMINAL_CASE 104,
+  SENTINEL_COLLISION 17, SUSPECT_JUDGE_LINE 3, UNKNOWN_NOT_FINAL_DISPOSITION 2;
+  review_needed = 75 dockets. court_type actuals: recorded populated 1,603
+  (Common Pleas 1,563 / Municipal Court 40), derived populated 1,603 (CP 1,563 /
+  MC 40). Optional 8f (quarantine specimen) NOT RUN: no failed-status v5 envelope
+  exists among accessible artifacts (canonical set has none; recovered quarantine
+  specimens are older-format `status=success` records) — the failed arm is proven
+  synthetically.
+- **Files touched:** `services/pipeline/pyproject.toml`,
+  `services/pipeline/uv.lock`, `services/pipeline/src/pipeline/db.py` (new),
+  `services/pipeline/src/pipeline/load.py` (new),
+  `services/pipeline/src/pipeline/cli.py`,
+  `services/pipeline/tests/test_load.py` (new),
+  `services/pipeline/README.md`, `.github/workflows/ci.yml`, `tasks/worklog.md`.
+- **Deviations from plan:** none beyond the four rulings + three fixes applied as
+  directed (minimal-row arm removed; imported_at STOP resolved by Option 3).
+  Branch note: the session was checked out on `col-2-search-collector` (=
+  `phase-21` + the COL-2 commit); 21.3 was landed on `phase-21` as instructed by
+  reverting the local `cli.py` edit, switching, and re-applying only the load
+  wiring so no COL-2 collector code was dragged in.
+- **Notes for next task:** the parsed layer now holds the canonical 1,603-docket
+  corpus (row counts above). Phase 22 (fact generation) reads `parsed.*` filtered
+  by `envelope_status = 'parsed'`; failed envelopes never produced parsed rows so
+  they are excluded structurally. `loaded_at` is set per docket; a reload is a
+  DELETE+reinsert (new `parsed.dockets.id`), so downstream must not cache docket
+  ids across a reload.
