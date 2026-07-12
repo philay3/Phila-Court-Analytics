@@ -32,7 +32,8 @@ Automated collection is UNPARKED under the following conditions:
   expected; they are NOT a violation. The stop condition is being
   blocked a large number of times consecutively — a sustained block
   streak ends the run. An individual rate limit is handled by a
-  2-minute cooldown before resuming.
+  cooldown of at least 2 minutes before resuming (see Amendment
+  2026-07-12).
 - **Batch pacing (initial parameters, ours to tune):** ~40 dockets
   per batch, then a 4-minute cooldown, repeating. These numbers are
   the agreed starting point discussed with counsel, to be re-evaluated
@@ -86,7 +87,27 @@ This feeds the public data-coverage page and Sprint 7 aggregation.
 - The first automated run is a one-hour baseline run (own task,
   scheduled after task 18.3), conducted on a WEEKEND per counsel's
   explicit clearance, using docket-number enumeration, 40-docket
-  batches with 4-minute cooldowns, 2-minute rate-limit cooldowns,
+  batches with 4-minute cooldowns, ≥2-minute rate-limit cooldowns,
   and stop-on-sustained-block-streak.
 - The standing decision "collector stays PARKED" is superseded by
   this ADR.
+
+## Amendments
+
+### 2026-07-12 — Post-block cooldown is a minimum, not a fixed value
+
+The post-block / rate-limit cooldown condition is recorded as a **minimum
+of 2 minutes**, not a fixed 2 minutes. Basis: operator attestation of
+counsel's wording from the 2026-07-11 written confirmation. The original
+"Review performed" and "Decision" text stated a flat "2-minute cooldown";
+the confirmation clarified that 2 minutes is the floor, so a longer
+cooldown is compliant and more conservative.
+
+Effect in code: the collector's `POST_BLOCK_COOLDOWN_SECONDS` is set to
+300 (5 minutes), above the minimum. It stays hardcoded and flag-proof —
+counsel-governed, never operator-tunable. The "≥2-minute" reading applies
+equally to the 2-minute figure echoed under Consequences.
+
+Unchanged by this amendment: the batch-pacing figures (≈40 dockets /
+4-minute inter-batch cooldown) remain operational parameters, ours to
+tune, and are not legal conditions.

@@ -4,6 +4,7 @@ required fixes F2 (combined batch accounting), F3 (blocked writes a ledger entry
 error writes none), F6 (grid_complete/grid_empty reset streaks)."""
 
 import json
+import logging
 from datetime import UTC, date, datetime
 from threading import Event
 
@@ -606,3 +607,134 @@ def test_empty_window_marks_complete_for_rerun_skip(tmp_path):
     )
     assert transport2.searches == []  # skipped as already-complete
     assert report2["date_range"]["skipped_complete"] == 1
+
+
+# --- COL-2a: observability log lines (window / cooldown / progress) ---------
+
+
+def _log_records(caplog, message):
+    return [r for r in caplog.records if r.getMessage() == message]
+
+
+def test_window_log_line_carries_fetch_accounting(tmp_path, caplog):
+    # AC-1: the complete-window line gains flat fetched/already_present/
+    # fetch_failures over the run's fetched courts; harvested stays per-court.
+    clock = FakeClock()
+    params = make_params(tmp_path, court="MC")
+    params.intake_dir.mkdir(parents=True, exist_ok=True)
+    # Pre-place seq 2's intake PDF so it resolves as already_present.
+    (params.intake_dir / "MC-51-CR-0000002-2025.pdf").write_bytes(b"%PDF x")
+    transport = FakeSearchTransport(
+        lambda d: _complete(row_count=3),
+        lambda d: _rows(
+            ("MC", 1, "/x/CpDocketSheet?h=1"),  # fetch OK
+            ("MC", 2, "/x/CpDocketSheet?h=2"),  # already present
+            ("MC", 3, None),  # no sheet link -> fetch failure
+        ),
+    )
+    with caplog.at_level(logging.INFO, logger="pipeline.collector"):
+        run_engine(params, transport, clock)
+
+    win = [
+        r
+        for r in _log_records(caplog, "window")
+        if getattr(r, "outcome", None) == "complete"
+    ]
+    assert len(win) == 1
+    rec = win[0]
+    assert rec.fetched == 1
+    assert rec.already_present == 1
+    assert rec.fetch_failures == 1
+    # Existing fields unchanged.
+    assert rec.mc_harvested == 3
+    assert rec.cp_harvested == 0
+    assert rec.skipped_rows == 0
+
+
+def test_post_block_cooldown_log_carries_context_and_detail(tmp_path, caplog):
+    # AC-2: a post_block line carries batch context plus the triggering
+    # outcome and a content-free detail string.
+    clock = FakeClock()
+    params = make_params(
+        tmp_path, start_date=date(2025, 6, 1), end_date=date(2025, 6, 1)
+    )
+    transport = FakeSearchTransport(lambda d: SearchSignal(bot_check=True))
+    with caplog.at_level(logging.INFO, logger="pipeline.collector"):
+        run_engine(params, transport, clock)
+
+    cds = _log_records(caplog, "cooldown")
+    assert len(cds) == 1
+    rec = cds[0]
+    assert rec.kind == "post_block"
+    assert rec.outcome == "blocked"
+    assert rec.detail == "bot_check"
+    assert rec.batch == 1
+    assert rec.requests_in_batch == 1  # the blocked search itself
+    assert rec.seconds == 300
+
+
+def test_inter_batch_cooldown_log_carries_batch_context(tmp_path, caplog):
+    # AC-2: the inter_batch line carries batch number + requests_in_batch at
+    # the trigger, and no outcome/detail (those are post_block-only).
+    clock = FakeClock()
+    params = make_params(
+        tmp_path,
+        court="MC",
+        batch_size=2,
+        batch_cooldown_seconds=90,
+        start_date=date(2025, 6, 1),
+        end_date=date(2025, 6, 3),
+    )
+    transport = FakeSearchTransport(lambda d: _EMPTY)
+    with caplog.at_level(logging.INFO, logger="pipeline.collector"):
+        run_engine(params, transport, clock)
+
+    ib = [r for r in _log_records(caplog, "cooldown") if r.kind == "inter_batch"]
+    assert len(ib) == 1
+    rec = ib[0]
+    assert rec.batch == 1  # fires before the batch counter increments
+    assert rec.requests_in_batch == 2  # == batch_size at the trigger
+    assert rec.seconds == 90
+    assert not hasattr(rec, "outcome")
+    assert not hasattr(rec, "detail")
+
+
+def test_progress_line_every_five_windows_projects_windows_exhausted(tmp_path, caplog):
+    # AC-3: a progress line every 5 windows with complete/remaining, total
+    # requests, elapsed vs. the effective cap, and a linear projection.
+    clock = FakeClock()
+    params = make_params(
+        tmp_path, start_date=date(2025, 6, 1), end_date=date(2025, 6, 10)
+    )  # 10 windows
+    transport = FakeSearchTransport(lambda d: _EMPTY)
+    with caplog.at_level(logging.INFO, logger="pipeline.collector"):
+        run_engine(params, transport, clock)
+
+    progs = _log_records(caplog, "progress")
+    assert len(progs) == 2  # at window 5 and window 10
+    first = progs[0]
+    assert first.windows_complete == 5
+    assert first.windows_remaining == 5
+    assert first.total_requests == 5  # 5 searches, 0 fetches
+    assert first.projected_stop == "windows_exhausted"
+    assert "elapsed_minutes" in first.__dict__
+    assert "cap_minutes" in first.__dict__
+
+
+def test_progress_line_projects_time_cap_when_pace_exceeds_budget(tmp_path, caplog):
+    # AC-3: the projection is against the EFFECTIVE budget (min(max_minutes,
+    # 240)); a slow pace over many remaining windows projects time_cap.
+    clock = FakeClock()
+    params = make_params(
+        tmp_path,
+        max_minutes=2,  # 120s effective budget
+        start_date=date(2025, 6, 1),
+        end_date=date(2025, 6, 20),
+    )  # 20 windows
+    transport = FakeSearchTransport(lambda d: _EMPTY)
+    with caplog.at_level(logging.INFO, logger="pipeline.collector"):
+        run_engine(params, transport, clock, jitter=10.0)
+
+    progs = _log_records(caplog, "progress")
+    assert progs
+    assert progs[0].projected_stop == "time_cap"

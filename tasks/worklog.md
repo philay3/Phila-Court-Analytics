@@ -3558,3 +3558,66 @@ the record field there.
   consolidation (shared `_pdf_from_href`/block-detection base for `transport.py`
   + `search_transport.py`) is the natural next cleanup.
  26d4f20 (task COL-2: Date-Filed search-mode collector)
+
+## Task COL-2a — Collector Observability + Pacing Defaults + ADR 0002 Cooldown Amendment (2026-07-12)
+
+- **What was built:** search-mode console observability (log lines only, no
+  behavior/ledger/report-schema change), updated operational pacing defaults,
+  and a counsel-governed post-block cooldown raise, with ADR 0002 amended to
+  record the "minimum of 2 minutes" reading.
+  - **AC-1 window line:** the `complete`-window log line gains `fetched`,
+    `already_present`, `fetch_failures` as **flat integers summed over the
+    run's FETCHED courts** (harvested stays per-court `cp_`/`mc_` because both
+    courts are always harvested). A per-court map is the natural extension if a
+    `--court both` run ever needs the split.
+  - **AC-2 cooldown line:** all three cooldown sites gain `batch` and
+    `requests_in_batch` (read at the trigger); the two `post_block` sites also
+    carry `outcome="blocked"` and a content-free `detail`
+    (`bot_check`/`rate_limited`/`unauthorized`/`unrecognized_page`) — blocked
+    fetches reuse `engine._attempt_detail`; blocked searches use a new
+    `_search_block_detail` mirroring that vocabulary from the `SearchSignal`.
+  - **AC-3 progress line:** emitted every **N=5** fully-searched windows —
+    `windows_complete`/`windows_remaining`, `total_requests`, `elapsed_minutes`,
+    `cap_minutes` (the **effective** budget `min(max_minutes, 240)`), and a
+    linear `projected_stop` of `time_cap` vs `windows_exhausted`. Projecting
+    against the effective budget (not the raw 240 ceiling) keeps shorter/smoke
+    runs correct; for a production `--max-minutes 240` run the two coincide.
+  - **PD-2 defaults:** `BATCH_SIZE_DEFAULT` 40→100, `BATCH_COOLDOWN_DEFAULT_SECONDS`
+    240→120 in `engine.py`; floor unchanged at 60 (still exit-2 below floor).
+    Per the approved §7 resolution, `cli.py`'s two argparse `default=`s now
+    reference the engine constants (single source of truth; kills future drift)
+    and `SearchParams` literal defaults were aligned to 100/120.
+  - **PD-3 / AC-5:** `POST_BLOCK_COOLDOWN_SECONDS` 120→300, still hardcoded and
+    flag-proof, with a comment citing ADR 0002's minimum wording.
+  - **AC-6 ADR amendment:** the non-disruption cooldown sentence now reads "a
+    cooldown of at least 2 minutes"; a new `## Amendments` section (2026-07-12)
+    records the minimum reading (basis: operator attestation of counsel's
+    2026-07-11 written confirmation); the Consequences echo updated to
+    "≥2-minute"; batch-pacing figures left untouched as operational parameters.
+    The AC-6 STOP condition did NOT apply: the current ADR text was flat
+    "2-minute" but an operator-attested clarification exists, so the amendment
+    proceeds rather than stopping.
+- **Files touched:** `services/pipeline/src/pipeline/collector/engine.py`
+  (constants + comments), `.../collector/search_engine.py` (log lines +
+  `SearchParams` defaults + `_search_block_detail`), `.../cli.py` (argparse
+  defaults reference engine constants + help text),
+  `services/pipeline/tests/test_collector_search_engine.py` (5 new observability
+  tests), `tests/test_collector_engine.py` (post-block test renamed to
+  `test_post_block_cooldown_meets_counsel_minimum`, asserts ≥120 and ==300),
+  `tests/test_collector_cli.py` (defaults 40/240→100/120, POST_BLOCK 120→300),
+  `agent-docs/decisions/0002-source-access.md`, `tasks/worklog.md`.
+- **Scope note / approved deviation:** `cli.py` was NOT in the task's original
+  ALLOWED FILES; it was added under the plan-review §7 Option-A approval because
+  the effective CLI pacing defaults live in `cli.py`'s argparse literals, not
+  the engine constants — changing the constants alone would not have met PD-2.
+  `run.py` needed no change (kwargs pass through). Branched `col-2a` from `main`
+  after COL-2 merged (origin/main tip `5d919fa`), per the revised branch-point
+  instruction.
+- **Existing tests updated (AC-8):** `test_post_block_cooldown_is_two_minutes`
+  → `test_post_block_cooldown_meets_counsel_minimum` (engine); `test_collect_defaults_parse`
+  batch_size/cooldown 40/240→100/120 (cli); `test_legal_conditions_are_not_flags_and_are_hardcoded`
+  POST_BLOCK 120→300 (cli). Tests that reference the constants by name adapted
+  automatically. Floor-rejection test unchanged.
+- **Notes for next task:** the F4 transport consolidation remains the natural
+  next cleanup; reconciles/fetch_capped reporting polish is still an open
+  worklog candidate (explicitly out of scope here).

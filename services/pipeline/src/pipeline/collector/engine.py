@@ -5,11 +5,12 @@ wrapper and never dependent on operator attention:
 
 Legal conditions (counsel-locked, NOT overridable by any flag):
   - a hard 240-minute absolute ceiling on any run;
-  - a 2-minute cooldown after ANY block response, before the next request.
+  - a cooldown of at least 2 minutes after ANY block response, before the
+    next request (we run 300s — above the minimum; see ADR 0002).
 
 Operational parameters (ours; re-evaluated after the baseline run):
   - a jittered 2.0–5.0s delay after every real portal request (FIX 1);
-  - 40 dockets per batch, 4-minute inter-batch cooldown;
+  - 100 dockets per batch, 2-minute inter-batch cooldown;
   - consecutive-block streak stop N=5 (block_streak);
   - consecutive-error streak stop N=5 (error_streak, FIX 2).
 
@@ -55,13 +56,17 @@ logger = logging.getLogger("pipeline.collector")
 
 # --- Counsel-locked ceilings (NOT overridable by any flag) -----------------
 HARD_CEILING_MINUTES = 240
-POST_BLOCK_COOLDOWN_SECONDS = 120
+# ADR 0002 records the post-block cooldown condition as a MINIMUM of 2 minutes
+# (Amendment 2026-07-12, operator attestation of counsel's 2026-07-11 written
+# confirmation). 300s exceeds that minimum — a compliant, more-conservative
+# value. Hardcoded and flag-proof: it stays counsel-governed, never tunable.
+POST_BLOCK_COOLDOWN_SECONDS = 300
 
 # --- Operational parameters (ours; batch values are flag-tunable) ----------
 # Defaults for the tunable batch flags (COL-1a, FIX 4). The batch cooldown has
 # an enforced FLOOR — it may be raised but never dropped below it.
-BATCH_SIZE_DEFAULT = 40
-BATCH_COOLDOWN_DEFAULT_SECONDS = 240
+BATCH_SIZE_DEFAULT = 100
+BATCH_COOLDOWN_DEFAULT_SECONDS = 120
 BATCH_COOLDOWN_FLOOR_SECONDS = 60
 # The per-request jitter band is unoverridable (COL-1, FIX 1).
 PER_REQUEST_DELAY_MIN_SECONDS = 2.0
@@ -400,8 +405,8 @@ def run(
         sleep(delay)
         delays_taken += 1
 
-        # Post-block cooldown: 2 minutes after ANY block, before the next
-        # request (counsel-locked, on top of the per-request delay).
+        # Post-block cooldown: 300s (≥2-minute counsel minimum) after ANY
+        # block, before the next request (on top of the per-request delay).
         if outcome == OUTCOME_BLOCKED:
             logger.info(
                 "cooldown",
