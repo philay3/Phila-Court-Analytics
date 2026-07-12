@@ -3421,3 +3421,32 @@ the record field there.
   they are excluded structurally. `loaded_at` is set per docket; a reload is a
   DELETE+reinsert (new `parsed.dockets.id`), so downstream must not cache docket
   ids across a reload.
+
+## Task 21.3-f1 — Loader tests fail closed on non-test databases (2026-07-11)
+
+- **Why:** the loader suite TRUNCATEs tables against whatever DB the env pointed
+  at; it previously read `DATABASE_URL` (the dev DB) and destroyed the canonical
+  load when the pytest gate ran. Once fact/review data exists this is silent data
+  destruction by CI/local gates.
+- **Guard 1 (env isolation):** the suite now reads ONLY
+  `PIPELINE_TEST_DATABASE_URL` and never `DATABASE_URL`, so it structurally cannot
+  truncate the database the `load` command writes to. Unset → local skip (visible
+  count) / CI hard failure (unchanged Fix-2 semantics).
+- **Guard 2 (dbname pattern):** before any truncation the connected database name
+  must contain "test"; any other name is a hard failure regardless of which var
+  supplied the URL (belt-and-braces against env-var mixups). Verified live:
+  pointing the var at the dev DB `pca` hard-fails BEFORE truncating.
+- **Both guards are pure/testable:** `_classify_test_db_url` and `_is_test_dbname`
+  are unit-tested (absent→skip local / fail CI; present→run; non-test name
+  rejected, case-insensitive) — DB-free arms that run everywhere.
+- **CI:** the Python job's service DB is renamed `pca_pipeline_test` (contains
+  "test"); the migrator step (`DATABASE_URL`) and the pytest step
+  (`PIPELINE_TEST_DATABASE_URL`) target that same URL.
+- **Docs:** both guards documented in the pipeline README loader-semantics note.
+- **Files touched:** `services/pipeline/tests/test_load.py`,
+  `.github/workflows/ci.yml`, `services/pipeline/README.md`, `tasks/worklog.md`.
+- **Deviations from plan:** none.
+- **Post-fix ops:** local test DB `pca_pipeline_test` created + migrated; canonical
+  load re-run against the dev DB to repopulate it for Phase 22 (see completion
+  report), and confirmed the pytest gate (now bound to the test DB) leaves the
+  dev DB's 1,603 dockets untouched.

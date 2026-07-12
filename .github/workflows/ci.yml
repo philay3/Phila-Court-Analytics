@@ -182,19 +182,21 @@ jobs:
         working-directory: services/pipeline
     # Postgres service for the 21.3 loader tests. The repo Kysely migrations are
     # applied to it below (via the real migrator — no hand-maintained SQL, no
-    # drift). The loader suite HARD-FAILS if DATABASE_URL is unset in CI, so this
-    # env must stay wired.
+    # drift). The DB name deliberately CONTAINS "test" so the loader suite's
+    # guard-2 passes; the migrator and pytest steps both target this same URL.
+    # The suite reads PIPELINE_TEST_DATABASE_URL and HARD-FAILS if it is unset in
+    # CI (Fix 21.3-f1), so that env must stay wired.
     services:
       postgres:
         image: postgres:17.10
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci
-          POSTGRES_DB: pca_ci
+          POSTGRES_DB: pca_pipeline_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U ci -d pca_ci"
+          --health-cmd "pg_isready -U ci -d pca_pipeline_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -232,13 +234,15 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: pnpm generate
 
+      # The migrator (reads DATABASE_URL) and pytest (reads
+      # PIPELINE_TEST_DATABASE_URL) target the SAME test database.
       - name: Apply repo migrations to the service Postgres
         working-directory: ${{ github.workspace }}
         run: pnpm db:migrate:latest
         env:
-          DATABASE_URL: postgresql://ci:ci@localhost:5432/pca_ci
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/pca_pipeline_test
 
       - name: Pytest
         run: uv run pytest
         env:
-          DATABASE_URL: postgresql://ci:ci@localhost:5432/pca_ci
+          PIPELINE_TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/pca_pipeline_test
