@@ -1,6 +1,7 @@
 import { createDb } from '../src/connection.js';
 import { describeError } from '../src/errors.js';
 import { seedAggregates } from './aggregates.js';
+import { seedChargeRoster } from './charge-roster.js';
 import { seedReference } from './reference.js';
 
 async function main(): Promise<void> {
@@ -9,6 +10,11 @@ async function main(): Promise<void> {
     // Reference seeds first: aggregate seeds resolve charge/judge ids by slug.
     const referenceResults = await seedReference(db);
     for (const { seed, upserted } of referenceResults) {
+      console.log(`seeded ${seed}: ${upserted} row(s) upserted`);
+    }
+    // Real charge roster (Task 22.2): coexists in ref.* with the demo rows.
+    const rosterResults = await seedChargeRoster(db);
+    for (const { seed, upserted } of rosterResults) {
       console.log(`seeded ${seed}: ${upserted} row(s) upserted`);
     }
     const aggregateResults = await seedAggregates(db);
