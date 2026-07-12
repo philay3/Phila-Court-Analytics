@@ -3924,6 +3924,80 @@ the record field there.
   map results to `fact.*` persistence and the eligibility reason codes. 22.5 owns
   sentencing mapping + money extraction.
 
+## Task 23.1 — Judge Attribution Rules (Phase 23 opener) (2026-07-12)
+
+- **Date:** 2026-07-12
+- **What was built:** The conservative, pure judge-attribution resolver that 23.2
+  (outcome facts) consumes and 23.3 (sentence facts) inherits unchanged. New
+  `pipeline.facts` package (Phase-23 fact-building logic home) with one module,
+  `facts/judge_attribution.py`:
+  - `AttributionResult` (frozen; `__post_init__` invariants making invalid states
+    unrepresentable): `(normalized_judge_id | None, method, review_descriptor |
+    None)`, method ∈ `{disposition_judge, assigned_judge_rule, none}`. Attributed
+    methods require an id and carry no descriptor; `none` carries no id; a
+    descriptor rides only on the `none`/ambiguous case.
+  - `DocketAttributionContext` (frozen) + `build_docket_context(docket, matcher)` —
+    derives the docket-level decision ONCE per docket (assigned single-match +
+    fallback-eligibility); `fallback_eligible` ⇒ non-null `assigned_judge_id`.
+  - `resolve_charge(charge, context, matcher, *, source_document_id,
+    parsed_docket_id=None, parsed_charge_id=None)` — per-charge decision order:
+    (1) disposition single-match → `disposition_judge`; (2) disposition `ambiguous`
+    → `none` + review descriptor (pinned #6); (3) disposition `unmatched` → `none`
+    (no double-emit; that's 22.3/23.4's `unmapped_judge`); (4) disposition ABSENT
+    but captured-then-nulled (DP1) → `none`, never fallback; (5) disposition ABSENT
+    on a fallback-eligible docket → `assigned_judge_rule`; (6) else `none`. Pure; no
+    DB, no I/O, no side effects.
+  - APPROVED `assigned_judge_rule` (SD 1 #2, docket-scoped, single-path): a docket
+    is fallback-eligible iff NO charge carries a roster-matched disposition judge
+    AND `assigned_judge_raw` is a single unambiguous roster match; each ABSENT-
+    disposition charge on such a docket is attributed to the assigned judge. Docket
+    scope protects the 238/1417 (17%) dockets where disposition≠assigned and makes
+    the pinned #6 disposition-vs-assigned conflict structurally impossible.
+  - Ambiguous-attribution review descriptor via the 22.1 `build_review_item` helper:
+    item_type `ambiguous_judge_attribution`, reason `judge_not_attributed`, HIGH,
+    locator `("judge","attribution",<sequence>)` (distinct from 22.3's disposition
+    locator). Dedup key = `source_document_id` + locator ONLY; parsed UUIDs ride as
+    non-key context (asserted by test). NO `fact_review_vocab.py` edit — both vocab
+    members already existed.
+- **How to verify:** `.venv/bin/python -m pytest tests/test_judge_attribution.py -q`
+  (16 tier-1 synthetic tests: disposition match; the approved fallback; no-match →
+  none; present-but-unmatched suppression; ambiguous → review + none; sibling-charge
+  fallback suppression; DP1 captured-then-nulled (SUSPECT_JUDGE_LINE +
+  SENTINEL_COLLISION); result/context invariants; dedup-key parsed-UUID exclusion;
+  inheritance reuse).
+- **Files touched:** `services/pipeline/src/pipeline/facts/__init__.py` (new),
+  `services/pipeline/src/pipeline/facts/judge_attribution.py` (new),
+  `services/pipeline/tests/test_judge_attribution.py` (new), `tasks/worklog.md`.
+- **Deviations from plan/gate:** one flagged implementation decision within the
+  adjudicated DP1 branch-1 clause. DP1 named `SUSPECT_JUDGE_LINE` (the 3 Class-D
+  junk-nulled charges, all of which the plain rule would fallback-ATTRIBUTE). I keyed
+  the guardrail on the semantic class of charge-grain disposition-judge-nulling
+  warnings — `{SUSPECT_JUDGE_LINE, SENTINEL_COLLISION}` — because both are the
+  parser's two disposition-judge null branches (`_is_junk_judge` and
+  `collides_with_sentinels`) and both mean "the charge captured its own judge, then
+  it was nulled." parsed.* recon: 3 SUSPECT_JUDGE_LINE (all 3 land in fallback →
+  now suppressed) and 12 charge-grain SENTINEL_COLLISION (0 currently land in
+  fallback — 0-impact today, but latent as the corpus grows; included per the "must
+  not receive fallback" principle and the "generalizes to every future junk-null"
+  instruction).
+- **Recon (parsed.* loaded corpus, counts only):** 1603 dockets / 3625 charges;
+  disposition judge 2936 matched / 0 unmatched / 0 ambiguous / 689 absent; assigned
+  1554 matched / 49 absent; max distinct matched disposition judges on ANY docket =
+  1 (no multi-judge conflict); disposition≠assigned on 238/1417; fallback-eligible
+  dockets = 137 (all 137 "no disposition judge present anywhere" after the DP1
+  guardrail); the 5 SENTINEL_COLLISION recovered (assigned-nulled, review_needed)
+  dockets = 0 in the fallback set (assigned null ⇒ ineligible).
+- **Notes for next task (23.2/23.3):** the resolver's charge-record contract needs
+  a `warning_codes` key per charge (that charge's charge-grain parser warning codes
+  from `parsed.warnings`, joined by docket_id+sequence); absent/empty ⇒ no
+  guardrail. `source_document_id` is a required kwarg (the `raw.*` UUID). 23.3 must
+  NOT re-derive — it reuses the parent charge's `AttributionResult` for every
+  sentence component (sentences carry no judge of their own). The
+  `ambiguous_judge_attribution` descriptor path fires on ZERO real charges in-corpus
+  today (0 ambiguous disposition judges) — built + tier-1 tested per pinned #6 by
+  design, not a gap. `judge_specific_eligible` gating is 23.2/23.3's job, not the
+  resolver's.
+
 ## Task 22.5 — Sentencing Mapping + Money Extraction (2026-07-12)
 
 - **Date:** 2026-07-12
