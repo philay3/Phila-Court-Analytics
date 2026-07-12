@@ -3621,3 +3621,72 @@ the record field there.
 - **Notes for next task:** the F4 transport consolidation remains the natural
   next cleanup; reconciles/fetch_capped reporting polish is still an open
   worklog candidate (explicitly out of scope here).
+
+## Task 22.1 — Normalization Models + Vocabularies (2026-07-12)
+
+- **Date:** 2026-07-12
+- **Branch:** `phase-22`, created from `main` (this is its first commit; the PR
+  loop runs once at phase end per the phase-branch workflow §6.2).
+- **What was built:** the shared, pure-Python normalization surface that every
+  Sprint 5 matcher (22.2 charge, 22.3 judge, 22.4 outcome/sentencing) and the
+  money extractor consume. New package
+  `services/pipeline/src/pipeline/normalization/`:
+  - `vocab.py` — the two closed normalization vocabularies, each defined once:
+    `MATCH_METHODS` (locked six: exact/alias/statute/pattern/unmatched/ambiguous)
+    with the `MATCHED_METHODS` identity-carrying subset, and `NORM_WARNING_CODES`
+    (locked five: `NORM_UNMATCHED`, `NORM_AMBIGUOUS`, `NORM_STATUTE_TEXT_CONFLICT`,
+    `NORM_UNPARSEABLE_AMOUNT`, `NORM_EMPTY_INPUT`). The `review_needed` derivation
+    is DATA — `_ALWAYS_REVIEW_METHODS = {unmatched, ambiguous}` and
+    `NORM_BLOCKING_WARNINGS = {NORM_STATUTE_TEXT_CONFLICT}` — plus the thin
+    `derive_review_needed(method, codes)`.
+  - `models.py` — frozen dataclasses with construction-time validation making
+    invalid states unrepresentable: `NormalizationCandidate`; a shared
+    `_NormalizationResult` base and four thin subclasses
+    (`Charge`/`Judge`/`Outcome`/`Sentencing` `NormalizationResult`) enforcing
+    pinned decisions 2–4; and `MoneyExtractionResult` (integer cents only —
+    float AND bool rejected, since bool is an int subclass).
+  - `review_items.py` — the `review.queue_items` payload builder.
+  - `__init__.py` — public re-exports.
+- **No warning-vocabulary amendments:** the pinned five were accepted as-is
+  (plan approval), so the set stays locked at five.
+- **LOCKED FIELD NAMING (binding on 22.2/22.3/22.4):** the four
+  `*NormalizationResult` models carry the raw input under `raw_value` (matches
+  AC1's "raw value" wording and the `review.queue_items.raw_value` column the
+  results feed); the money model carries `raw_text` (pinned verbatim by
+  decision 7). This is the locked contract — result matchers use `raw_value`,
+  the money extractor uses `raw_text`. (The approved plan had said `raw_text`
+  for the results base; this `raw_value` naming was reviewed and locked at report
+  review.)
+- **REQUIRED FIX 1 (dedup-key single implementation) — STANDING FOR 22.2/22.3/22.4:**
+  `review_items.py` is now the CANONICAL and ONLY implementation of dedup-key
+  derivation project-wide. Future consumers MUST import `build_review_item`
+  (or `build_dedup_key`) from `pipeline.normalization`; they must NOT re-derive
+  a key. The `\x1f` separator is a single named module constant
+  (`DEDUP_KEY_SEPARATOR`) and the derivation site cites the composition
+  documented in `fact_review_vocab.py` (module docstring, lines 32–57).
+  `fact_review_vocab.py` was consumed (vocabularies imported) and NOT edited.
+- **REQUIRED FIX 2 (review_needed derived-by-default):** the base dataclass field
+  is `review_needed: bool | None = None`; when omitted it is derived and set via
+  `object.__setattr__`; when passed it must equal the derived value or
+  construction raises. Matchers can omit it and inherit the single derivation.
+- **REQUIRED FIX 3 (full vocabulary enforcement):** `build_review_item` validates
+  EVERY vocabulary-typed `review.queue_items` field against its
+  `fact_review_vocab` set — `item_type` → `REVIEW_ITEM_TYPES`, `severity` →
+  `REVIEW_SEVERITIES`, `reason_code` → `ELIGIBILITY_REASON_CODES`, `status` →
+  `REVIEW_ITEM_STATUSES` (default `open`). Each is test-proven in both
+  directions. The payload mirrors the table's writable columns; parsed.* UUID
+  pointers are stored columns, never part of the dedup key.
+- **Contract nuance resolved at plan approval:** decision 8's "21.2 derivation
+  function" does not exist — `fact_review_vocab.py` documents the composition and
+  delegates the implementation to 22.1. Implemented here per that docstring,
+  importing only the vocabularies.
+- **Files touched (all new except worklog):**
+  `services/pipeline/src/pipeline/normalization/{__init__,vocab,models,review_items}.py`,
+  `services/pipeline/tests/{test_normalization_vocab,test_normalization_models,test_normalization_review_items}.py`,
+  `tasks/worklog.md` (append). No deviations from the approved plan.
+- **No DB access:** psycopg is imported in none of the new modules (test +
+  grep-asserted).
+- **Notes for next task:** 22.2/22.3/22.4 return the domain-specific
+  `*NormalizationResult` subclasses, omit `review_needed` (let it derive), and
+  emit review items ONLY via `build_review_item`. Warning-vocabulary or
+  match-method additions require plan-level approval before use.
