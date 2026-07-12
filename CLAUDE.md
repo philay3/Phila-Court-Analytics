@@ -26,8 +26,8 @@ You are the implementation agent for this project. Planning and task sequencing 
 ## Privacy and safety rules (hard rules, never violate)
 
 - NEVER commit: secrets, .env files with real values, API keys, raw docket PDFs, extracted docket text, defendant names, docket numbers, or any production court data.
-- Fixture PDFs live OUTSIDE the repo. Code references them via a configurable, gitignored path. If you need fixtures to test, ask the human to run it locally.
-- Never log raw docket text or defendant-identifying data to console, test output, or CI.
+- Fixture PDFs live OUTSIDE the repo. Code references them via a configurable, gitignored path. You may read and run against them directly per the real-data access policy below.
+- Committed code, tests, and CI never emit raw docket text or defendant-identifying data to console or logs. Ad-hoc inspection of real data during your own work is permitted per the real-data access policy below.
 - Public API code must never expose raw, parsed, fact, review, audit, or source-document data — aggregate-only.
 
 ## Stack (locked — do not substitute)
@@ -124,3 +124,27 @@ the committed tree still imported a module the same task had already deleted.
 ## Data source & collector status
 
 Collector status: UNPARKED per ADR 0002 (agent-docs/decisions/0002-source-access.md) — collection conditions live there; the baseline-run task will carry the operational spec.
+
+## Real-data access policy (2026-07-11)
+
+The agent MAY read, run tools over, and see output from everything under
+~/court-data/ (extracted artifacts, baseline JSON, envelopes, PDFs,
+equivalence and scan reports) and MAY execute corpus runs, scans, and
+verification reruns end-to-end. The agent may source DEFENDANT_HASH_SALT
+from the repo-root .env (`set -a; . <repo-root>/.env; set +a`) but must
+never echo, log, or write its value.
+
+Unchanged and absolute:
+- Nothing derived from real dockets enters the repo tree: no real docket
+  text, docket numbers, or defendant-identifying data in fixtures,
+  goldens, tests, code comments, commit messages, or worklog entries.
+  Hash-prefix convention holds in all committed artifacts.
+- Committed tooling keeps console output hygiene (counts, statuses,
+  hash-prefix IDs, CPCMS vocabulary only).
+- Stop conditions are literal and adjudicated in the planning chat,
+  never by the agent.
+- Acceptance-relevant runs (corpus reruns, gates, scans) must have their
+  raw summary output pasted VERBATIM in completion reports.
+
+This supersedes any prior instruction that real-data operations are
+human-only steps.
