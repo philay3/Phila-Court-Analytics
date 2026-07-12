@@ -67,11 +67,13 @@ def test_fact_build_run_statuses_are_exactly_three_members():
     assert len(v.FACT_BUILD_RUN_STATUSES) == 3
 
 
-def test_eligibility_reason_codes_are_exactly_the_fourteen_members():
+def test_eligibility_reason_codes_are_exactly_the_sixteen_members():
     # judge_not_normalized added in Task 22.3 (sanctioned plan-level vocabulary
     # addition, Answer 1), the domain-qualified judge analog of
     # charge_not_normalized. disposition_not_mapped added in Task 22.4 (same
-    # convention), the domain-qualified outcome-mapping analog.
+    # convention), the domain-qualified outcome-mapping analog. money_amount_unparseable
+    # + sentence_duration_unparseable added in Task 22.5 (map-gate approved), the
+    # domain-qualified sentencing money/duration analogs.
     assert v.ELIGIBILITY_REASON_CODES == {
         "disposition_date_missing",
         "disposition_date_before_mvp_window",
@@ -87,8 +89,10 @@ def test_eligibility_reason_codes_are_exactly_the_fourteen_members():
         "blocking_warning",
         "judge_not_attributed",
         "parent_outcome_ineligible",
+        "money_amount_unparseable",
+        "sentence_duration_unparseable",
     }
-    assert len(v.ELIGIBILITY_REASON_CODES) == 14
+    assert len(v.ELIGIBILITY_REASON_CODES) == 16
 
 
 def test_severities_do_not_collide_with_the_colliding_vocabularies():

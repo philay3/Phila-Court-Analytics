@@ -136,6 +136,13 @@ REVIEW_NEEDED = "review_needed"
 BLOCKING_WARNING = "blocking_warning"
 JUDGE_NOT_ATTRIBUTED = "judge_not_attributed"
 PARENT_OUTCOME_INELIGIBLE = "parent_outcome_ineligible"
+# Task 22.5 additions: a monetary sentencing component whose amount is present but
+# unresolvable (zero-parseable-with-currency, or >=2 distinct amounts — the money
+# is unreadable, but the category mapping still stands); and a sentence-duration
+# figure the parser flagged UNPARSEABLE_DURATION (helper lands here; Phase 23 wires
+# the envelope warning to it — the mapper never re-parses durations).
+MONEY_AMOUNT_UNPARSEABLE = "money_amount_unparseable"
+SENTENCE_DURATION_UNPARSEABLE = "sentence_duration_unparseable"
 
 ELIGIBILITY_REASON_CODES: frozenset[str] = frozenset(
     {
@@ -153,5 +160,7 @@ ELIGIBILITY_REASON_CODES: frozenset[str] = frozenset(
         BLOCKING_WARNING,
         JUDGE_NOT_ATTRIBUTED,
         PARENT_OUTCOME_INELIGIBLE,
+        MONEY_AMOUNT_UNPARSEABLE,
+        SENTENCE_DURATION_UNPARSEABLE,
     }
 )
