@@ -8,6 +8,7 @@ import argparse
 import logging
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 from pipeline import db
@@ -254,12 +255,63 @@ def build_parser() -> argparse.ArgumentParser:
             )
         if name == "collect":
             subparser.add_argument(
+                "--mode",
+                choices=["enumerate", "search"],
+                default="enumerate",
+                help=(
+                    "Collection mode. 'enumerate' (default): the existing "
+                    "docket-sequence probing (audit mode). 'search': one "
+                    "Date-Filed advanced search per calendar day, harvesting "
+                    "CP/MC criminal dockets from the results grid. Search mode "
+                    "requires --start-date and --end-date."
+                ),
+            )
+            subparser.add_argument(
                 "--court",
-                choices=["MC"],
+                choices=["MC", "CP", "both"],
                 default="MC",
                 help=(
-                    "Court to enumerate (only Philadelphia Municipal Court, "
-                    "MC-51-CR, is in scope for this task). Default: MC."
+                    "Court to collect. Enumerate mode supports only MC "
+                    "(MC-51-CR). Search mode accepts MC, CP, or both and gates "
+                    "which harvested rows are FETCHED (both are always recorded "
+                    "in the window ledger). Default: MC."
+                ),
+            )
+            subparser.add_argument(
+                "--start-date",
+                type=date.fromisoformat,
+                default=None,
+                help=(
+                    "Search mode only: first calendar day to search (ISO "
+                    "YYYY-MM-DD, inclusive). Required with --mode search."
+                ),
+            )
+            subparser.add_argument(
+                "--end-date",
+                type=date.fromisoformat,
+                default=None,
+                help=(
+                    "Search mode only: last calendar day to search (ISO "
+                    "YYYY-MM-DD, inclusive). Required with --mode search."
+                ),
+            )
+            subparser.add_argument(
+                "--max-fetches",
+                type=int,
+                default=None,
+                help=(
+                    "Search mode only (smoke tooling): cap on live PDF fetches "
+                    "for the whole run; reaching it stops the run. Omitted: no "
+                    "cap. Not used in production runs."
+                ),
+            )
+            subparser.add_argument(
+                "--recheck-windows",
+                action="store_true",
+                help=(
+                    "Search mode only: ignore the window ledger and re-search "
+                    "every window in range (mirrors --recheck-misses). Truncated "
+                    "and blocked windows are always retried regardless."
                 ),
             )
             subparser.add_argument(
@@ -455,12 +507,36 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _validate_collect_args(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> None:
+    """Mode-aware validation for ``collect`` (raises SystemExit(2) on error).
+
+    ``--court`` is widened to {MC, CP, both} so search mode can select CP/both,
+    but enumerate mode still supports only MC — enforced here at parse time so
+    ``collect --court CP`` (enumerate) fails with the same argparse-style
+    'invalid choice' error and exit code as before search mode existed. Search
+    mode additionally requires the inclusive date range.
+    """
+    if args.mode == "enumerate":
+        if args.court != "MC":
+            parser.error(
+                f"argument --court: invalid choice: {args.court!r} for enumerate "
+                "mode (only 'MC' is supported); use --mode search for CP/both"
+            )
+    else:  # search
+        if args.start_date is None or args.end_date is None:
+            parser.error("--mode search requires --start-date and --end-date")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_usage(sys.stderr)
         return 2
+    if args.command == "collect":
+        _validate_collect_args(parser, args)
     configure_logging()
     if args.command == "evaluate-extractors":
         return run_evaluation(
@@ -515,6 +591,24 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         # Imported here (not at module top) so the CLI stays importable — and
         # the whole test suite runs — without the optional collector group.
+        if args.mode == "search":
+            from pipeline.collector.run import run_collect_search
+
+            return run_collect_search(
+                court=args.court,
+                start_date=args.start_date,
+                end_date=args.end_date,
+                max_minutes=args.max_minutes,
+                intake_dir=args.intake_dir,
+                report_dir=args.report_dir,
+                ledger_dir=args.ledger_dir,
+                headless=args.headless,
+                batch_size=args.batch_size,
+                batch_cooldown_seconds=args.batch_cooldown_seconds,
+                max_fetches=args.max_fetches,
+                recheck_windows=args.recheck_windows,
+            )
+
         from pipeline.collector.run import run_collect
 
         return run_collect(

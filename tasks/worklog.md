@@ -3339,6 +3339,7 @@ the record field there.
   the build-run FK CASCADE, never `ON CONFLICT DO UPDATE` (fact rows are
   `Immutable<>`). `counts` is nullable jsonb (null while `in_progress`).
 
+ HEAD
 ## Task 21.3 — Python DB Access + `pipeline load` + Canonical Corpus Load (2026-07-11)
 
 - **What was built:** psycopg 3 (sync) DB access for the pipeline and the
@@ -3450,3 +3451,110 @@ the record field there.
   load re-run against the dev DB to repopulate it for Phase 22 (see completion
   report), and confirmed the pytest gate (now bound to the test DB) leaves the
   dev DB's 1,603 dockets untouched.
+
+## Task COL-2 — Search-Mode Discovery: Date-Filed Advanced Search Collector (2026-07-11)
+
+- **Date:** 2026-07-11
+- **Goal:** add a Date-Filed search discovery mode to the collector (ported from
+  Capstone `collect.py`/`fetch_mc_fixtures.py`): one advanced search per calendar
+  day (County=Philadelphia), classify the results grid, harvest CP/MC-51-CR
+  docket numbers + sheet hrefs, fetch PDFs per `--court`. Enumeration mode
+  retained byte-for-byte as audit mode.
+- **Step 0 live-DOM recon (5 jittered searches, 0 fetches, headful) pinned:**
+  docket-number cell = **column index 2** (`thead th[2]` label is "Docket
+  Number"; every CP/MC-51-CR data row carries its number there; caption=4,
+  participant=7, DOB=8 are never touched); sheet anchor = row-scoped
+  `a[href*='CpDocketSheet']` (first CP-51-CR row and first MC-51-CR row both
+  resolve to `CpDocketSheet`; `MdjDocketSheet` is MDJ-only and always skipped);
+  truncation banner = presence of substring "Not all results are shown for
+  Common Pleas and Magisterial" (absent at 1 day / 181–241 rows, present at 3
+  days / 805 rows); grid_empty marker (Blocker-2/Option A, operator-approved) =
+  served search UI + no block + zero rows (future date 2027-06-01 rendered the
+  search form with NO results table and 0 rows — no bespoke "no records" node
+  exists).
+- **Two Step-0 STOP-report contract gaps, both operator-adjudicated:** (1) AC-10's
+  "expected-empty Sunday 2025-06-01" is false — Philadelphia MC arraignment court
+  files 7 days/week (2025-06-01 returned 181 rows / 38 MC-51-CR); smoke empty
+  window reassigned to **2027-06-01** (Option A). (2) grid_empty has no dedicated
+  DOM marker; the served-search-UI basis (same as COL-1a `no_results`) was
+  accepted as the positive marker.
+- **Module structure (parallel to enumeration; enumeration untouched, AC-9):**
+  new `search_classification.py` (`SearchSignal` + `classify_search`: 4
+  fail-closed states grid_complete/grid_truncated/grid_empty/blocked, `error`
+  prior branch), `harvest.py` (`harvest_rows` — the PD-3 privacy invariant),
+  `window.py` (`daily_windows` + append-only window ledger writer/loader mirroring
+  COL-1b), `search_engine.py` (the pure run loop), `search_transport.py`
+  (Playwright adapter, browser restart every 150 fetches). Reused unchanged:
+  `RunGuard` streaks, `FetchSignal`/`classify`, and enumeration constants/helpers.
+- **Required fixes folded in:** **F1** `--court` widened to {MC,CP,both}; enumerate
+  mode still rejects non-MC via a mode-aware `parser.error` carrying "invalid
+  choice" (existing `test_collect_rejects_non_mc_court` passes verbatim). Ledger
+  override flag named **`--recheck-windows`** (not the spec's "--research-windows"
+  typo). **F2** batch counter counts ALL real portal requests — searches AND
+  fetches (skips excluded); inter-batch cooldown fires on the combined count;
+  `parameters.batch_request_counting = "searches_and_fetches"` records it. **F3**
+  a blocked search writes a ledger entry (`outcome=blocked`, retryable); a
+  transport-level exception (error) writes NONE (window stays unsearched) — both
+  tested. **F4** `_pdf_from_href` + block presence-checks are duplicated into
+  `search_transport.py` with inline comments naming their `transport.py` source;
+  "collector transport consolidation" is flagged here as a future landing
+  candidate. **F6** grid_complete and grid_empty both reset block/error streaks
+  (tested).
+- **Pinned-decision behavior:** discovery unit = one calendar day, no
+  splitting/weekly mode; truncation banner on any window → immediate stop
+  (`stop_reason=window_truncated`); harvest records BOTH courts, `--court` gates
+  fetching (default MC); `already_present` disk check precedes every fetch;
+  report reconciles per court `harvested = fetched + already_present +
+  fetch_failures` (`totals.reconciles`); attempts.jsonl gains `window_date` +
+  `court`; coverage stated in date terms ("N of M windows complete in [D1..D2]").
+- **`--max-fetches` (smoke tooling only):** caps live fetches and stops the run,
+  but the in-flight window's ledger entry is still written so a single-window
+  smoke run yields its entry. Because it can leave a grid_complete window with
+  harvested > fetched (rows unfetched by design), `totals.reconciles` is
+  intentionally `false` for a capped run. Production runs pass no `--max-fetches`
+  and fetch every harvested in-scope row, so the identity holds; time-cap and
+  abort are checked at window boundaries only (never mid-fetch), so a complete
+  window is always fetched to completion in production.
+- **Files touched:** `collector/search_classification.py` (new),
+  `collector/harvest.py` (new), `collector/window.py` (new),
+  `collector/search_engine.py` (new), `collector/search_transport.py` (new),
+  `collector/run.py` (`run_collect_search` boundary), `cli.py` (`--mode`,
+  widened `--court`, `--start-date`/`--end-date`/`--max-fetches`/
+  `--recheck-windows`, mode-aware validation + dispatch),
+  `tests/test_collector_search_classification.py`,
+  `tests/test_collector_harvest.py`, `tests/test_collector_window_ledger.py`,
+  `tests/test_collector_search_engine.py`, `tests/test_collector_search_cli.py`
+  (all new).
+- **Deviations from plan:** none beyond the two operator-adjudicated Step-0 gaps
+  above; all of F1–F6 applied as approved.
+- **AC-10 live smoke (isolated `--ledger-dir ~/court-data/coverage-smoke-col2`,
+  real intake; nothing classified blocked/truncated):**
+  - 2025-06-03 `--court MC --max-fetches 10`: `complete`, cp_harvested=**23**,
+    mc_harvested=**25**, 10 MC fetched (cap), stop_reason `fetch_cap`,
+    reconciles `false` (cap left 15 MC rows unfetched by design). 10 valid
+    `%PDF` sheets landed in intake (806→816 MC).
+  - 2027-06-01: `empty` classified live, `windows_exhausted`.
+  - Both window-ledger entries verbatim:
+    `{"date":"2025-06-03",...,"outcome":"complete","cp_harvested":23,"mc_harvested":25,"fetched":{"CP":0,"MC":10},"already_present":{"CP":0,"MC":0},"fetch_failures":{"CP":0,"MC":0},"skipped_rows":193}`
+    and
+    `{"date":"2027-06-01",...,"outcome":"empty","cp_harvested":0,"mc_harvested":0,...,"skipped_rows":0}`.
+  - Isolation held: no `window-ledger-philadelphia.jsonl` in the production
+    `~/court-data/coverage/`.
+- **Per-day harvest counts for Run 4 sizing (requested):** 2025-06-03 single
+  Philadelphia weekday = 23 CP-51-CR + 25 MC-51-CR criminal dockets out of 241
+  total grid rows (193 skipped MDJ/traffic/misc); recon corroboration —
+  2025-06-01 (Sun) 0 CP / 38 MC, 3-day 2025-06-02..04 window 102 CP / 106 MC
+  (banner present). Single weekday fits well under the truncation cap.
+- **Verification (all four gates green, run fresh post-staging):**
+  - `.venv/bin/ruff check src tests` — All checks passed.
+  - `.venv/bin/ruff format --check .` — 61 files already formatted.
+  - `.venv/bin/python -m pytest -q` — 447 passed, 1 skipped.
+  - repo-root `pnpm format:check` — passed.
+- **Notes for next task:** search mode is the primary collection mechanism;
+  enumeration is now audit-only. A production campaign runs
+  `pipeline collect --mode search --court MC --start-date D1 --end-date D2` with
+  NO `--max-fetches` and the default `~/court-data/coverage/` ledger. grid_empty
+  is rare-to-never on real dates (7-day arraignment court). The F4 transport
+  consolidation (shared `_pdf_from_href`/block-detection base for `transport.py`
+  + `search_transport.py`) is the natural next cleanup.
+ 26d4f20 (task COL-2: Date-Filed search-mode collector)
