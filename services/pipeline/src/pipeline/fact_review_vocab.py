@@ -72,6 +72,14 @@ DURATION_UNPARSEABLE = "duration_unparseable"
 AMBIGUOUS_JUDGE_ATTRIBUTION = "ambiguous_judge_attribution"
 MISSING_DISPOSITION_DATE = "missing_disposition_date"
 SENTINEL_COLLISION = "sentinel_collision"
+# Task 23.4 addition (plan-approved): a sentence component that carries an ADDITIVE
+# restitution / community-service category beyond its base (``len(categories) > 1``).
+# The 1:1 ``fact.charge_sentences`` schema stores only the base category, so the
+# additive would be silently lost; 23.3 forces the fact's ``review_needed`` and 23.4
+# surfaces the additive to the queue under this type. It is neither unmapped nor
+# ambiguous (both mappings are valid) — reusing those types would corrupt Sprint 6
+# triage counts, so it gets its own member (the ONLY 23.4 vocabulary change).
+ADDITIVE_SENTENCING_CATEGORY = "additive_sentencing_category"
 
 REVIEW_ITEM_TYPES: frozenset[str] = frozenset(
     {
@@ -87,6 +95,7 @@ REVIEW_ITEM_TYPES: frozenset[str] = frozenset(
         AMBIGUOUS_JUDGE_ATTRIBUTION,
         MISSING_DISPOSITION_DATE,
         SENTINEL_COLLISION,
+        ADDITIVE_SENTENCING_CATEGORY,
     }
 )
 

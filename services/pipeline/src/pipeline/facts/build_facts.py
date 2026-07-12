@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
 
 import psycopg
@@ -42,10 +43,18 @@ from psycopg.types.json import Json
 
 from pipeline.envelope import _is_unparseable_duration
 from pipeline.fact_review_vocab import (
+    ADDITIVE_SENTENCING_CATEGORY,
+    DISPOSITION_DATE_MISSING,
     ELIGIBILITY_REASON_CODES,
+    JUDGE_NOT_NORMALIZED,
+    MISSING_DISPOSITION_DATE,
+    REVIEW_NEEDED,
     RUN_COMPLETED,
     RUN_FAILED,
     RUN_IN_PROGRESS,
+    SENTINEL_COLLISION,
+    SEVERITY_LOW,
+    SEVERITY_MEDIUM,
 )
 from pipeline.facts.judge_attribution import build_docket_context, resolve_charge
 from pipeline.facts.outcome_facts import (
@@ -61,16 +70,41 @@ from pipeline.facts.sentence_facts import (
     insert_sentence_facts,
     parent_attributed,
 )
-from pipeline.normalization.charge_matcher import ChargeMatcher
+from pipeline.normalization.charge_matcher import (
+    ChargeMatcher,
+    build_charge_review_item,
+)
 from pipeline.normalization.charge_roster_loader import load_charge_roster
-from pipeline.normalization.judge_matcher import JudgeMatcher
+from pipeline.normalization.judge_matcher import (
+    ENTITY_JUDGE,
+    ROLE_ASSIGNED,
+    ROLE_DISPOSITION,
+    JudgeMatcher,
+    build_judge_review_item,
+)
 from pipeline.normalization.judge_roster_loader import load_judge_roster
-from pipeline.normalization.outcome_mapper import OutcomeMapper, load_taxonomy_snapshot
+from pipeline.normalization.outcome_mapper import (
+    OutcomeMapper,
+    build_outcome_review_item,
+    load_taxonomy_snapshot,
+)
+from pipeline.normalization.review_items import build_review_item
 from pipeline.normalization.sentencing_mapper import (
+    ENTITY_SENTENCING,
     SentencingMapper,
+    build_duration_review_item,
+    build_sentencing_review_items,
     load_sentencing_taxonomy,
 )
-from pipeline.warning_codes import UNPARSEABLE_DURATION
+from pipeline.warning_codes import (
+    MISSING_DISPOSITION_DATE as WARN_MISSING_DISPOSITION_DATE,
+)
+from pipeline.warning_codes import (
+    SENTINEL_COLLISION as WARN_SENTINEL_COLLISION,
+)
+from pipeline.warning_codes import (
+    UNPARSEABLE_DURATION,
+)
 
 logger = logging.getLogger("pipeline.facts.build_facts")
 
@@ -179,19 +213,23 @@ def _collect_outcome_rows(
     judge_matcher: JudgeMatcher,
     mapper: OutcomeMapper,
     taxonomy_version: str,
-) -> tuple[list[dict[str, object]], dict[str, object]]:
+) -> tuple[list[dict[str, object]], dict[str, object], list[dict[str, object]]]:
     """Read the corpus and build every outcome-fact row (no writes here).
 
-    Returns ``(rows, counts)``. One row per disposed charge; held charges are
-    counted, never rowed. ``counts`` carries the run-report tallies used for the
-    completion reconciliation (facts_written + held_skipped == charges_processed;
-    the outcome-code split equals the 22.4 mapper split over the same corpus).
+    Returns ``(rows, counts, review_items)``. One row per disposed charge; held
+    charges are counted, never rowed. ``counts`` carries the run-report tallies used
+    for the completion reconciliation (facts_written + held_skipped ==
+    charges_processed; the outcome-code split equals the 22.4 mapper split over the
+    same corpus). ``review_items`` are ``review.queue_items`` payloads built via the
+    22.1 helpers (Task 23.4) for the charge / judge / outcome / attribution review
+    paths this loop already computes — the 22.x/23.1 modules are consumed unchanged.
     """
     charge_warnings = _load_charge_warning_codes(conn)
     dockets = _load_dockets(conn)
     charges_by_docket = _load_charges_by_docket(conn)
 
     rows: list[dict[str, object]] = []
+    review_items: list[dict[str, object]] = []
     charges_processed = 0
     held_skipped = 0
     mvp_eligible = public_eligible = judge_specific_eligible = 0
@@ -223,6 +261,22 @@ def _collect_outcome_rows(
             judge_matcher,
         )
 
+        # Docket-grain review path: the assigned judge (22.3 normalization). Built
+        # once per docket; None when absent or a clean match.
+        assigned_judge_raw = docket["assigned_judge_raw"]
+        assigned_item = build_judge_review_item(
+            judge_matcher.match(
+                assigned_judge_raw
+                if assigned_judge_raw is None
+                else str(assigned_judge_raw)
+            ),
+            source_document_id=source_document_id,
+            role=ROLE_ASSIGNED,
+            parsed_docket_id=docket_id,
+        )
+        if assigned_item is not None:
+            review_items.append(assigned_item)
+
         for charge in charges:
             charges_processed += 1
             # Fact-creation domain: exactly one outcome fact per DISPOSED charge.
@@ -250,6 +304,45 @@ def _collect_outcome_rows(
                 source_document_id=source_document_id,
                 parsed_docket_id=docket_id,
                 parsed_charge_id=str(charge["id"]),
+            )
+
+            # Charge-grain review paths (Task 23.4): charge normalization (22.2),
+            # disposition-judge normalization (22.3), outcome mapping (22.4), and the
+            # 23.1 ambiguous-attribution descriptor. Each helper returns None / no
+            # descriptor for a clean result; only real signals reach the queue.
+            charge_id = str(charge["id"])
+            disposition_judge_raw = charge["disposition_judge_raw"]
+            candidate_items = [
+                build_charge_review_item(
+                    charge_result,
+                    source_document_id=source_document_id,
+                    charge_sequence=sequence,
+                    parsed_docket_id=docket_id,
+                    parsed_charge_id=charge_id,
+                ),
+                build_judge_review_item(
+                    judge_matcher.match(
+                        disposition_judge_raw
+                        if disposition_judge_raw is None
+                        else str(disposition_judge_raw)
+                    ),
+                    source_document_id=source_document_id,
+                    role=ROLE_DISPOSITION,
+                    charge_sequence=sequence,
+                    parsed_docket_id=docket_id,
+                    parsed_charge_id=charge_id,
+                ),
+                build_outcome_review_item(
+                    outcome_result,
+                    source_document_id=source_document_id,
+                    charge_sequence=sequence,
+                    parsed_docket_id=docket_id,
+                    parsed_charge_id=charge_id,
+                ),
+                attribution.review_descriptor,
+            ]
+            review_items.extend(
+                dict(item) for item in candidate_items if item is not None
             )
 
             disposition_date = charge["disposition_date"]
@@ -297,7 +390,7 @@ def _collect_outcome_rows(
         "outcome_code_split": dict(sorted(outcome_split.items())),
         "ineligible_by_reason": reason_counts,
     }
-    return rows, counts
+    return rows, counts, review_items
 
 
 def _to_date(value: object) -> date | None:
@@ -324,13 +417,21 @@ def _dur_view(sentence: dict[str, object]) -> dict[str, object]:
 
 
 def _load_all_sentences(conn: psycopg.Connection) -> list[dict[str, object]]:
-    """Every parsed sentence joined to its charge's disposition state (one scan)."""
+    """Every parsed sentence joined to its charge's disposition state (one scan).
+
+    Also carries the charge's ``docket_id`` / ``sequence`` and the docket's
+    ``source_document_id`` so the sentence-grain review items (Task 23.4) can be
+    anchored and dedup-keyed without a second scan; the STOP checks and SD-15 report
+    ignore the extra columns.
+    """
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             "SELECT s.id, s.charge_id, s.component_order, s.sentence_type, "
             "s.raw_text, s.min_days, s.max_days, s.min_assumed, s.sentence_date, "
-            "c.disposition_raw, c.disposition_date "
-            "FROM parsed.sentences s JOIN parsed.charges c ON s.charge_id = c.id"
+            "c.disposition_raw, c.disposition_date, c.docket_id, "
+            "c.sequence AS charge_sequence, d.source_document_id "
+            "FROM parsed.sentences s JOIN parsed.charges c ON s.charge_id = c.id "
+            "JOIN parsed.dockets d ON c.docket_id = d.id"
         )
         return list(cur.fetchall())
 
@@ -448,7 +549,7 @@ def _collect_sentence_rows(
     *,
     sentencing_mapper: SentencingMapper,
     taxonomy_version: str,
-) -> tuple[list[dict[str, object]], dict[str, object]]:
+) -> tuple[list[dict[str, object]], dict[str, object], list[dict[str, object]]]:
     """Build every sentence-fact row (pure; no DB) + the separate sentence tallies.
 
     One row per parsed sentence component on a disposed charge; creation is NEVER
@@ -456,10 +557,17 @@ def _collect_sentence_rows(
     parent outcome fact; the 22.5 mapper is applied per component at build time.
     STOP on a disposed-charge sentence whose charge has no parent outcome fact, or
     a 1:1 count mismatch.
+
+    Also returns the sentence-grain ``review.queue_items`` payloads (Task 23.4):
+    the 22.5 component items (unmapped / ambiguous / money-unparseable), the
+    duration-unparseable item sourced from the per-component 18.1 predicate (the
+    single source of truth, NOT ``parsed.warnings``), and the additive-category
+    silent-loss item. The 22.5 module is consumed unchanged.
     """
     disposed: list[dict[str, object]] = prep["disposed_sentences"]  # type: ignore[assignment]
 
     rows: list[dict[str, object]] = []
+    review_items: list[dict[str, object]] = []
     mvp_eligible = public_eligible = judge_specific_eligible = 0
     review_needed_count = 0
     reason_counts = _empty_reason_counts()
@@ -484,6 +592,57 @@ def _collect_sentence_rows(
         component_match_method = derive_component_match_method(result)
         duration_unparseable = _is_unparseable_duration(_dur_view(sentence))
         sentence_date = _to_date(sentence["sentence_date"])
+
+        # Sentence-grain review paths (Task 23.4). Anchors come off the extended
+        # sentence scan; the dedup key uses only source_document_id + item_type +
+        # (charge_sequence, component_order).
+        source_document_id = str(sentence["source_document_id"])
+        docket_id = str(sentence["docket_id"])
+        charge_sequence = int(sentence["charge_sequence"])
+        component_order = int(sentence["component_order"])
+        sentence_id = str(sentence["id"])
+
+        component_items = build_sentencing_review_items(
+            result,
+            source_document_id=source_document_id,
+            charge_sequence=charge_sequence,
+            component_order=component_order,
+            parsed_docket_id=docket_id,
+            parsed_charge_id=charge_id,
+            parsed_sentence_id=sentence_id,
+        )
+        review_items.extend(component_items)
+        if duration_unparseable:
+            review_items.append(
+                build_duration_review_item(
+                    source_document_id=source_document_id,
+                    charge_sequence=charge_sequence,
+                    component_order=component_order,
+                    parsed_docket_id=docket_id,
+                    parsed_charge_id=charge_id,
+                    parsed_sentence_id=sentence_id,
+                    raw_value=str(sentence["sentence_type"]),
+                )
+            )
+        # Additive silent-loss guard: emit ONLY when an additive category exists AND
+        # the 22.5 helper produced no item for this component (so a money-unparseable
+        # or ambiguous additive is never double-flagged). This routes the additive to
+        # the queue; it does NOT touch the fact's review_needed (23.3 owns that).
+        if len(result.categories) > 1 and not component_items:
+            review_items.append(
+                build_review_item(
+                    source_document_id=source_document_id,
+                    item_type=ADDITIVE_SENTENCING_CATEGORY,
+                    severity=SEVERITY_LOW,
+                    reason_code=REVIEW_NEEDED,
+                    locator=(str(charge_sequence), str(component_order)),
+                    parsed_docket_id=docket_id,
+                    parsed_charge_id=charge_id,
+                    parsed_sentence_id=sentence_id,
+                    entity_type=ENTITY_SENTENCING,
+                    raw_value=str(sentence["sentence_type"]),
+                )
+            )
 
         eligibility = evaluate_sentence_eligibility(
             sentence_date=sentence_date,
@@ -564,7 +723,139 @@ def _collect_sentence_rows(
         "sd15_delta_days_min": prep["sd15_delta_days_min"],
         "sd15_delta_days_max": prep["sd15_delta_days_max"],
     }
-    return rows, counts
+    return rows, counts, review_items
+
+
+def _collect_warning_review_items(
+    conn: psycopg.Connection,
+) -> list[dict[str, object]]:
+    """Build the envelope-warning-sourced review items (Task 23.4 R4).
+
+    Scans ``parsed.warnings`` for the two codes 23.4 routes to the queue and joins
+    each to its docket's stable ``source_document_id`` (the dedup anchor) and, when
+    charge-grain, its ``parsed.charges`` id:
+
+    - ``MISSING_DISPOSITION_DATE`` -> ``missing_disposition_date`` /
+      ``disposition_date_missing`` / medium. The envelope emits this ONLY for a
+      disposed charge with a null date (``disposition_raw`` present), so held /
+      event-key charges structurally never flood the queue — no exclusion needed.
+    - ``SENTINEL_COLLISION`` -> ``sentinel_collision`` / ``judge_not_normalized`` /
+      medium. Emitted at TWO grains (docket-grain CASE INFORMATION, no
+      ``charge_sequence``; charge-grain DISPOSITION). Both route here; the
+      docket-grain case uses an empty locator, so the item count tracks the loaded
+      warning tally (≤ it, dedup collapsing same charge/type).
+
+    Uses a LEFT JOIN so a docket-grain (null ``charge_sequence``) warning still
+    yields a row with a null charge id and an empty locator.
+    """
+    review_items: list[dict[str, object]] = []
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT w.code, w.charge_sequence, d.source_document_id, c.id AS charge_id "
+            "FROM parsed.warnings w "
+            "JOIN parsed.dockets d ON w.docket_id = d.id "
+            "LEFT JOIN parsed.charges c "
+            "  ON c.docket_id = w.docket_id AND c.sequence = w.charge_sequence "
+            "WHERE w.code IN (%s, %s)",
+            (WARN_MISSING_DISPOSITION_DATE, WARN_SENTINEL_COLLISION),
+        )
+        for row in cur.fetchall():
+            source_document_id = str(row["source_document_id"])
+            charge_sequence = row["charge_sequence"]
+            charge_id = None if row["charge_id"] is None else str(row["charge_id"])
+            # Charge-grain warnings carry a sequence -> a single-part locator; a
+            # docket-grain warning (null sequence) uses the empty locator.
+            locator = () if charge_sequence is None else (str(charge_sequence),)
+            if row["code"] == WARN_MISSING_DISPOSITION_DATE:
+                item_type, reason_code, entity_type = (
+                    MISSING_DISPOSITION_DATE,
+                    DISPOSITION_DATE_MISSING,
+                    "disposition",
+                )
+            else:  # WARN_SENTINEL_COLLISION
+                item_type, reason_code, entity_type = (
+                    SENTINEL_COLLISION,
+                    JUDGE_NOT_NORMALIZED,
+                    ENTITY_JUDGE,
+                )
+            review_items.append(
+                build_review_item(
+                    source_document_id=source_document_id,
+                    item_type=item_type,
+                    severity=SEVERITY_MEDIUM,
+                    reason_code=reason_code,
+                    locator=locator,
+                    parsed_charge_id=charge_id,
+                    entity_type=entity_type,
+                )
+            )
+    return review_items
+
+
+def insert_review_items(
+    conn: psycopg.Connection, review_items: Sequence[Mapping[str, object]]
+) -> dict[str, object]:
+    """Insert review items with DB-enforced dedup; return per-type tallies.
+
+    Idempotent and status-preserving (Task 23.4 AC2): payloads are first collapsed
+    in memory by ``dedup_key`` (a same-record-same-type signal is one item), then
+    each is inserted with ``ON CONFLICT (dedup_key) DO NOTHING`` against the 21.2
+    unique constraint. An item that already exists from a prior run is left entirely
+    untouched — including its ``status`` (the no-op insert fires no UPDATE, so the
+    ``set_updated_at`` trigger never runs). Review items are NOT run-scoped: no
+    build-run id is stored on them (SD 6).
+
+    Returns ``generated`` (deduped, by type) and ``newly_inserted`` (actually added
+    this run, by type) — the second equals zero on a re-run of an unchanged corpus.
+    Runs inside the caller's transaction; does not commit.
+    """
+    deduped: dict[str, Mapping[str, object]] = {}
+    for item in review_items:
+        deduped.setdefault(str(item["dedup_key"]), item)
+
+    generated_by_type: Counter[str] = Counter()
+    inserted_by_type: Counter[str] = Counter()
+    columns = (
+        "item_type",
+        "severity",
+        "source_document_id",
+        "parsed_docket_id",
+        "parsed_charge_id",
+        "parsed_sentence_id",
+        "entity_type",
+        "raw_value",
+        "candidate_context",
+        "reason_code",
+        "status",
+        "dedup_key",
+    )
+    placeholders = ", ".join(f"%({col})s" for col in columns)
+    column_list = ", ".join(columns)
+    with conn.cursor() as cur:
+        for item in deduped.values():
+            item_type = str(item["item_type"])
+            generated_by_type[item_type] += 1
+            candidate_context = item.get("candidate_context")
+            params = {
+                **item,
+                "candidate_context": None
+                if candidate_context is None
+                else Json(candidate_context),
+            }
+            cur.execute(
+                f"INSERT INTO review.queue_items ({column_list}) "  # noqa: S608 - columns are module constants, never input
+                f"VALUES ({placeholders}) ON CONFLICT (dedup_key) DO NOTHING",
+                params,
+            )
+            if cur.rowcount:
+                inserted_by_type[item_type] += 1
+
+    return {
+        "generated_total": sum(generated_by_type.values()),
+        "generated_by_type": dict(sorted(generated_by_type.items())),
+        "newly_inserted_total": sum(inserted_by_type.values()),
+        "newly_inserted_by_type": dict(sorted(inserted_by_type.items())),
+    }
 
 
 def _create_run(
@@ -654,6 +945,24 @@ def _print_summary(run_id: str, counts: dict[str, object]) -> None:
             print(f"  {code:34} {n}")
     if "sentences" in counts:
         _print_sentence_summary(counts["sentences"])  # type: ignore[arg-type]
+    if "review_items" in counts:
+        _print_review_summary(counts["review_items"])  # type: ignore[arg-type]
+
+
+def _print_review_summary(rc: dict[str, object]) -> None:
+    """Print the review-queue block — item TYPES + counts only (hygiene: no raw
+    values, no docket numbers). ``newly_inserted`` is zero on an unchanged re-run,
+    demonstrating the dedup / status-preserving property (AC 3/4)."""
+    print("--- review items ---")
+    print(
+        f"review_items generated={rc['generated_total']} "
+        f"newly_inserted={rc['newly_inserted_total']}"
+    )
+    generated: dict[str, int] = rc["generated_by_type"]  # type: ignore[assignment]
+    inserted: dict[str, int] = rc["newly_inserted_by_type"]  # type: ignore[assignment]
+    print("review_items_by_type (generated / newly_inserted):")
+    for item_type in sorted(generated):
+        print(f"  {item_type:32} {generated[item_type]} / {inserted.get(item_type, 0)}")
 
 
 def _print_sentence_summary(sc: dict[str, object]) -> None:
@@ -751,7 +1060,7 @@ def build_facts(conn: psycopg.Connection, database_url: str) -> int:
     )
 
     try:
-        rows, counts = _collect_outcome_rows(
+        rows, counts, outcome_review_items = _collect_outcome_rows(
             conn,
             run_id,
             charge_matcher=charge_matcher,
@@ -765,15 +1074,26 @@ def build_facts(conn: psycopg.Connection, database_url: str) -> int:
             # Parent ids exist only after insert; read them back inside the same
             # tx and hang the sentence facts off them (PD3 ordering).
             outcome_id_by_charge = _load_outcome_fact_ids(conn, run_id)
-            sentence_rows, sentence_counts = _collect_sentence_rows(
-                sentence_prep,
-                outcome_id_by_charge,
-                parent_by_charge,
-                sentencing_mapper=sentencing_mapper,
-                taxonomy_version=taxonomy.taxonomy_version,
+            sentence_rows, sentence_counts, sentence_review_items = (
+                _collect_sentence_rows(
+                    sentence_prep,
+                    outcome_id_by_charge,
+                    parent_by_charge,
+                    sentencing_mapper=sentencing_mapper,
+                    taxonomy_version=taxonomy.taxonomy_version,
+                )
             )
             insert_sentence_facts(conn, sentence_rows)
             counts["sentences"] = sentence_counts
+            # Route every 22.x/23.x review path into review.queue_items (Task 23.4).
+            # NOT run-scoped: dedup-keyed, status-preserving across rebuilds. The
+            # envelope-warning items are read here; the rest were built in the
+            # collect passes above.
+            warning_review_items = _collect_warning_review_items(conn)
+            counts["review_items"] = insert_review_items(
+                conn,
+                [*outcome_review_items, *sentence_review_items, *warning_review_items],
+            )
             _finish_run(
                 conn,
                 run_id,

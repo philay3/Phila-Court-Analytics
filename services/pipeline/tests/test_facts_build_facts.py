@@ -440,10 +440,20 @@ def test_sentence_facts_built_linked_and_scored(build_conn):
     assert not seven["public_eligible"]
     assert PARENT_OUTCOME_INELIGIBLE in seven["ineligibility_reason_codes"]
 
-    # No review-queue rows are written (23.4's job).
+    # Task 23.4 now wires review items into the queue: this seed yields exactly one
+    # item per real normalization/attribution signal it carries (dedup-collapsed).
+    # (Exhaustive per-type coverage lives in test_review_item_wiring.py.)
     with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute("SELECT count(*) AS n FROM review.queue_items")
-        assert cur.fetchone()["n"] == 0
+        cur.execute(
+            "SELECT item_type, count(*) AS n FROM review.queue_items GROUP BY item_type"
+        )
+        by_type = {r["item_type"]: r["n"] for r in cur.fetchall()}
+    assert by_type == {
+        "unmapped_charge": 1,  # seq 3: unlisted statute/offense
+        "unmapped_disposition": 1,  # seq 2: unmapped disposition_raw
+        "unmapped_judge": 1,  # assigned "Beta Nomatch"
+        "duration_unparseable": 1,  # seq 4: "Confinement, Life"
+    }
 
 
 def test_held_charge_sentence_is_stop(build_conn):
