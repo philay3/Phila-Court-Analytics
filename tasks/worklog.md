@@ -3773,3 +3773,93 @@ the record field there.
   sweep is fake judges + seeded aggregates ONLY; demo charge rows are PROMOTED to
   roster membership, never deleted (they are load-bearing here and Phase 23 facts
   FK to them).
+
+## Task 22.3 — Judge Roster + Judge Normalization (2026-07-12)
+
+- **What was built:** the real judge roster (committed seed, public FJD-directory
+  sourced) plus the pure `JudgeMatcher` that normalizes
+  `parsed.dockets.assigned_judge_raw` and `parsed.charges.disposition_judge_raw`
+  against a roster snapshot and emits 22.1 `JudgeNormalizationResult` objects +
+  `build_review_item` review items for unmatched/ambiguous values. The Sprint 4
+  durable fix for judge validity, at the normalization layer (parser untouched).
+- **Roster (reviewed + APPROVED at the roster gate): 76 judges.** Two groups,
+  both independently confirmed against the public FJD criminal assignment chart /
+  pacourts Municipal Court list (NOT a corpus echo): (1) 53 observed in-corpus AND
+  directory-confirmed; (2) 23 directory-completeness additions (sitting
+  CP-criminal + Municipal Court, plus recent-departed who could have sat in the
+  2025 window) not observed in-corpus. Names transcribed verbatim from the
+  approved verified curation list — none sourced or guessed by the agent. Display
+  names are public natural order, unprefixed; the fake Sprint 2 rows keep their
+  "Judge " prefix. One space-separated compound surname (Barbara S. Thomson
+  Previdi) carries a comma-form alias "Thomson Previdi, Barbara S.".
+- **Roster source references:** public Philadelphia First Judicial District (FJD)
+  criminal assignment chart + Pennsylvania UJS / pacourts Municipal Court judge
+  list. Scope is the criminal-relevant bench (CP civil/family-only judges who
+  cannot appear on a CR docket are excluded). `Sharon Williams Losier` surname
+  granularity and `Larry Farnese` nickname (Larry<->Lawrence) are left for
+  first-live-appearance alias top-up, NOT pre-invented.
+- **Sanctioned vocabulary addition (Answer 1):** `judge_not_normalized` added to
+  `fact_review_vocab.ELIGIBILITY_REASON_CODES` (additive; the domain-qualified
+  judge analog of `charge_not_normalized`). Reason_code set is now 13 members;
+  the 21.2 membership test was updated 12->13. Review-item mapping:
+  unmatched -> `unmapped_judge` / medium / `judge_not_normalized`;
+  ambiguous -> `ambiguous_judge` / HIGH / `judge_not_normalized`.
+- **Fake-judge exclusion mechanism (pinned decision 7):** a candidate-pool filter
+  `exclude_fake_judges(entries)` in `judge_matcher.py` drops the frozen
+  `FAKE_JUDGE_SLUGS` set (source of truth: `db/seeds/reference-data.ts`
+  JUDGE_SEEDS) at load time — no `ref.*` column. Proven by test: a real-style
+  value cannot resolve to a fabricated identity. The seed's real<->fake
+  slug-collision assertion is the seed-time backstop.
+- **Unmatched non-distinction (pinned decision 3):** the matcher structurally
+  CANNOT distinguish an issuing-authority / non-judge value from a real judge
+  missing from the roster — both resolve to `unmatched` + review, no fuzzy-accept
+  ever. Demonstrated in tests. Null/blank judge fields are ABSENT (match returns
+  None; no result, no review item — SENTINEL_COLLISION nulls are already
+  review_needed at parse).
+- **Canonicalization (approved at gate):** display-format-independent, comma-aware
+  positional parse; honorific strip (bare "J." deliberately NOT a honorific — it
+  collides with a real first initial); intra-name hyphens/apostrophes deleted so
+  hyphenated surnames are single tokens matching in both orders (this superseded
+  the Answer-3 comma-alias requirement for compounds — there are no
+  space-separated compounds in-corpus; the comma-alias mechanism is retained +
+  synthetic/live-tested for the Thomson Previdi case). Generational suffixes
+  (Jr/Sr/II/III/IV) carried as a separate identity component: absent-suffix is a
+  wildcard (parallel to middle initials — unique => exact, two differing only by
+  suffix => ambiguous), two present suffixes must match. Middle-initial tolerance
+  bridges initial<->full-name and treats an absent middle as a wildcard.
+- **Role context (pinned decision 6):** carried in the caller + dedup locator, NOT
+  by modifying the frozen 22.1 model. assigned -> ("judge","assigned");
+  disposition -> ("judge","disposition",str(charge_sequence)). Assigned and
+  disposition on one docket yield two distinct items, never merged.
+- **Coverage headline (verbatim, counts only; independent-directory confirmation
+  over the 76-entry roster):**
+  - assigned_judge_raw (1603 rows): distinct 51; absent(null/blank) 2 distinct /
+    49 rows; present 49 distinct / 1554 rows; exact 49/1554; alias 0; ambiguous 0;
+    unmatched 0; statute 0; pattern 0. Unmatched tail 0, ambiguous 0.
+  - disposition_judge_raw (3625 rows): distinct 47; absent(null) 1 distinct / 689
+    rows; present 46 distinct / 2936 rows; exact 46/2936; alias 0; ambiguous 0;
+    unmatched 0; statute 0; pattern 0. Unmatched tail 0, ambiguous 0.
+- **Persistence posture:** mirrors 22.2 — the matcher produces results +
+  in-memory review-item payload dicts via `build_review_item`; NO fact.* writes,
+  NO review-item DB persistence (Phase 23).
+- **Files touched:** new —
+  `services/pipeline/src/pipeline/normalization/{judge_matcher,judge_roster_loader}.py`,
+  `services/pipeline/src/pipeline/reports/judge_coverage.py`,
+  `services/pipeline/tests/{test_judge_matcher,test_judge_roster_loader,test_reports_judge_coverage,test_reports_distinct_fields}.py`,
+  `db/seeds/{judge-roster-data,judge-roster,judge-roster.test}.ts`; modified —
+  `services/pipeline/src/pipeline/fact_review_vocab.py` (additive reason_code),
+  `services/pipeline/src/pipeline/reports/distinct_values.py` (`--field`
+  multi-table extension), `services/pipeline/tests/test_fact_review_vocab.py`
+  (12->13), `db/seeds/run.ts` (wire seedJudgeRoster), `tasks/worklog.md`.
+- **Deviations from the approved plan:** canonicalization refined from real-data
+  formats (hyphen/apostrophe single-token folding superseding the Answer-3
+  compound-alias-for-all requirement; suffix-as-identity incl. III; absent-suffix
+  wildcard; dropped bare "J." honorific) — all reviewed and APPROVED at the roster
+  gate. Roster extended from the 53 observed to the 76-entry verified directory
+  set per pinned decision 2 (RC1/RC2 at the gate). No other deviations.
+- **Notes for next task (22.4):** outcome/sentencing matchers get their own
+  domain-qualified `_not_normalized` reason codes (the `judge_not_normalized`
+  convention). The `distinct_values.py` `--field schema.table.column` extension
+  spans tables in one report. `judge_coverage.py` counts nulls as a DISTINCT
+  absent class from unmatched. Christopher Hall is in the roster pending Chops
+  confirmation (keep unless told to hold).
