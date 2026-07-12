@@ -113,12 +113,16 @@ def test_five_blocks_stop_with_block_streak_and_cooldowns(tmp_path):
     assert report["counts"]["blocks"] == 5
     assert report["max_block_streak"] == 5
     assert report["cooldowns_taken"]["post_block"] == 5
-    # A 2-minute cooldown followed each block.
+    # A post-block cooldown followed each block.
     assert clock.sleeps.count(POST_BLOCK_COOLDOWN_SECONDS) == 5
 
 
-def test_post_block_cooldown_is_two_minutes():
-    assert POST_BLOCK_COOLDOWN_SECONDS == 120
+def test_post_block_cooldown_meets_counsel_minimum():
+    # ADR 0002 (Amendment 2026-07-12) records the condition as a MINIMUM of 2
+    # minutes; we run the more-conservative 300s. Assert both the floor and the
+    # selected value so a regression below the minimum is caught.
+    assert POST_BLOCK_COOLDOWN_SECONDS >= 120
+    assert POST_BLOCK_COOLDOWN_SECONDS == 300
 
 
 # --- error streak (FIX 2) --------------------------------------------------

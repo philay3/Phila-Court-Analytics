@@ -61,8 +61,8 @@ def test_collect_defaults_parse():
     assert args.count == 600
     assert args.max_minutes == 60
     assert args.headless is False  # headful by default (FIX 3)
-    assert args.batch_size == 40
-    assert args.batch_cooldown_seconds == 240
+    assert args.batch_size == 100
+    assert args.batch_cooldown_seconds == 120
     assert args.ledger_dir.name == "coverage"
     assert args.recheck_misses is False
 
@@ -108,7 +108,7 @@ def test_legal_conditions_are_not_flags_and_are_hardcoded():
         else:  # pragma: no cover - would mean the flag leaked in
             raise AssertionError(f"{bad} should not be a recognized flag")
     assert engine.HARD_CEILING_MINUTES == 240
-    assert engine.POST_BLOCK_COOLDOWN_SECONDS == 120
+    assert engine.POST_BLOCK_COOLDOWN_SECONDS == 300
 
 
 def test_collect_rejects_non_mc_court(capsys):

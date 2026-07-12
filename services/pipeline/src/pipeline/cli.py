@@ -12,6 +12,10 @@ from datetime import date
 from pathlib import Path
 
 from pipeline import db
+from pipeline.collector.engine import (
+    BATCH_COOLDOWN_DEFAULT_SECONDS,
+    BATCH_SIZE_DEFAULT,
+)
 from pipeline.envelope import run_parse
 from pipeline.equivalence_check import SALT_ENV_VAR, run_equivalence_check
 from pipeline.evaluation.extractors import EXTRACTORS
@@ -375,21 +379,21 @@ def build_parser() -> argparse.ArgumentParser:
             subparser.add_argument(
                 "--batch-size",
                 type=int,
-                default=40,
+                default=BATCH_SIZE_DEFAULT,
                 help=(
                     "Dockets per batch before the inter-batch cooldown. "
-                    "Operational parameter. Default: 40."
+                    "Operational parameter. Default: 100."
                 ),
             )
             subparser.add_argument(
                 "--batch-cooldown-seconds",
                 type=int,
-                default=240,
+                default=BATCH_COOLDOWN_DEFAULT_SECONDS,
                 help=(
                     "Cooldown between batches, in seconds. Operational "
                     "parameter with an enforced 60s floor (may be raised, never "
-                    "lowered below it). Default: 240. The counsel-locked "
-                    "240-minute ceiling and 120s post-block cooldown are NOT "
+                    "lowered below it). Default: 120. The counsel-locked "
+                    "240-minute ceiling and 300s post-block cooldown are NOT "
                     "flags and cannot be changed."
                 ),
             )

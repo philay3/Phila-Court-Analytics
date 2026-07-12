@@ -10,7 +10,7 @@ Per calendar-day window (PD-1): one advanced search → ``classify_search`` →
 in-session → append one window-ledger entry. All pacing/stop conditions are
 enforced in code and reused from enumeration:
 
-  - counsel-locked 240-minute ceiling and 120s post-block cooldown;
+  - counsel-locked 240-minute ceiling and 300s post-block cooldown;
   - jittered 2.0-5.0s delay after EVERY portal request — searches AND fetches;
   - batch accounting counts ALL real portal requests, searches and fetches
     alike (skips excluded); the inter-batch cooldown fires on that combined
@@ -94,6 +94,9 @@ STOP_WINDOWS_EXHAUSTED = "windows_exhausted"
 STOP_WINDOW_TRUNCATED = "window_truncated"
 STOP_FETCH_CAP = "fetch_cap"
 
+# Emit a progress+projection log line once every N fully-searched windows.
+PROGRESS_INTERVAL_WINDOWS = 5
+
 # --court -> the court prefixes that are FETCHED. Both are always HARVESTED.
 FETCH_COURTS = {"MC": ("MC",), "CP": ("CP",), "both": ("CP", "MC")}
 _COURTS = ("CP", "MC")
@@ -117,8 +120,8 @@ class SearchParams:
     report_dir: Path
     ledger_dir: Path
     headless: bool = False
-    batch_size: int = 40
-    batch_cooldown_seconds: int = 240
+    batch_size: int = 100
+    batch_cooldown_seconds: int = 120
     max_fetches: int | None = None
     recheck_windows: bool = False
 
@@ -147,6 +150,19 @@ def _empty_court_counts() -> dict[str, dict[str, int]]:
         court: {"harvested": 0, "fetched": 0, "already_present": 0, "fetch_failures": 0}
         for court in _COURTS
     }
+
+
+def _search_block_detail(signal: SearchSignal) -> str:
+    """Content-free block detail for a blocked SEARCH (AC-2), mirroring the
+    fetch-side ``_attempt_detail`` block vocabulary. Fail-closed default (no
+    positive marker, search UI not served) is ``unrecognized_page``."""
+    if signal.bot_check:
+        return "bot_check"
+    if signal.unauthorized:
+        return "unauthorized"
+    if signal.rate_limited:
+        return "rate_limited"
+    return "unrecognized_page"
 
 
 def run(
@@ -193,6 +209,7 @@ def run(
     delays_taken = 0
     requests_in_batch = 0
     batch_number = 1
+    windows_processed = 0
     max_block_streak = 0
     max_error_streak = 0
     stop_reason: str | None = None
@@ -222,16 +239,64 @@ def run(
         max_error_streak = max(max_error_streak, guard.error_streak)
         return stop
 
+    def _log_cooldown(
+        kind: str,
+        seconds: int,
+        *,
+        outcome: str | None = None,
+        detail: str | None = None,
+    ) -> None:
+        """One cooldown log line with batch context (AC-2). ``requests_in_batch``
+        and ``batch_number`` are read at the moment of the trigger; post_block
+        lines additionally carry the triggering ``outcome`` and ``detail``."""
+        extra: dict = {
+            "kind": kind,
+            "seconds": seconds,
+            "batch": batch_number,
+            "requests_in_batch": requests_in_batch,
+        }
+        if outcome is not None:
+            extra["outcome"] = outcome
+        if detail is not None:
+            extra["detail"] = detail
+        logger.info("cooldown", extra=extra)
+
+    def _maybe_emit_progress() -> None:
+        """Every ``PROGRESS_INTERVAL_WINDOWS`` fully-searched windows, log a
+        progress line (AC-3): windows complete/remaining, total portal requests
+        so far, elapsed vs. the effective time budget, and a linear projection
+        of whether the run ends in ``time_cap`` or ``windows_exhausted``."""
+        if windows_processed % PROGRESS_INTERVAL_WINDOWS != 0:
+            return
+        complete = skipped_complete + windows_processed
+        remaining = len(windows) - complete
+        elapsed = _elapsed()
+        per_window = elapsed / windows_processed if windows_processed else 0.0
+        projected_total = elapsed + per_window * remaining
+        projected_stop = (
+            STOP_TIME_CAP
+            if projected_total > budget_seconds
+            else STOP_WINDOWS_EXHAUSTED
+        )
+        logger.info(
+            "progress",
+            extra={
+                "windows_complete": complete,
+                "windows_remaining": remaining,
+                "total_requests": delays_taken,
+                "elapsed_minutes": round(elapsed / 60, 1),
+                "cap_minutes": round(budget_seconds / 60, 1),
+                "projected_stop": projected_stop,
+            },
+        )
+
     def _maybe_inter_batch_cooldown() -> str | None:
         """Fire the inter-batch cooldown before a real request if a full batch
         of combined search+fetch requests has completed (F2). Returns a
         boundary stop reason (abort/time) if one trips during the cooldown."""
         nonlocal requests_in_batch, batch_number
         if requests_in_batch == params.batch_size:
-            logger.info(
-                "cooldown",
-                extra={"kind": "inter_batch", "seconds": params.batch_cooldown_seconds},
-            )
+            _log_cooldown("inter_batch", params.batch_cooldown_seconds)
             sleep(params.batch_cooldown_seconds)
             cooldowns_taken["inter_batch"] += 1
             requests_in_batch = 0
@@ -268,6 +333,7 @@ def run(
         signal = transport.search(window)
         s_outcome = classify_search(signal)
         requests_in_batch += 1
+        windows_processed += 1  # one searched window (drives the progress line)
         sleep(jitter())  # jitter after EVERY portal request (search)
         delays_taken += 1
 
@@ -286,6 +352,7 @@ def run(
             if stop is not None:
                 stop_reason = stop
                 break
+            _maybe_emit_progress()
             continue
 
         if s_outcome == OUTCOME_SEARCH_BLOCKED:
@@ -303,9 +370,11 @@ def run(
             logger.info(
                 "window", extra={"window_date": wkey, "outcome": LEDGER_BLOCKED}
             )
-            logger.info(
-                "cooldown",
-                extra={"kind": "post_block", "seconds": POST_BLOCK_COOLDOWN_SECONDS},
+            _log_cooldown(
+                "post_block",
+                POST_BLOCK_COOLDOWN_SECONDS,
+                outcome=LEDGER_BLOCKED,
+                detail=_search_block_detail(signal),
             )
             sleep(POST_BLOCK_COOLDOWN_SECONDS)
             cooldowns_taken["post_block"] += 1
@@ -313,6 +382,7 @@ def run(
             if stop is not None:
                 stop_reason = stop
                 break
+            _maybe_emit_progress()
             continue
 
         if s_outcome == OUTCOME_GRID_TRUNCATED:
@@ -353,6 +423,7 @@ def run(
             )
             logger.info("window", extra={"window_date": wkey, "outcome": LEDGER_EMPTY})
             _record_guard(OUTCOME_MISS)
+            _maybe_emit_progress()
             continue
 
         # --- grid_complete: harvest + fetch ---------------------------------
@@ -440,12 +511,11 @@ def run(
             sleep(jitter())  # jitter after EVERY portal request (fetch)
             delays_taken += 1
             if f_outcome == OUTCOME_BLOCKED:
-                logger.info(
-                    "cooldown",
-                    extra={
-                        "kind": "post_block",
-                        "seconds": POST_BLOCK_COOLDOWN_SECONDS,
-                    },
+                _log_cooldown(
+                    "post_block",
+                    POST_BLOCK_COOLDOWN_SECONDS,
+                    outcome=OUTCOME_BLOCKED,
+                    detail=_attempt_detail(f_outcome, fsignal),
                 )
                 sleep(POST_BLOCK_COOLDOWN_SECONDS)
                 cooldowns_taken["post_block"] += 1
@@ -477,11 +547,21 @@ def run(
                 "outcome": LEDGER_COMPLETE,
                 "cp_harvested": win_counts["CP"]["harvested"],
                 "mc_harvested": win_counts["MC"]["harvested"],
+                # AC-1: flat totals over the run's FETCHED courts (harvested
+                # stays per-court because both courts are always harvested).
+                "fetched": sum(win_counts[c]["fetched"] for c in fetch_courts),
+                "already_present": sum(
+                    win_counts[c]["already_present"] for c in fetch_courts
+                ),
+                "fetch_failures": sum(
+                    win_counts[c]["fetch_failures"] for c in fetch_courts
+                ),
                 "skipped_rows": win_skipped,
             },
         )
         if interrupted:
             break
+        _maybe_emit_progress()
     else:
         stop_reason = STOP_WINDOWS_EXHAUSTED
 
