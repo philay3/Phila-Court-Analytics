@@ -4,12 +4,13 @@ Every envelope, import record, docket number, and hash in this file is
 FABRICATED — no real docket data. Docket numbers use the UJS shape over
 impossible sequences; ``defendant_hash``/``source_sha256`` are constant hex
 fillers. The suite exercises ``pipeline.load`` against a REAL Postgres with the
-repo migrations applied (CI provides one; locally, ``pnpm db:up`` +
-``pnpm db:migrate:latest``).
+repo migrations applied (CI provides one; locally, a dedicated test database).
 
-Fail-loud (Required Fix 2): with ``DATABASE_URL`` unset the suite SKIPS locally
-(visible skip count) but HARD-FAILS in a CI environment — a wiring regression
-that drops the DB env must never pass green via silent skips.
+Fail-closed on a non-test database (Fix 21.3-f1): the suite reads ONLY
+``PIPELINE_TEST_DATABASE_URL`` (never ``DATABASE_URL``, so it can never truncate
+the dev/prod DB) and, before truncating, asserts the connected database name
+contains "test". An unset var SKIPS locally (visible skip count) but HARD-FAILS
+in CI (Fix 2 semantics); a non-test database name is a hard failure regardless.
 """
 
 from __future__ import annotations
@@ -159,19 +160,60 @@ def write_pair(
 
 
 # --------------------------------------------------------------------------- #
-# DB fixture (fail-loud CI guard)                                             #
+# DB fixture — fail-closed on a non-test database (Fix 21.3-f1)               #
+#                                                                             #
+# The suite TRUNCATEs tables, so it must never touch the dev/prod database.   #
+# Two independent guards:                                                     #
+#   1. It reads ONLY ``PIPELINE_TEST_DATABASE_URL`` (never ``DATABASE_URL``); #
+#      absent -> local skip / CI hard failure (the existing Fix-2 semantics). #
+#   2. Before any truncation, the connected database name must contain        #
+#      "test"; a mismatch is a hard failure regardless of which var supplied  #
+#      the URL (belt and braces against env-var mixups).                      #
 # --------------------------------------------------------------------------- #
+TEST_DB_URL_ENV_VAR = "PIPELINE_TEST_DATABASE_URL"
+
+
+def _classify_test_db_url(url: str | None, *, in_ci: bool) -> tuple[str, str]:
+    """Pure guard-1 decision: ('run', url) | ('skip', reason) | ('fail', reason)."""
+    if url and url.strip():
+        return ("run", url)
+    if in_ci:
+        return (
+            "fail",
+            f"{TEST_DB_URL_ENV_VAR} must be set for the loader suite in CI; an "
+            "unset value is a wiring regression, not a reason to skip.",
+        )
+    return (
+        "skip",
+        f"{TEST_DB_URL_ENV_VAR} not set; skipping loader DB suite (local).",
+    )
+
+
+def _is_test_dbname(dbname: str) -> bool:
+    """Pure guard-2 predicate: the target database is positively a test DB."""
+    return "test" in dbname.lower()
+
+
 @pytest.fixture
 def loader_conn():
-    url = os.environ.get("DATABASE_URL", "")
-    if not url.strip():
-        if running_in_ci():
-            pytest.fail(
-                "DATABASE_URL must be set for the loader suite in CI; an unset "
-                "value is a wiring regression, not a reason to skip (Fix 2)."
-            )
-        pytest.skip("DATABASE_URL not set; skipping loader DB suite (local)")
-    conn = psycopg.connect(url)
+    action, payload = _classify_test_db_url(
+        os.environ.get(TEST_DB_URL_ENV_VAR), in_ci=running_in_ci()
+    )
+    if action == "fail":
+        pytest.fail(payload)
+    if action == "skip":
+        pytest.skip(payload)
+
+    conn = psycopg.connect(payload)
+    dbname = conn.info.dbname
+    if not _is_test_dbname(dbname):
+        conn.close()
+        pytest.fail(
+            "refusing to run the loader suite against a database whose name does "
+            "not contain 'test' — the suite TRUNCATEs tables and must never touch "
+            f"a dev/prod database (guard 2). Point {TEST_DB_URL_ENV_VAR} at a "
+            "dedicated test database."
+        )
     try:
         with conn.cursor() as cur:
             # CASCADE clears the whole raw -> parsed tree between tests.
@@ -520,3 +562,36 @@ def test_console_output_has_no_docket_numbers(loader_conn, dirs, capsys, caplog)
 
     blob = capsys.readouterr().out + capsys.readouterr().err + caplog.text
     assert not _DOCKET_RE.search(blob), "docket-number-shaped string leaked into output"
+
+
+# --------------------------------------------------------------------------- #
+# Fix 21.3-f1: fail-closed guard arms (pure, no DB required)                  #
+# --------------------------------------------------------------------------- #
+def test_guard1_absent_url_skips_locally():
+    action, _ = _classify_test_db_url("", in_ci=False)
+    assert action == "skip"
+    action_none, _ = _classify_test_db_url(None, in_ci=False)
+    assert action_none == "skip"
+
+
+def test_guard1_absent_url_hard_fails_in_ci():
+    action, reason = _classify_test_db_url(None, in_ci=True)
+    assert action == "fail"
+    assert TEST_DB_URL_ENV_VAR in reason
+
+
+def test_guard1_present_url_runs():
+    action, payload = _classify_test_db_url(
+        "postgresql://u:p@localhost:5432/pca_test", in_ci=True
+    )
+    assert action == "run"
+    assert payload.endswith("/pca_test")
+
+
+def test_guard2_rejects_non_test_dbname():
+    # A dev/prod-shaped name is refused; only a name containing "test" passes.
+    assert _is_test_dbname("pca") is False
+    assert _is_test_dbname("pca_prod") is False
+    assert _is_test_dbname("pca_test") is True
+    assert _is_test_dbname("PCA_TEST") is True  # case-insensitive
+    assert _is_test_dbname("pipeline_test_db") is True

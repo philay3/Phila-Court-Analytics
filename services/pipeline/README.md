@@ -333,10 +333,24 @@ uv run pytest
 ```
 
 The loader suite (`tests/test_load.py`) needs a real Postgres with the repo
-migrations applied. Locally: `pnpm db:up && pnpm db:migrate:latest`, then run
-with `DATABASE_URL` set. With `DATABASE_URL` unset it SKIPS locally (visible
-skip count) but HARD-FAILS in CI — a dropped DB env is a wiring regression,
-never a silent skip.
+migrations applied, and it TRUNCATEs tables — so it is fail-closed against
+touching the dev/prod database (Fix 21.3-f1), via two independent guards:
+
+1. It reads **only** `PIPELINE_TEST_DATABASE_URL` — never `DATABASE_URL` — so it
+   can never truncate the database the `load` command writes to. Unset →
+   SKIPS locally (visible skip count) / HARD-FAILS in CI (a dropped DB env is a
+   wiring regression, never a silent skip).
+2. Before any truncation it asserts the connected database name contains
+   `test`; any other name is a hard failure regardless of which var supplied
+   the URL (belt-and-braces against env-var mixups).
+
+Locally, point it at a dedicated test database (name containing `test`):
+
+```sh
+createdb pca_pipeline_test                         # once
+DATABASE_URL=postgresql://…/pca_pipeline_test pnpm db:migrate:latest
+PIPELINE_TEST_DATABASE_URL=postgresql://…/pca_pipeline_test uv run pytest
+```
 
 Tests use tiny synthetic PDFs generated at test time — no real dockets ever
 appear in the test suite, and a test asserts that run logs contain neither
