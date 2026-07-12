@@ -4162,3 +4162,73 @@ the record field there.
   per invocation; NO active/published selection — Sprint 7). The local `pca_test`
   database was created + migrated to head to verify the DB suite; it is outside the
   repo and can be reused.
+
+## Task 23.3 — Sentence Fact Generation + Eligibility (2026-07-12)
+
+- **What was built:** `build-facts` now writes `fact.charge_sentences` inside the
+  SAME run/transaction as outcome facts — one row per parsed sentence component on
+  every disposed charge that received a 23.2 outcome fact (1:1, never collapsed,
+  creation NOT gated by eligibility). Ordering: create run → insert outcome facts →
+  read the `parsed_charge_id → charge_outcomes.id` map back inside the tx → build +
+  insert sentence facts FK'd to the just-created parent → `_finish_run`. The 22.5
+  sentencing mapper / money extractor, the 18.1 duration predicate, and the 23.2/23.1
+  modules are all consumed UNCHANGED.
+- **Eligibility (PD5):** `mvp_eligible` = sentence_date present ∧ ≥ 2025-01-01 (the
+  same `MVP_WINDOW_START` imported from `outcome_facts`); `public_eligible` = parent
+  outcome fact public_eligible ∧ mvp ∧ base sentencing category public ∧
+  `component_match_method ∈ {exact}` ∧ ¬review_needed; `judge_specific_eligible` =
+  public ∧ inherited judge attributed. Judge + `normalized_charge_id` fields are
+  inherited verbatim from the parent (SD 1). `component_match_method` is derived from
+  the 22.5 result onto the locked 22.1 vocab (`unmatched`/`ambiguous`/`exact`) — the
+  mapper's base is an exact-table only, so `{exact}` is the clean set (mirrors 23.2).
+- **review_needed (PD6):** `result.review_needed` (unmapped base ∨ ambiguous CS ∨
+  money_unparseable) ∨ per-component `UNPARSEABLE_DURATION` (the imported envelope
+  predicate `_is_unparseable_duration`, single source of truth — NOT re-inlined) ∨
+  the silent-loss guard `len(result.categories) > 1` (an additive restitution/CS
+  beyond base forces review so it surfaces to 23.4; base category still stored,
+  amount_cents still populated). ZERO `review.queue_items` rows written (23.4's job).
+- **Reason codes:** all sentence-grain codes already existed in the committed 21.2
+  vocab — `fact_review_vocab.py` UNTOUCHED (no additions).
+- **Corpus acceptance run (verbatim, hygiene-clean):** run `572ceb6c-0fa9-46`,
+  status completed. Outcomes: charges_processed=3625, facts_written=3162,
+  held_skipped=463 (reconciles). Sentence facts: 4162 written == 4162 components on
+  disposed (reconciles); mvp=493, public=432, judge_specific=432, review_needed=317;
+  amount coverage monetary=37 / amount_set=12 / money_unparseable=7 / money_absent=18;
+  multi_category=33; duration facts=280 / envelope_warnings=280 / predicate_all=280
+  (exact match). Sentence reason tallies: parent_outcome_ineligible=3670,
+  sentence_date_before_mvp_window=3669, review_needed=317,
+  sentence_duration_unparseable=280, money_amount_unparseable=7,
+  sentencing_component_not_normalized=5.
+- **SD-15 finding (Branch A, human-adjudicated):** 33 disposed-charge components
+  have `sentence_date ≠ disposition_date` (all sentence_date EARLIER, 218–757 days,
+  median 757; 29 straddle the 2025-01-01 MVP boundary). Root cause resolved in the
+  planning chat: the parser has two `sentence_date` provenance paths —
+  `docket_parser.py:738` (component-level captured value) and `:925` (copy of the
+  charge disposition_date); the 21.3 loader carries the captured value verbatim, so
+  a divergence is parser-origin and SOUND, not a defect. The SD-15 check is therefore
+  a SOFT REPORT (logged: count + straddle + delta range), NOT a stop. PD5 keys
+  `mvp_eligible` off `sentence_date`, so sub-window captured dates fall out via the
+  existing `sentence_date_before_mvp_window` code — no vocab addition, no special
+  casing. Held-charge (0) and duration==280 remain HARD stops (both pass).
+- **AC8 parity (proven):** the new run's 3,162 outcome facts are byte-for-byte
+  identical to the pre-existing 23.2 run — 0 mismatched rows across all 15 semantic
+  columns, symmetric charge-key diff 0. Corpus integrity: orphan_sentence_facts=0,
+  sentence_facts_on_held=0, judge_inheritance_mismatches=0, review_queue_items=0.
+- **Files touched:** `services/pipeline/src/pipeline/facts/sentence_facts.py` (new),
+  `services/pipeline/src/pipeline/facts/build_facts.py` (extended),
+  `services/pipeline/tests/test_facts_sentence_eligibility.py` (new tier-1),
+  `services/pipeline/tests/tier1/sentence_fact_goldens.json` (new committed golden),
+  `services/pipeline/tests/test_facts_build_facts.py` (extended: sentence seed +
+  linkage/scoring/held-STOP assertions), `tasks/worklog.md`. NO migrations, seeds,
+  TS/web, or 22.x/23.1/23.2 module-body edits; `fact_review_vocab.py` untouched.
+- **Deviations:** none from the (Branch-A-amended) approved plan. The corpus run
+  first STOPPED on the SD-15 divergence exactly as designed; Branch A was adjudicated
+  in the planning chat and the check was converted to a soft report per that ruling.
+- **Notes for 23.4 (review-queue wiring):** sentence `review_needed` + the carried
+  signals are recorded on each fact but NO `review.queue_items` are written yet. The
+  22.5 `build_sentencing_review_items` / `build_duration_review_item` helpers already
+  exist for the sentence-grain locator `(charge_sequence, component_order)`; the
+  duration item is caller-wired (the build re-derives per component via the envelope
+  predicate). Replace-on-rebuild (delete-and-reinsert) is still deferred to 24.1 —
+  each `build-facts` invocation appends a new run (there are now two completed runs
+  in the corpus DB).

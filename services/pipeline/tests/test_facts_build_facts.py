@@ -27,14 +27,18 @@ from pipeline.fact_review_vocab import (
     DISPOSITION_DATE_BEFORE_MVP_WINDOW,
     DISPOSITION_NOT_MAPPED,
     JUDGE_NOT_ATTRIBUTED,
+    PARENT_OUTCOME_INELIGIBLE,
     REVIEW_NEEDED,
     RUN_COMPLETED,
     RUN_FAILED,
+    SENTENCE_DATE_BEFORE_MVP_WINDOW,
+    SENTENCE_DURATION_UNPARSEABLE,
 )
 from pipeline.facts.build_facts import build_facts
+from pipeline.facts.sentence_facts import ATTRIBUTION_METHOD_CHARGE_COMPONENT
 from pipeline.normalization import charge_roster_loader, judge_roster_loader
 from pipeline.seam_check import running_in_ci
-from pipeline.warning_codes import SUSPECTED_AMENDED_CHARGE
+from pipeline.warning_codes import SUSPECTED_AMENDED_CHARGE, UNPARSEABLE_DURATION
 
 TEST_DB_URL_ENV_VAR = "PIPELINE_TEST_DATABASE_URL"
 
@@ -195,23 +199,104 @@ def _seed(conn: psycopg.Connection) -> None:
                 JUDGE_NAME,
             ),  # review_needed via warning
         ]
+        charge_ids: dict[int, str] = {}
         for seq, statute, offense, disp, ddate, judge in charges:
             cur.execute(
                 """
                 INSERT INTO parsed.charges
                   (docket_id, sequence, statute, offense, disposition_raw,
                    disposition_date, disposition_judge_raw)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
                 """,
                 (docket_id, seq, statute, offense, disp, ddate, judge),
             )
+            charge_ids[seq] = cur.fetchone()["id"]
         # A charge-grain review-severity parser warning on seq 7.
         cur.execute(
             "INSERT INTO parsed.warnings (docket_id, code, charge_sequence) "
             "VALUES (%s, %s, %s)",
             (docket_id, SUSPECTED_AMENDED_CHARGE, 7),
         )
+        _seed_sentences(cur, charge_ids, docket_id)
     conn.commit()
+
+
+# Sentence components per DISPOSED charge (never on the held seq 5). Each
+# ``sentence_date`` equals its charge's disposition_date (SD 15). The seq-4
+# "Confinement, Life" carries no parsed days and a matching UNPARSEABLE_DURATION
+# warning so the duration reconciliation is exercised too.
+#   seq -> [(component_order, sentence_type, min_days, max_days, raw_text, date)]
+_SENTENCES: dict[int, list[tuple]] = {
+    1: [
+        (
+            1,
+            "Confinement",
+            90,
+            180,
+            "Confinement, Min of 3.00 Months Max of 6.00 Months",
+            date(2025, 6, 1),
+        ),
+        (
+            2,
+            "Fines and Costs",
+            None,
+            None,
+            "Fines and Costs, $500.00",
+            date(2025, 6, 1),
+        ),
+    ],
+    4: [(1, "Confinement", None, None, "Confinement, Life", date(2025, 6, 1))],
+    6: [
+        (1, "Probation", 365, None, "Probation, Min of 12.00 Months", date(2024, 6, 1))
+    ],
+    7: [
+        (1, "Probation", 365, None, "Probation, Min of 12.00 Months", date(2025, 6, 1))
+    ],
+}
+
+
+def _seed_sentences(cur, charge_ids: dict[int, str], docket_id: str) -> None:
+    for seq, components in _SENTENCES.items():
+        for order, stype, min_days, max_days, raw_text, sdate in components:
+            cur.execute(
+                """
+                INSERT INTO parsed.sentences
+                  (charge_id, component_order, sentence_type, min_days, max_days,
+                   min_assumed, sentence_date, raw_text)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    charge_ids[seq],
+                    order,
+                    stype,
+                    min_days,
+                    max_days,
+                    False,
+                    sdate,
+                    raw_text,
+                ),
+            )
+    # The envelope-grain UNPARSEABLE_DURATION warning matching the seq-4 "Life"
+    # component (charge grain; info severity — does not touch outcome eligibility).
+    cur.execute(
+        "INSERT INTO parsed.warnings (docket_id, code, charge_sequence) "
+        "VALUES (%s, %s, %s)",
+        (docket_id, UNPARSEABLE_DURATION, 4),
+    )
+
+
+def _sentence_facts(conn: psycopg.Connection) -> dict[tuple[int, int], dict]:
+    """Sentence facts keyed by ``(charge_sequence, component_order)``."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT c.sequence AS seq, s.component_order AS ord, f.*
+            FROM fact.charge_sentences f
+            JOIN parsed.sentences s ON s.id = f.parsed_sentence_id
+            JOIN parsed.charges c ON c.id = s.charge_id
+            """
+        )
+        return {(row["seq"], row["ord"]): row for row in cur.fetchall()}
 
 
 def _facts_by_sequence(conn: psycopg.Connection) -> dict[int, dict]:
@@ -292,6 +377,104 @@ def test_build_lifecycle_and_scenarios(build_conn):
     f7 = facts[7]
     assert f7["mvp_eligible"] and f7["review_needed"] and not f7["public_eligible"]
     assert REVIEW_NEEDED in f7["ineligibility_reason_codes"]
+
+
+def test_sentence_facts_built_linked_and_scored(build_conn):
+    conn, url = build_conn
+    _seed(conn)
+
+    assert build_facts(conn, url) == 0
+
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT counts FROM fact.fact_build_runs")
+        counts = cur.fetchone()["counts"]
+    sc = counts["sentences"]
+    # 2 (seq1) + 1 (seq4) + 1 (seq6) + 1 (seq7) = 5 components on disposed charges.
+    assert sc["sentence_facts_written"] == 5
+    assert sc["components_on_disposed"] == 5
+    assert sc["duration_unparseable_facts"] == 1
+    assert sc["duration_warning_count"] == 1
+    assert sc["duration_predicate_all"] == 1
+    assert sc["monetary_components"] == 1 and sc["amount_set"] == 1
+
+    outcomes = _facts_by_sequence(conn)
+    sentences = _sentence_facts(conn)
+    # Exactly the disposed-charge components; the held seq 5 contributes none.
+    assert set(sentences) == {(1, 1), (1, 2), (4, 1), (6, 1), (7, 1)}
+
+    # seq1 — two components, both fully eligible, FK'd to the seq1 outcome fact,
+    # judge + normalized-charge fields inherited verbatim from the parent.
+    parent1 = outcomes[1]
+    confinement = sentences[(1, 1)]
+    fine = sentences[(1, 2)]
+    for row in (confinement, fine):
+        assert row["charge_outcome_id"] == parent1["id"]
+        assert row["normalized_charge_id"] == parent1["normalized_charge_id"]
+        assert row["normalized_judge_id"] == parent1["normalized_judge_id"]
+        assert row["judge_attribution_method"] == parent1["judge_attribution_method"]
+        assert row["attribution_method"] == ATTRIBUTION_METHOD_CHARGE_COMPONENT
+        assert row["public_eligible"] and row["judge_specific_eligible"]
+        assert row["ineligibility_reason_codes"] == []
+    assert confinement["sentencing_category_code"] == "incarceration"
+    assert confinement["min_days"] == 90 and confinement["max_days"] == 180
+    assert fine["sentencing_category_code"] == "costs_fees"
+    assert fine["amount_cents"] == 50000
+
+    # seq4 — "Confinement, Life": duration-unparseable -> review; parent seq4 is
+    # public (so NOT parent-ineligible), but the sentence is review-gated.
+    life = sentences[(4, 1)]
+    assert life["charge_outcome_id"] == outcomes[4]["id"]
+    assert life["min_days"] is None and life["max_days"] is None
+    assert life["review_needed"] and not life["public_eligible"]
+    assert SENTENCE_DURATION_UNPARSEABLE in life["ineligibility_reason_codes"]
+    assert PARENT_OUTCOME_INELIGIBLE not in life["ineligibility_reason_codes"]
+
+    # seq6 — pre-window sentence_date -> mvp-ineligible (parent also ineligible).
+    pre = sentences[(6, 1)]
+    assert not pre["mvp_eligible"]
+    assert pre["sentence_date"] == date(2024, 6, 1)
+    assert SENTENCE_DATE_BEFORE_MVP_WINDOW in pre["ineligibility_reason_codes"]
+
+    # seq7 — parent gated by a review-severity warning: transitive parent gate.
+    seven = sentences[(7, 1)]
+    assert not seven["public_eligible"]
+    assert PARENT_OUTCOME_INELIGIBLE in seven["ineligibility_reason_codes"]
+
+    # No review-queue rows are written (23.4's job).
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT count(*) AS n FROM review.queue_items")
+        assert cur.fetchone()["n"] == 0
+
+
+def test_held_charge_sentence_is_stop(build_conn):
+    conn, url = build_conn
+    _seed(conn)
+    # Attach a sentence component to the HELD charge (seq 5) -> orphan risk -> STOP.
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT id FROM parsed.charges WHERE sequence = 5 AND docket_id IN "
+            "(SELECT id FROM parsed.dockets)"
+        )
+        held_charge_id = cur.fetchone()["id"]
+        cur.execute(
+            """
+            INSERT INTO parsed.sentences
+              (charge_id, component_order, sentence_type, sentence_date, raw_text)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (held_charge_id, 1, "Probation", None, "Probation"),
+        )
+    conn.commit()
+
+    # Read-only pre-write STOP: returns 2 and creates NO run and NO facts.
+    assert build_facts(conn, url) == 2
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT count(*) AS n FROM fact.fact_build_runs")
+        assert cur.fetchone()["n"] == 0
+        cur.execute("SELECT count(*) AS n FROM fact.charge_outcomes")
+        assert cur.fetchone()["n"] == 0
+        cur.execute("SELECT count(*) AS n FROM fact.charge_sentences")
+        assert cur.fetchone()["n"] == 0
 
 
 def test_failed_build_leaves_no_partial_facts(build_conn, monkeypatch):
