@@ -21,6 +21,7 @@ from pipeline.equivalence_check import SALT_ENV_VAR, run_equivalence_check
 from pipeline.evaluation.extractors import EXTRACTORS
 from pipeline.evaluation.harness import run_evaluation
 from pipeline.extraction import DEFAULT_LOW_TEXT_THRESHOLD, run_extraction
+from pipeline.facts.build_facts import run_build_facts
 from pipeline.load import run_load
 from pipeline.logging_utils import configure_logging
 from pipeline.manual_import import run_manual_import
@@ -39,6 +40,10 @@ SUBCOMMANDS = (
     ),
     ("parse", "Parse extraction artifacts into per-docket envelope artifacts."),
     ("load", "Load per-docket envelope artifacts into the raw/parsed DB tables."),
+    (
+        "build-facts",
+        "Build fact.charge_outcomes from the loaded parsed corpus under a new run.",
+    ),
     ("collect", "Collect docket-sheet PDFs from the portal into an intake dir."),
     ("evaluate-extractors", "Compare candidate PDF text extractors."),
     (
@@ -57,6 +62,7 @@ IMPLEMENTED_COMMANDS = frozenset(
         "equivalence-check",
         "parse",
         "load",
+        "build-facts",
         "collect",
         "run-fixtures",
     }
@@ -673,6 +679,27 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         with db.connect(database_url) as conn:
             return run_load(args.envelopes_dir, args.import_metadata_dir, conn)
+    if args.command == "build-facts":
+        if running_in_ci():
+            logger.error(
+                "build-facts reads local court data and writes facts into the "
+                "database; it must never run in a CI environment; refusing (CI "
+                "runs only the synthetic fact tests against its own Postgres "
+                "service)",
+                extra={"command": args.command},
+            )
+            return 2
+        # DATABASE_URL read at the run boundary (never at import, never logged).
+        # No salt: fact.charge_outcomes carries no defendant identity.
+        database_url = os.environ.get("DATABASE_URL", "")
+        if not database_url.strip():
+            logger.error(
+                "DATABASE_URL is required to build facts; set it in the "
+                "environment (its value is never printed or written)",
+                extra={"command": args.command},
+            )
+            return 2
+        return run_build_facts(database_url)
     if args.command == "run-fixtures":
         # Tier 1 always runs (offline, repo-local, TIER1_TEST_SALT). Tier 2 runs
         # only with --corpus-dir and carries the local-court-data guards.

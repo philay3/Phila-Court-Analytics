@@ -4077,3 +4077,88 @@ the record field there.
   `build_duration_review_item` over the corpus (helper + reason code land here; the
   mapper never re-parses durations). Closes Phase 22 — its commit + the phase-close
   PR (phase-22 → main) close the phase.
+
+## Task 23.2 — Outcome Fact Generation + Eligibility (2026-07-12)
+
+- **Date:** 2026-07-12
+- **What was built:** The first fact-writing consumer. `pipeline build-facts` reads
+  the loaded `parsed.*` corpus, applies the 22.2 charge matcher / 22.4 outcome
+  mapper / 23.1 judge resolver (all imported UNCHANGED), and writes one
+  `fact.charge_outcomes` row per DISPOSED charge (`disposition_raw` non-null) under
+  one new `fact.fact_build_runs` run. Two new modules under `pipeline.facts`:
+  - `facts/outcome_facts.py` — pure, DB-free eligibility + row logic.
+    `evaluate_outcome_eligibility(...)` returns the eligibility trio + fact
+    `review_needed` + the all-applicable `ineligibility_reason_codes` array;
+    `OutcomeFactEligibility` (frozen) enforces the invariant `reasons empty IFF
+    judge_specific_eligible`. `build_outcome_fact_row(...)` assembles the full
+    immutable column dict; `insert_outcome_facts(...)` is the single `executemany`
+    writer (runs inside the caller's tx).
+  - `facts/build_facts.py` — orchestration + `run_build_facts(database_url)`.
+    Resolves the corpus provenance version BEFORE any write (single distinct
+    `(record_parser_version, envelope_parser_version)`; mixed/empty → STOP, exit 2),
+    creates the run (`in_progress`, committed), then in ONE tx bulk-inserts every
+    fact and flips the run to `completed` with counts; on failure rolls back (zero
+    facts) and marks the run `failed`.
+  - `facts/__init__.py` re-exports the new surface; `cli.py` adds the `build-facts`
+    subcommand (CI-refuses, reads `DATABASE_URL` at the boundary, NO salt — facts
+    carry no defendant identity).
+- **Eligibility (Sprint 5 plan Task 23.2 AC 2, VERBATIM — the current-task.md PDs
+  PD1/PD3/PD4/PD6 were DISCARDED at the plan gate as inventing a vocabulary that
+  contradicts the committed 21.2 schema + the sprint plan):**
+  `mvp_eligible` = disposition_date present AND ≥ 2025-01-01; `public_eligible` =
+  mvp AND charge match ∈ {exact, alias, statute} AND outcome category public AND
+  fact `review_needed` false; `judge_specific_eligible` = public AND judge
+  attributed (23.1). Fact `review_needed` is derived from the charge-grain PARSER
+  warning severity via the locked 18.1 `warning_codes.derive_review_needed` — that
+  map is the blocking set; no separate blocking list was invented.
+  `ineligibility_reason_codes` carries EVERY applicable committed reason (empty ⇒
+  judge_specific_eligible); `judge_not_attributed` is scoped to the
+  public-eligible-but-unattributed case. Constant fills: `attribution_method` =
+  `'charge_row'` (Task 21.2); `judge_attribution_method` = the 23.1 method verbatim;
+  `charge_match_method` = matcher method; `outcome_match_method` = `exact`/`unmapped`;
+  provenance stamped from the single distinct parser-version pair; `taxonomy_version`
+  from taxonomy.json.
+- **Acceptance corpus run (verbatim):** `charges_processed=3625 facts_written=3162
+  held_skipped=463` (reconcile facts+held==charges: True). `mvp_eligible=437
+  public_eligible=411 judge_specific_eligible=411 review_needed=226`. Outcome split:
+  acquittal 17, ard 65, dismissed 226, guilty_plea 2315, guilty_verdict 467, other
+  61, unknown 7, withdrawn 4. Ineligible-by-reason: disposition_date_before_mvp_window
+  2514, review_needed 226, disposition_date_missing 211, charge_not_normalized 157,
+  disposition_not_mapped 7, blocking_warning 1. The 22.4 outcome-coverage tool over
+  the identical corpus reproduces the split EXACTLY (held 463; mapped 3155 by the
+  same per-code counts; unmapped→unknown 7), so facts_written(3162)=mapped(3155)+
+  unknown(7) and +held(463)=3625. blocking_warning=1 is the single statute/text-
+  conflict charge, flagged additively alongside charge_not_normalized.
+- **Tests:** `tests/test_facts_outcome_eligibility.py` (19 → DB-free tier-1 synthetic:
+  every AC-8 scenario, all-applicable reason stacking, the eligibility invariants) and
+  `tests/test_facts_build_facts.py` (DB integration via `PIPELINE_TEST_DATABASE_URL`,
+  same guard pattern as the 21.3 loader suite: seeds a synthetic roster + docket with
+  the AC-8 charge mix, asserts run lifecycle/counts, per-scenario fact rows, held →
+  no fact, and failed-build → zero partial facts + run marked `failed`). Verified
+  locally against a dedicated `pca_test` database (migrated to head): 19 passed.
+- **Files touched:** `services/pipeline/src/pipeline/facts/outcome_facts.py` (new),
+  `services/pipeline/src/pipeline/facts/build_facts.py` (new),
+  `services/pipeline/src/pipeline/facts/__init__.py` (re-exports + docstring),
+  `services/pipeline/src/pipeline/cli.py` (build-facts subcommand),
+  `services/pipeline/tests/test_facts_outcome_eligibility.py` (new),
+  `services/pipeline/tests/test_facts_build_facts.py` (new), `tasks/worklog.md`.
+  No migrations, seeds, or TS/web touched; `fact_review_vocab.py` untouched (no new
+  reason code needed — expected).
+- **Deviations from the approved plan:** the human adjudicated the three plan-gate
+  questions (date gate ON; review_needed gates public via the existing derivation;
+  all-applicable reason array) and directed discarding current-task.md's eligibility
+  PDs in favour of sprint-5-plan Task 23.2 AC 1–4 + the committed schema. Built to
+  that. One in-flight correction: the initial `OutcomeFactEligibility` invariant
+  ("public ⇒ no reasons") was wrong — a public-eligible-but-unattributed fact
+  legitimately carries `judge_not_attributed`; fixed to "reasons empty IFF
+  judge_specific_eligible". Acceptance numbers unchanged (all 411 public facts were
+  also attributed).
+- **Notes for next task (23.3 sentence facts):** the run is created + completed in
+  `build_facts.build_facts(conn, url)`; 23.3 extends the SAME run by inserting
+  sentence facts inside the completion tx (after `insert_outcome_facts`, before
+  `_finish_run`) so one `build-facts` invocation remains one coherent fact-layer
+  build — no second command, no second run concept. `attribution_method` constant
+  for sentences is `'charge_component'` (Task 21.2). Runs are append-only (new run
+  per invocation; NO active/published selection — Sprint 7). The local `pca_test`
+  database was created + migrated to head to verify the DB suite; it is outside the
+  repo and can be reused.
