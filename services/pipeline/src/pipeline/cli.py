@@ -10,11 +10,13 @@ import os
 import sys
 from pathlib import Path
 
+from pipeline import db
 from pipeline.envelope import run_parse
 from pipeline.equivalence_check import SALT_ENV_VAR, run_equivalence_check
 from pipeline.evaluation.extractors import EXTRACTORS
 from pipeline.evaluation.harness import run_evaluation
 from pipeline.extraction import DEFAULT_LOW_TEXT_THRESHOLD, run_extraction
+from pipeline.load import run_load
 from pipeline.logging_utils import configure_logging
 from pipeline.manual_import import run_manual_import
 from pipeline.run_fixtures import run_fixtures
@@ -31,6 +33,7 @@ SUBCOMMANDS = (
         "Diff ported extraction+parse output against the Capstone baseline.",
     ),
     ("parse", "Parse extraction artifacts into per-docket envelope artifacts."),
+    ("load", "Load per-docket envelope artifacts into the raw/parsed DB tables."),
     ("collect", "Collect docket-sheet PDFs from the portal into an intake dir."),
     ("evaluate-extractors", "Compare candidate PDF text extractors."),
     (
@@ -48,6 +51,7 @@ IMPLEMENTED_COMMANDS = frozenset(
         "seam-check",
         "equivalence-check",
         "parse",
+        "load",
         "collect",
         "run-fixtures",
     }
@@ -224,6 +228,28 @@ def build_parser() -> argparse.ArgumentParser:
                     "Where per-docket envelope artifacts are written (created if "
                     "needed); must be outside any git working tree. Default: "
                     "~/court-data/envelopes/."
+                ),
+            )
+        if name == "load":
+            subparser.add_argument(
+                "--envelopes-dir",
+                type=Path,
+                required=True,
+                help=(
+                    "Directory of per-docket envelope artifacts (*.json, searched "
+                    "non-recursively) to load into the DB."
+                ),
+            )
+            subparser.add_argument(
+                "--import-metadata-dir",
+                type=Path,
+                # Resolved here, at the CLI/run boundary — never at import.
+                default=Path.home() / "court-data" / "imports",
+                help=(
+                    "Directory of 16.3 hash-keyed import metadata records "
+                    "(<sha256>.json). An envelope whose source hash has no record "
+                    "here is a per-docket failure (no rows written). Default: "
+                    "~/court-data/imports/."
                 ),
             )
         if name == "collect":
@@ -529,6 +555,26 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         return run_parse(args.artifacts_dir, args.output_dir, salt=salt)
+    if args.command == "load":
+        if running_in_ci():
+            logger.error(
+                "load writes local court data into the database and must never "
+                "run in a CI environment; refusing (CI runs only the synthetic "
+                "loader tests against its own Postgres service)",
+                extra={"command": args.command},
+            )
+            return 2
+        # DATABASE_URL read at the run boundary (never at import, never logged).
+        database_url = os.environ.get("DATABASE_URL", "")
+        if not database_url.strip():
+            logger.error(
+                "DATABASE_URL is required to run the loader; set it in the "
+                "environment (its value is never printed or written)",
+                extra={"command": args.command},
+            )
+            return 2
+        with db.connect(database_url) as conn:
+            return run_load(args.envelopes_dir, args.import_metadata_dir, conn)
     if args.command == "run-fixtures":
         # Tier 1 always runs (offline, repo-local, TIER1_TEST_SALT). Tier 2 runs
         # only with --corpus-dir and carries the local-court-data guards.

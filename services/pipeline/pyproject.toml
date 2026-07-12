@@ -7,6 +7,11 @@ dependencies = [
     # Pinned exact (Task 16.2 / ADR 0001): the production extraction stage
     # must match Capstone's extractor for the Task 17.1 seam comparison.
     "pdfplumber==0.11.10",
+    # Pinned exact (Task 21.3): psycopg 3 (sync) is the pipeline's only DB
+    # driver — the `pipeline load` command writes envelopes into the 21.1
+    # raw/parsed tables. `[binary]` ships the libpq wheel so neither CI nor a
+    # fresh local checkout needs system libpq. No async, no pool, no ORM.
+    "psycopg[binary]==3.3.4",
     "pymupdf>=1.28.0",
     "pypdf>=6.14.2",
 ]
