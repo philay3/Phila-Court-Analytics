@@ -127,6 +127,7 @@ DISPOSITION_DATE_BEFORE_MVP_WINDOW = "disposition_date_before_mvp_window"
 SENTENCE_DATE_MISSING = "sentence_date_missing"
 SENTENCE_DATE_BEFORE_MVP_WINDOW = "sentence_date_before_mvp_window"
 CHARGE_NOT_NORMALIZED = "charge_not_normalized"
+JUDGE_NOT_NORMALIZED = "judge_not_normalized"
 OUTCOME_CATEGORY_NOT_PUBLIC = "outcome_category_not_public"
 SENTENCING_CATEGORY_NOT_PUBLIC = "sentencing_category_not_public"
 SENTENCING_COMPONENT_NOT_NORMALIZED = "sentencing_component_not_normalized"
@@ -142,6 +143,7 @@ ELIGIBILITY_REASON_CODES: frozenset[str] = frozenset(
         SENTENCE_DATE_MISSING,
         SENTENCE_DATE_BEFORE_MVP_WINDOW,
         CHARGE_NOT_NORMALIZED,
+        JUDGE_NOT_NORMALIZED,
         OUTCOME_CATEGORY_NOT_PUBLIC,
         SENTENCING_CATEGORY_NOT_PUBLIC,
         SENTENCING_COMPONENT_NOT_NORMALIZED,
