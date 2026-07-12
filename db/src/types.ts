@@ -212,6 +212,24 @@ export interface ParsedRelatedCasesTable {
 }
 
 /**
+ * parsed.docket_links (task 23.5): structured CP<->MC held-case linkage. An
+ * IMMUTABLE parsed load-artifact row (created_at only, no updated_at / trigger),
+ * delete-and-reinserted per fact build (SD 6). `source_docket_id` and the nullable
+ * `target_docket_id` (present only when the CP target is in-corpus) both FK into
+ * parsed.dockets. `link_type` / `evidence_source` are plain text (vocab enforced in
+ * Python: link_vocab.py). Informational only — does not affect fact eligibility.
+ */
+export interface ParsedDocketLinksTable {
+  id: Immutable<string, string | undefined>;
+  source_docket_id: Immutable<string>;
+  target_docket_number: Immutable<string>;
+  target_docket_id: Immutable<string | null>;
+  link_type: Immutable<string>;
+  evidence_source: Immutable<string>;
+  created_at: Immutable<Date, Date | string | undefined>;
+}
+
+/**
  * The fact layer (task 21.2): the Phase 23 fact builder's write target.
  *
  * `fact.fact_build_runs` is MUTABLE (status transitions during a build):
@@ -326,6 +344,7 @@ export interface Database {
   'parsed.sentences': ParsedSentencesTable;
   'parsed.warnings': ParsedWarningsTable;
   'parsed.related_cases': ParsedRelatedCasesTable;
+  'parsed.docket_links': ParsedDocketLinksTable;
   'fact.fact_build_runs': FactBuildRunsTable;
   'fact.charge_outcomes': ChargeOutcomesTable;
   'fact.charge_sentences': ChargeSentencesTable;

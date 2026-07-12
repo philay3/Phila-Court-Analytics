@@ -32,7 +32,7 @@ def test_every_member_is_a_non_empty_lowercase_token():
             assert member == member.lower()
 
 
-def test_review_item_types_are_exactly_the_thirteen_members():
+def test_review_item_types_are_exactly_the_fourteen_members():
     assert v.REVIEW_ITEM_TYPES == {
         "unmapped_charge",
         "ambiguous_charge",
@@ -48,8 +48,10 @@ def test_review_item_types_are_exactly_the_thirteen_members():
         "sentinel_collision",
         # Task 23.4 plan-approved addition (the additive-category silent-loss guard).
         "additive_sentencing_category",
+        # Task 23.5 plan-approved addition (unresolvable CP<->MC cross-court reference).
+        "unresolvable_cross_court_reference",
     }
-    assert len(v.REVIEW_ITEM_TYPES) == 13
+    assert len(v.REVIEW_ITEM_TYPES) == 14
 
 
 def test_review_severities_are_exactly_high_medium_low():

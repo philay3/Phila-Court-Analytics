@@ -56,6 +56,7 @@ from pipeline.fact_review_vocab import (
     SEVERITY_LOW,
     SEVERITY_MEDIUM,
 )
+from pipeline.facts.docket_links import collect_docket_links, insert_docket_links
 from pipeline.facts.judge_attribution import build_docket_context, resolve_charge
 from pipeline.facts.outcome_facts import (
     MVP_WINDOW_START,
@@ -945,8 +946,31 @@ def _print_summary(run_id: str, counts: dict[str, object]) -> None:
             print(f"  {code:34} {n}")
     if "sentences" in counts:
         _print_sentence_summary(counts["sentences"])  # type: ignore[arg-type]
+    if "linkage" in counts:
+        _print_linkage_summary(counts["linkage"])  # type: ignore[arg-type]
     if "review_items" in counts:
         _print_review_summary(counts["review_items"])  # type: ignore[arg-type]
+
+
+def _print_linkage_summary(lc: dict[str, object]) -> None:
+    """Print the CP<->MC held-case linkage block (Task 23.5) — counts only.
+
+    Informational stage (AC4): these link rows do NOT affect the fact eligibility
+    printed above. Resolved = in-corpus CP target (FK set); unresolved = out-of-corpus
+    target (FK null) = a future-collection coverage signal (AC3). ``review_*`` are the
+    unresolvable-reference items routed to the queue (malformed / ambiguous target)."""
+    print(
+        "--- cp<->mc held-case linkage (informational; AC4: no eligibility impact) ---"
+    )
+    print(
+        f"mc_source_dockets={lc['source_mc_dockets_with_ref']} "
+        f"links_total={lc['links_total']} resolved={lc['resolved']} "
+        f"unresolved={lc['unresolved']}"
+    )
+    print(
+        f"linkage_review_items malformed={lc['review_malformed']} "
+        f"ambiguous={lc['review_ambiguous']}"
+    )
 
 
 def _print_review_summary(rc: dict[str, object]) -> None:
@@ -1085,14 +1109,31 @@ def build_facts(conn: psycopg.Connection, database_url: str) -> int:
             )
             insert_sentence_facts(conn, sentence_rows)
             counts["sentences"] = sentence_counts
+            # --- AC4 boundary (Task 23.5): CP<->MC held-case linkage is INFORMATIONAL
+            # This stage runs STRICTLY AFTER every outcome/sentence fact and its
+            # eligibility have been computed and inserted above. It only READS
+            # parsed.dockets and WRITES parsed.docket_links rows + review items; it
+            # feeds NOTHING back into fact eligibility. The outcome/sentence fact rows
+            # are provably identical whether or not this stage runs — linkage never
+            # re-opens the eligibility trio (Sprint 7 defers any attribution
+            # consequence). Link rows are delete-and-reinserted (SD 6, current-state
+            # projection); the review items join the persistent 23.4 dedup path below.
+            link_rows, link_review_items, link_counts = collect_docket_links(conn)
+            insert_docket_links(conn, link_rows)
+            counts["linkage"] = link_counts
             # Route every 22.x/23.x review path into review.queue_items (Task 23.4).
             # NOT run-scoped: dedup-keyed, status-preserving across rebuilds. The
             # envelope-warning items are read here; the rest were built in the
-            # collect passes above.
+            # collect passes above; the linkage items come from the stage above.
             warning_review_items = _collect_warning_review_items(conn)
             counts["review_items"] = insert_review_items(
                 conn,
-                [*outcome_review_items, *sentence_review_items, *warning_review_items],
+                [
+                    *outcome_review_items,
+                    *sentence_review_items,
+                    *warning_review_items,
+                    *link_review_items,
+                ],
             )
             _finish_run(
                 conn,
