@@ -4319,3 +4319,95 @@ the record field there.
   canonical corpus, all `open`). Fact-build idempotency (delete-and-reinsert of
   facts) remains 24.1's job — 23.4 touched only review-queue idempotency; each
   `build-facts` still appends a new run.
+
+## Task 23.5 — Structured CP↔MC Held-Case Linkage (2026-07-12)
+
+- **What was built:** the 18.3 deferral landing — a new `parsed.docket_links` table
+  and a linker that turns the held MC docket's `parsed.dockets.cross_court_dockets`
+  capture into structured rows (source = MC held docket, target = the CP docket the
+  case transfers to, link type `held_for_court`). In-corpus CP targets resolve to a
+  `parsed.dockets` FK (resolved link); out-of-corpus targets record the target docket
+  number with a null FK (unresolved link — a future-collection coverage signal);
+  references the bounded §6.9 pattern cannot resolve route to `review.queue_items` via
+  the existing 22.1/23.4 write path. Closes Phase 23.
+- **INFORMATIONAL ONLY (AC4):** linkage does NOT change fact eligibility. The stage
+  runs STRICTLY AFTER every outcome/sentence fact + its eligibility is computed and
+  inserted; it only reads `parsed.dockets` and writes link rows + review items, and
+  feeds nothing back. Boundary written as an explicit code comment at the seam
+  (`build_facts.py`) and in `docket_links.py` / the migration. Attribution
+  consequences are a Sprint 7 aggregation question, deferred.
+- **Source seam (the ONE corrected decision, plan-approved after a STOP):** the linker
+  keys off **MC dockets (`court_type_derived='MC'`) carrying a `cross_court_dockets`
+  capture** — NOT presence of the field across all dockets. Recon R2's "22" sampled
+  only the 40 `MC-*.json` files; the live corpus carries the field on **126** dockets
+  (22 MC + 104 CP). The 104 CP dockets are other-county references (county codes ≠ 51,
+  mostly `MD`), which §6.9 correctly rejects — a presence-based seam would have emitted
+  104 false `malformed` review items and 126 links. The corrected MC-only seam yields
+  exactly 22. Also: §6.7's null-disposition / event-key held model is a **CP-side**
+  phenomenon (`NON_TERMINAL_CASE`); MC's held-for-court is a **disposed** charge
+  (`disposition_raw` = a "Held for Court"-class value) carrying a cross-court reference
+  — a distinct signal — so NO null-disposition filter is applied (it would exclude all
+  22). This was adjudicated in planning chat, not self-resolved.
+- **R3 (related_cases):** confirmed reserved evidence-source vocab member with ZERO
+  held-for-court overlap in the corpus (it carries sibling / co-defendant MC
+  associations); produces zero links this task. Every link stamps
+  `evidence_source = cross_court_dockets`. Documented at `link_vocab.py` and the linker.
+- **Lifecycle (RF1):** link rows are delete-and-reinserted per build (SD 6,
+  current-state projection) — idempotent on content (proven by the rerun test: same
+  tuples, count stable). Both FKs into `parsed.dockets` are `ON DELETE CASCADE`:
+  `source_docket_id` (ownership) and the nullable `target_docket_id` (cross-reference —
+  CASCADE self-heals under full rebuild; RESTRICT would block a legit CP reload and
+  SET NULL would masquerade a resolved link as out-of-corpus). Review items travel the
+  persistent, dedup-keyed, status-preserving 23.4 path instead — the two lifecycles
+  coexist with no interaction.
+- **Vocabulary (all plan-approved):** new module `link_vocab.py` with `LINK_TYPES`
+  (`held_for_court`) and `LINK_EVIDENCE_SOURCES` (`cross_court_dockets`,
+  `related_cases`); one member `unresolvable_cross_court_reference` added to
+  `REVIEW_ITEM_TYPES` in `fact_review_vocab.py`. Its review items use `reason_code =
+  review_needed` (generic) — linkage adds NO concept to `ELIGIBILITY_REASON_CODES`
+  (AC4). Malformed vs ambiguous-target is carried in `candidate_context["subcase"]`,
+  never a separate reason code (RF3).
+- **Files touched:** new `db/migrations/20260712120000_create_parsed_docket_links.ts`
+  (TypeScript DDL, SD 4; Python-only consumer) + `db/src/types.ts` (hand-authored
+  `ParsedDocketLinksTable` + `Database` registration — there is no `pnpm generate`
+  codegen; typecheck is the gate); new `services/pipeline/src/pipeline/link_vocab.py`;
+  new `services/pipeline/src/pipeline/facts/docket_links.py` (linker); new
+  `services/pipeline/tests/test_docket_links.py` (tier-1: bounded-parser unit + 5 DB
+  tests — resolve / out-of-corpus / malformed / ambiguous-target / idempotent rerun);
+  `services/pipeline/src/pipeline/fact_review_vocab.py` (one approved member) and its
+  test `services/pipeline/tests/test_fact_review_vocab.py` (13→14, trivially
+  necessary); `services/pipeline/src/pipeline/facts/build_facts.py` (in-tx linkage
+  stage + summary block); `tasks/worklog.md`.
+- **Ambiguous-target test (Tweak B):** two synthetic CP rows SHARE a `docket_number`
+  (docket_number is not unique) as the resolution TARGETS, with an MC source
+  referencing that number, so the target lookup returns 2 → review item, no link, no
+  unresolved row.
+- **Corpus acceptance run (verbatim, hygiene-clean, real `pca` corpus):**
+    - `build-facts run=b5872703-e4de-40 status=completed`
+    - linkage: `mc_source_dockets=22 links_total=22 resolved=0 unresolved=22`;
+      `linkage_review_items malformed=0 ambiguous=0`.
+    - DB after: `parsed.docket_links` = 22 (0 resolved / 22 unresolved; all
+      `held_for_court` / `cross_court_dockets`; all 22 sources `court_type=MC`);
+      `unresolvable_cross_court_reference` review items = 0.
+  - **AC4 proof (per-run, Tweak A):** the 23.5 run's own fact rows are IDENTICAL to the
+    23.4 baseline run — `facts_written=3162`, `sentence_facts_written=4162`,
+    `charges_processed=3625` (baseline run 75ea1dd2: 3162 / 4162 / 3625); eligibility
+    produced by the UNCHANGED 23.2/23.3 modules. `review_items generated=710
+    newly_inserted=0` → `review.queue_items` total unchanged at 710. The only net-new
+    linkage data is `parsed.docket_links` +22. Global fact totals rose by exactly one
+    run's worth (12648→15810 outcome, 12486→16648 sentence) — normal append (`build-facts`
+    is append-per-run; global fact idempotency is 24.1's job), NOT drift.
+  - **RF4 reconciliation:** link count == 22 ✓; resolved == 0 / unresolved == 22 ✓
+    (all 22 CP-51-CR targets out-of-corpus — a coverage finding, not a resolution
+    failure; feeds future collection / COL 24.2 targeting); linkage review items == 0 ✓;
+    malformed == 0 ✓; ambiguous == 0 ✓; no target lookup ≥2 on the real corpus ✓;
+    no per-run fact/eligibility drift ✓; `review.queue_items` == 710 after the run ✓.
+    No STOP condition triggered.
+- **Deviations:** one, adjudicated in planning chat before coding — the source seam was
+  corrected from the approved plan's presence-based keying to MC-only keying after the
+  live DB revealed 126 (not 22) dockets carry `cross_court_dockets`. No other deviation.
+- **Notes for 24.1 / 24.2:** the 22 unresolved held-for-court links are the corpus's
+  MC→CP coverage gap — every referenced CP-51-CR docket is uncollected. This is a clean
+  future-collection target list (AC3). `parsed.docket_links` is delete-and-reinserted
+  each `build-facts`, so 24.1's full-corpus run repopulates it; the informational
+  boundary means these links never enter the eligibility funnel (Sprint 7 aggregation).

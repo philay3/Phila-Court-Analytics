@@ -80,6 +80,16 @@ SENTINEL_COLLISION = "sentinel_collision"
 # ambiguous (both mappings are valid) — reusing those types would corrupt Sprint 6
 # triage counts, so it gets its own member (the ONLY 23.4 vocabulary change).
 ADDITIVE_SENTENCING_CATEGORY = "additive_sentencing_category"
+# Task 23.5 addition (plan-approved): a held MC docket's cross-court reference that
+# the linker could not turn into a resolvable target — either the
+# ``cross_court_dockets`` string yields no bounded UJS docket number (``malformed``),
+# or the parsed target docket number matches >=2 ``parsed.dockets`` rows so the
+# target lookup is ambiguous (``ambiguous_target``). Both sub-cases share this one
+# type and are distinguished by ``candidate_context["subcase"]`` (23.5 RF3), never by
+# separate reason codes. Its ``reason_code`` is the generic ``REVIEW_NEEDED``:
+# linkage is informational (AC4) and MUST NOT introduce a concept into
+# ``ELIGIBILITY_REASON_CODES``, which would soften the eligibility boundary.
+UNRESOLVABLE_CROSS_COURT_REFERENCE = "unresolvable_cross_court_reference"
 
 REVIEW_ITEM_TYPES: frozenset[str] = frozenset(
     {
@@ -96,6 +106,7 @@ REVIEW_ITEM_TYPES: frozenset[str] = frozenset(
         MISSING_DISPOSITION_DATE,
         SENTINEL_COLLISION,
         ADDITIVE_SENTENCING_CATEGORY,
+        UNRESOLVABLE_CROSS_COURT_REFERENCE,
     }
 )
 
