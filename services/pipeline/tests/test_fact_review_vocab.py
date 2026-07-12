@@ -67,10 +67,11 @@ def test_fact_build_run_statuses_are_exactly_three_members():
     assert len(v.FACT_BUILD_RUN_STATUSES) == 3
 
 
-def test_eligibility_reason_codes_are_exactly_the_thirteen_members():
+def test_eligibility_reason_codes_are_exactly_the_fourteen_members():
     # judge_not_normalized added in Task 22.3 (sanctioned plan-level vocabulary
     # addition, Answer 1), the domain-qualified judge analog of
-    # charge_not_normalized.
+    # charge_not_normalized. disposition_not_mapped added in Task 22.4 (same
+    # convention), the domain-qualified outcome-mapping analog.
     assert v.ELIGIBILITY_REASON_CODES == {
         "disposition_date_missing",
         "disposition_date_before_mvp_window",
@@ -78,6 +79,7 @@ def test_eligibility_reason_codes_are_exactly_the_thirteen_members():
         "sentence_date_before_mvp_window",
         "charge_not_normalized",
         "judge_not_normalized",
+        "disposition_not_mapped",
         "outcome_category_not_public",
         "sentencing_category_not_public",
         "sentencing_component_not_normalized",
@@ -86,7 +88,7 @@ def test_eligibility_reason_codes_are_exactly_the_thirteen_members():
         "judge_not_attributed",
         "parent_outcome_ineligible",
     }
-    assert len(v.ELIGIBILITY_REASON_CODES) == 13
+    assert len(v.ELIGIBILITY_REASON_CODES) == 14
 
 
 def test_severities_do_not_collide_with_the_colliding_vocabularies():
