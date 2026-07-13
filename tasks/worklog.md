@@ -4856,3 +4856,50 @@ the record field there.
   `date_range_start` ≥ 2025-01-01, baseline re-validation for BOTH judge tables — outcome
   against charge-only outcome, sentencing against charge-only sentencing). Phase 27 closes with
   this task's PR (one commit, never squash).
+
+## Task 28.1 — Aggregate + Privacy Validation (2026-07-13)
+
+- **What was built:** `pipeline validate-aggregates`, the separate validation step (SD 3) gating
+  publish over a GENERATED (in_progress, unpublished) run. Three check families across ALL FOUR
+  aggregate tables: per-group/row integrity (category counts sum to the group's one consistent
+  sample size; percentage within ±0.005 inclusive `Decimal` tolerance of count/sample; sample
+  size present; date range present, not inverted, start ≥ DATA_START_DATE; taxonomy version and
+  run id present), SD-7 baseline (every judge-covered charge has a same-run charge-only
+  counterpart, outcome↔outcome and sentencing↔sentencing), and privacy (every row, all columns
+  JSON-shaped, through the forbidden-field scan). Verdict per the 26.1 status mapping — no new
+  values, no migration: violations → `status='failed'` (terminal; the existing
+  `aggregate_runs_published_at_check` CHECK structurally blocks publish); clean →
+  `status='completed'` + `completed_at`. Default target: latest generated run; `--run` accepts
+  in_progress or completed unpublished runs (re-validation idempotent), refuses failed/published.
+- **Scanner mechanism (recon-adjudicated Option A):** `packages/shared` gained a `generate`
+  script emitting gitignored `packages/shared/generated/forbidden-fields.json` (stems + value
+  patterns as `{source, flags}`) from the TS constants — the taxonomy-artifact pattern; root
+  `pnpm generate` and CI's existing pre-pytest `pnpm generate` step emit it with no workflow
+  change. `pipeline/forbidden_scan.py` ports the ~30-line scan walk and loads the artifact
+  (walk-up loader, `pnpm generate` hint; empty stems or unportable regex flags are hard load
+  failures). Term parity is structural — no hand-copied Python list exists; the TS suite's
+  poisoned fixtures are ported and run against the loaded artifact.
+- **Files touched:** `packages/shared/src/generate.ts` (new), `packages/shared/package.json`
+  (generate script; `tsx` + `@types/node` devDeps), `packages/shared/tsconfig.json`
+  (`"types": ["node"]`, the taxonomy pairing) and `packages/shared/tsconfig.build.json`
+  (excludes `src/generate.ts` — a build-time script, never dist runtime surface), `.gitignore`
+  (`packages/shared/generated/`), `pnpm-lock.yaml`, `services/pipeline/src/pipeline/
+  forbidden_scan.py` (new), `services/pipeline/src/pipeline/aggregates/validate.py` (new),
+  `services/pipeline/src/pipeline/cli.py` (subcommand + CI refusal + DATABASE_URL boundary),
+  `services/pipeline/tests/test_forbidden_scan.py` (new),
+  `services/pipeline/tests/test_aggregates_validate.py` (new).
+- **Failed-run interaction with SD-4 (planning-required confirmation):** a fresh
+  `generate-aggregates` always INSERTs a NEW run row (`_create_run`), and every
+  delete-and-reinsert targets only that new run's id — a failed run's row and aggregate rows
+  are never reused, touched, or blocking. Failed runs are terminal history.
+- **Console hygiene:** validation output is hash-prefix run id, per-table `rows_checked` /
+  violation counts, and fixed check codes only; a privacy violation's offending value is never
+  printed or logged (DB-test-asserted).
+- **Deviations from plan:** `@types/node` devDep added alongside `tsx` in `packages/shared`
+  (needed for the generate script's `node:fs` imports; same pairing taxonomy carries), plus the
+  two `packages/shared` tsconfig touches above — the shared `build` gate otherwise failed on
+  the new script's node globals. Both are trivially-necessary companions to the approved
+  `generate.ts`; no other plan deviation.
+- **Notes for 28.2:** publish must target a `completed` unpublished run (the CHECK already
+  enforces it); validate-then-publish is two explicit steps. Re-validating a published run is
+  refused here, so 28.2's invalidate path stays the only mutation of published history.
