@@ -9,15 +9,19 @@
  * one; nothing mutates it in practice.
  */
 export const DATA_COVERAGE_KNOWN_LIMITATIONS: string[] = [
-  // Seeded-data disclosure (Sprint 2 standing requirement): every currently
-  // published figure is fabricated seed data. Remove this entry in Sprint 7
-  // when real aggregates replace the seeds.
-  'All figures currently published are seeded demonstration data created for ' +
-    'development and testing. They do not describe real Philadelphia court outcomes.',
+  // The Sprint 2 seeded-data disclosure lived here until the first real
+  // aggregate run was published (task 28.2); published figures now come from
+  // real Philadelphia court records.
+  // No calendar dates or counts beyond the fixed 2025-01-01 MVP start may
+  // appear here: served date ranges and counts come from the published run.
   'Coverage begins on January 1, 2025 and is anchored to disposition and ' +
     'sentencing event dates, not filing dates.',
+  'Collection is ongoing. Coverage currently extends further for Municipal ' +
+    'Court cases than for Common Pleas cases, and results grow as newly ' +
+    'collected records are aggregated.',
   'Figures are charge-level historical aggregates. They summarize groups of ' +
     'past cases and never describe an individual case.',
   'Some charges have small samples; those figures are labeled as thin data ' +
-    'and should be read with caution.',
+    'and should be read with caution. Most judge-specific figures are thin at ' +
+    'this stage.',
 ];

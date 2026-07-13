@@ -4903,3 +4903,104 @@ the record field there.
 - **Notes for 28.2:** publish must target a `completed` unpublished run (the CHECK already
   enforces it); validate-then-publish is two explicit steps. Re-validating a published run is
   refused here, so 28.2's invalidate path stays the only mutation of published history.
+
+## Task 28.2 — Publish Swap + Coverage/Methodology Refresh + Exit Demo Prep — 2026-07-13
+
+- **What was built:** `pipeline publish-aggregates` (NEW code — R1 recon found no
+  reusable Sprint 2 publish/invalidate path to reuse; adjudicated in planning chat):
+  one transaction sets `published_at` on a validated run and
+  `invalidated_at`+`invalidated_reason` on the prior active published run
+  (invalidate-before-publish ordering under the §6.3 partial unique index; prior run
+  retained, never deleted). Idempotent explicit re-run; stale-guard on the bare form
+  (below). Plus the real-run copy refresh: seeded-data disclosure removed from BOTH
+  API spots (their "Sprint 7" marker condition — real aggregates replacing seeds —
+  was met by this publish; leaving it would have made the API assert a falsehood),
+  methodology updated for the cutdown MVP (SD-15 sentencing-date disclosure,
+  judge-thinness honesty, ambiguous-excluded-structurally, no-manual-correction
+  phrased without the route-forbidden internal vocabulary), data-coverage
+  known-limitations refreshed (collection ongoing; MC coverage currently extends
+  further than CP, stated qualitatively — no calendar dates or counts in copy).
+- **Files touched (committed):** `services/pipeline/src/pipeline/aggregates/publish.py`
+  (new), `services/pipeline/src/pipeline/cli.py`,
+  `services/pipeline/tests/test_aggregates_publish.py` (new, 10 tests),
+  `apps/api/src/content/methodology.ts`, `apps/api/src/content/data-coverage.ts`,
+  `apps/api/src/routes/public/data-coverage.test.ts` (disclosure assertion inverted
+  to assert ABSENCE), `agent-docs/decisions/0003-admin-review-post-deadline.md`
+  (new — AC10), `tasks/worklog.md`. No API route/service/repository, web, schema,
+  or parser change. `tasks/current-task.md` carries a human edit — NOT staged.
+- **Adjudications executed (planning chat):** (1) publish is new code mirroring
+  validate.py; (2) data-coverage contract FROZEN — eligible/excluded fact counts live
+  in run reports/worklog/exit demo, never the endpoint; (3) disclosure removal NOW,
+  both spots + markers; (4) intake race handled by snapshot (mtime >2 min guard), no
+  collector pause; (5) step-6 judge verification prefers a real judge-specific result.
+- **Intake (COL protocol, snapshot `28.2-20260713T180107Z`):** staged-at-freeze 5,082
+  (mtime-guarded; 5,088 in dir at freeze instant); [0b] excluded 3,208 already-loaded
+  docket numbers (hash dedupe alone would have missed re-collected copies); included
+  1,874. Stages verbatim in run reports: import `imported=1874 duplicate=0 invalid=0
+  failed=0`; extract `success=1874 partial=0 needs_ocr_or_review=0 failed=0`; parse
+  `parsed=1871 failed=3 skipped=0` (all 3 UNSUPPORTED_FORMAT — isolated expected
+  quarantine class, 0.16%, no systematic cluster; loaded as `parse_failed`, zero
+  parsed rows, zero facts structurally); tier-2 `--init-goldens` totals `new=1871
+  diverged=0 failed=3 golden_missing=0` (this entry is the mandatory golden-write
+  note; verification rerun `match=1871 diverged=0`); load `loaded=1871
+  failed_envelope_loaded=3 total=1874`.
+- **Corpus counts formally restated (supersedes 4,769 by name):** loaded dockets
+  **4,769 (1,563 CP + 3,206 MC) → 6,640 (2,931 CP + 3,709 MC)**;
+  `raw.source_documents` 6,643 (6,640 imported + 3 parse_failed); `parsed.charges`
+  13,334 → 19,156; `parsed.sentences` 4,733 → 7,340; duplicate docket numbers = 0.
+  Capstone baseline untouched; comparator not run over new dockets (SD 14).
+- **Fact build (rerun `8ded6328-b1d5-45`, status=completed):** `charges_processed=19156
+  facts_written=15568 held_skipped=3588`, reconcile True; outcome eligibility
+  `mvp=3410 public=2721 judge=2631 review=9793`; `sentence_facts_written=7340
+  components_on_disposed=7340`, reconcile True; sentence eligibility `mvp=3671
+  public=2839 judge=2762`; SD-15 divergence=34 straddle_mvp=29 delta_days=218..757.
+  Gates all PASS scoped to the run: held-with-outcome-fact=0; sentinel-collision
+  conservative behavior holds (56/56 facts on sentinel dockets have
+  `judge_attribution_method='none'`, judge NULL — superset of 24.1's 12);
+  review dedup holds (`newly_inserted=0` on this rerun); duplicate dockets 0.
+  NOTE: an identical build (`3a29d048`) ran minutes earlier but its console report
+  was only partially captured; it was rerun with full capture — append-only run
+  partitions make this history, not a deviation of substance. Its rerun inserting 0
+  new review items is itself the dedupe proof.
+- **Aggregates:** generate run `84faecfc` then (post-incident, identical inputs)
+  `286b0058` over build run `8ded6328`: `facts_loaded=15568 facts_included=2721
+  facts_excluded=12847`; `charges_with_aggregates=76 outcome_aggregates_generated=247`
+  `thin_data_charges=28`; `charges_with_sentencing=71 sentencing_aggregates=196
+  thin=25`; `judge_outcome_aggregates=1179 pairs=885 thin_pairs=839`;
+  `judge_sentencing_aggregates=1129 pairs=762 thin=702`; sentence facts included
+  2,839 / excluded 4,501; `data_range: 2025-01-01..2026-07-10`. validate-aggregates:
+  all four tables 0 violations, `run marked completed (validated)` (both runs).
+- **PUBLISH INCIDENT (disclosed, fixed, regression-tested):** after publishing
+  `84faecfc`, a bare `publish-aggregates` re-run (intended as the idempotency check)
+  default-resolved to the LEFTOVER validated-unpublished 28.1-era run `65f4c65f` and
+  published it, superseding the newer real run — the bare form was NOT idempotent
+  when an older validated run lay around. Fix in the same task: default resolution
+  now refuses a candidate validated BEFORE the active published run
+  (`StaleValidatedRunError`, exit 2); explicit `--run` remains the operator override.
+  Regression test `test_db_bare_rerun_never_publishes_a_stale_leftover_run`
+  reproduces the incident. DB recovered via sanctioned commands only (fresh
+  generate `286b0058` → validate → publish `--run`); no manual SQL, no history
+  mutation. Final state: active run `286b0058`; `65f4c65f` and `84faecfc`
+  invalidated history with accurate reasons; seeded run `5eedda7a-…0001` invalidated,
+  retained (34 outcome rows intact) as rollback target.
+- **Post-publish verification (zero API/UI code change):** charge search,
+  charge-only result (sample 230, run id `286b0058…`), judge-specific result (a
+  SOLID pair, n=56, thin=false, beside its baseline) and data-coverage (real counts
+  76/71/885, dataEnd from the run, seeded disclosure GONE) all serve the published
+  real run. Bare publish re-run now STOPs (`NoValidatedRunError` — nothing
+  validated-unpublished left); explicit re-run is a no-op.
+- **Local test environments (operational note for all future tasks):** after this
+  swap, `pnpm --filter @pca/api test` must NEVER run against the real `pca` DB — the
+  vitest global setup re-seeds and re-activates the seed run, which now collides
+  with the real active run. Export `DATABASE_URL` pointing at `pca_test`
+  (shell-exported vars beat the auto-loaded root `.env`). Pipeline DB tests use
+  `PIPELINE_TEST_DATABASE_URL` → `pca_pipeline_test` as before.
+- **Deviations from plan:** the stale-guard addition to publish.py (forced by the
+  incident — required to actually meet the approved "idempotent / safe to re-run"
+  AC) and the duplicate fact-build run for report capture. Both disclosed above;
+  no other deviation. Numbers discipline held: superseded figures (730/432) appear
+  nowhere; no count pinned in code, tests, or copy.
+- **Notes for Sprint 7:** seed sweep may now DELETE the invalidated seeded run
+  (this task only invalidated it). 'Held for Court' MC disposition mapping still
+  banked. The two invalidated real runs (`84faecfc`, `65f4c65f`) are ordinary
+  history — the sweep should target only seed-id runs.
