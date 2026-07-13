@@ -58,7 +58,8 @@ SUBCOMMANDS = (
     ),
     (
         "generate-aggregates",
-        "Generate charge-only outcome aggregates from eligible facts under a run.",
+        "Generate charge-only outcome and sentencing aggregates from eligible facts "
+        "under a run.",
     ),
     ("collect", "Collect docket-sheet PDFs from the portal into an intake dir."),
     ("evaluate-extractors", "Compare candidate PDF text extractors."),
@@ -305,8 +306,9 @@ def build_parser() -> argparse.ArgumentParser:
                 type=int,
                 default=AGG_THIN_MIN_SAMPLE_DEFAULT,
                 help=(
-                    "Outcome sample size below which a charge is flagged thin-data "
-                    "(shown with a warning, never hidden). Default: 10."
+                    "Sample size below which a charge is flagged thin-data, applied "
+                    "independently to the outcome and sentencing denominators (shown "
+                    "with a warning, never hidden). Default: 10."
                 ),
             )
             subparser.add_argument(

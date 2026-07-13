@@ -4696,3 +4696,63 @@ the record field there.
   `completed`) and invalidates the seeded published run in the same transaction. The generator
   currently leaves each generated run as `in_progress`; 28.x selects the run to validate/publish
   explicitly (do not assume a single working run — the seed decoy is also `in_progress`).
+
+## Task 26.2 — Charge-Only Sentencing Aggregates (closes Phase 26) (2026-07-13)
+
+- **What was built:** extended `pipeline generate-aggregates` so the SAME invocation and the
+  SAME write transaction that produces the 26.1 outcome rows now also produces
+  `analytics.charge_sentencing_aggregates` under the SAME `aggregate_runs` run. No second run,
+  no second subcommand, no restructure of the 26.1 outcome builder.
+- **Recon (all three checks passed — no STOP):** (1) the 26.1 core already separates
+  *read → pure build → single `_create_run` → one `with conn.transaction():` write block →
+  summary*, so a sentencing pass drops into the existing transaction beside `_write_aggregates`
+  with no restructure; (2) `analytics.charge_sentencing_aggregates` carries the full
+  `AggregateRowBase` set plus `sentencing_sample_size` (types.ts) — no missing column, no
+  migration; (3) `fact.charge_sentences` column names confirmed: `public_eligible` (eligibility),
+  `sentencing_category_code` (category), `sentence_date` (date), `normalized_charge_id` (FK),
+  `taxonomy_version`, `ineligibility_reason_codes` (text[]); multi-component sentences are 1:1
+  rows, so grouping counts each component.
+- **Files touched:** `services/pipeline/src/pipeline/aggregates/generate.py` (new
+  `_load_sentence_facts`, `build_charge_sentencing_aggregates`, `_write_sentencing_aggregates`,
+  `_SENTENCING_INSERT_COLUMNS`; `generate_aggregates` loads/builds both populations before any
+  write and writes both in one transaction; `_print_summary` extended with the sentencing
+  tallies + `charges_with_outcomes_no_sentencing`); `services/pipeline/tests/
+  test_aggregates_generate.py` (7 pure sentencing tests + 2 DB integration tests + seeder
+  `new_charge`/`sentenced_outcome` helpers, `fact()` gained an optional `charge_id`);
+  `services/pipeline/src/pipeline/cli.py` (two user-facing help strings updated for accuracy —
+  trivially-necessary in-surface touch).
+- **Independent sentencing denominator (SD 5):** `sentencing_sample_size` = the charge's eligible
+  *sentence* facts (one per component, never collapsed), never copied from the outcome count.
+  Percentages are against that denominator; the thin flag uses the same
+  `THIN_DATA_MIN_SAMPLE_SIZE` config applied to the sentencing sample.
+- **Eligibility READ, never recomputed (SD 1) + STOP (adjudicated):** sentencing eligibility keys
+  off the fact's own `public_eligible` and the actual `sentence_date` (SD 15). A `public_eligible`
+  sentence fact with a null charge, a null `sentence_date`, or a `sentence_date` before the
+  2025-01-01 floor raises `FactIntegrityError` (exit 2, no run row) — a fact-layer defect
+  surfaced, never a silent filter.
+- **Absence, not placeholder (SD 6):** a charge with eligible outcomes but no eligible sentence
+  facts produces outcome rows and NO sentencing rows — no error, no placeholder. The run report
+  counts these as `charges_with_outcomes_no_sentencing`, derived from the emitted rows so neither
+  pure builder is touched to expose its grouping.
+- **Run-level `data_range_end` (adjudicated in planning chat):** the run row's end is the UNION
+  envelope — `max` over both eligible outcome disposition dates and eligible sentence dates — so
+  the run covers everything it wrote; per-row ranges stay population-specific (outcome rows from
+  `disposition_date`, sentence rows from `sentence_date`). Only ever extends the value; 26.1
+  outcome-only tests are unaffected.
+- **Real-corpus demonstration (§6.10, verbatim in the completion report):** default build run
+  `d591902f-8b2d-4c…` (latest completed); aggregate run `2d4707ca-6bb4-4b…`. Sentencing yield:
+  sentence_facts_loaded=4733, included=733, excluded=4000; charges_with_sentencing=58,
+  sentencing_aggregates_generated=124, thin_data_sentencing_charges=36;
+  charges_with_outcomes_no_sentencing=6. Outcome side unchanged from 26.1 (156 rows / 64 charges).
+  Independence is visible: 733 included sentence facts vs 730 included outcome facts;
+  64 − 58 = 6 = charges_with_outcomes_no_sentencing. (Reported as this run's yield, not a pinned
+  figure.)
+- **Deviations from plan:** none.
+- **Notes for 27.x / 28.x:** 27.1/27.2 add judge-specific outcome/sentencing aggregates —
+  reuse the grouping/write shapes here plus a judge id and the same-run baseline guarantee
+  (SD 7). 28.1 validation must now check BOTH aggregate tables per run (sentencing rows:
+  `SUM(count)=sentencing_sample_size`, percentages within tolerance, `date_range_start` ≥
+  2025-01-01); 28.2 publish/invalidate is unchanged by this task. Local note: the fully-migrated
+  pipeline test DB is `pca_test`; `pca_pipeline_test` is behind on unrelated migrations
+  (docket_links / build_facts / review) and fails those suites — the aggregate suite passes on
+  both.

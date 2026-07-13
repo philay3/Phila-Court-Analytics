@@ -1,9 +1,18 @@
-"""Charge-only OUTCOME aggregate generation + ``generate-aggregates`` (Task 26.1).
+"""Charge-only OUTCOME + SENTENCING aggregate generation + ``generate-aggregates``
+(Tasks 26.1, 26.2).
 
-Reads eligible outcome facts from ONE ``fact.fact_build_runs`` run and writes
-``analytics.charge_outcome_aggregates`` rows under a single ``analytics.aggregate_runs``
-run. Charge-only outcomes only — no sentencing (26.2), no judge-specific (27.x), no
-validation (28.1), no publish (28.2).
+Reads eligible outcome facts and eligible sentence facts from ONE
+``fact.fact_build_runs`` run and writes ``analytics.charge_outcome_aggregates`` and
+``analytics.charge_sentencing_aggregates`` rows under a single
+``analytics.aggregate_runs`` run, in the SAME generation invocation and the SAME
+write transaction (Task 26.2). Charge-only aggregates only — no judge-specific (27.x),
+no validation (28.1), no publish (28.2).
+
+Sentencing sample size is computed INDEPENDENTLY (Sprint 6 SD 5): it counts the
+charge's eligible *sentence* facts (one row per sentence component, never collapsed),
+never copied from the outcome count. A charge with eligible outcomes but no eligible
+sentence facts produces outcome rows and NO sentencing rows — the normal
+sentencing-unavailable case (SD 6), never a placeholder.
 
 Eligibility is READ, never recomputed (Sprint 6 SD 1): the generator selects
 ``WHERE public_eligible`` and groups. The 2025-01-01 MVP window, the taxonomy
@@ -71,6 +80,21 @@ _INSERT_COLUMNS = (
     "taxonomy_version",
 )
 
+# The sentencing aggregate table (task 6.2) shares AggregateRowBase but carries
+# ``sentencing_sample_size`` in place of the outcome table's ``sample_size``.
+_SENTENCING_INSERT_COLUMNS = (
+    "aggregate_run_id",
+    "charge_id",
+    "category_code",
+    "count",
+    "percentage",
+    "sentencing_sample_size",
+    "date_range_start",
+    "date_range_end",
+    "is_thin_data",
+    "taxonomy_version",
+)
+
 
 class NoCompletedBuildRunError(RuntimeError):
     """No completed ``fact.fact_build_runs`` run to aggregate from (STOP)."""
@@ -84,10 +108,14 @@ class FactIntegrityError(RuntimeError):
     """A ``public_eligible`` fact violates an aggregation invariant (STOP).
 
     ``public_eligible`` structurally implies a matched charge (non-null
-    ``normalized_charge_id``) and an in-window disposition date (non-null,
-    >= the MVP start) — Sprint 5 eligibility guarantees both. A violation means the
-    eligibility select and the fact rows disagree; that is stop-and-report, never a
-    silently-skipped row.
+    ``normalized_charge_id``) and an in-window date (non-null, >= the MVP start) —
+    Sprint 5 eligibility guarantees both. For outcome facts the date is
+    ``disposition_date``; for sentence facts it is the independently-captured
+    ``sentence_date`` (SD 15), which can predate the disposition date but never the
+    2025-01-01 floor. A violation means the eligibility select and the fact rows
+    disagree; that is stop-and-report, never a silently-skipped row (SD 1: read
+    eligibility, never recompute it — an eligible fact outside the window is a
+    fact-layer defect to surface, not a row to silently filter).
     """
 
 
@@ -158,6 +186,25 @@ def _load_outcome_facts(
             "SELECT normalized_charge_id, outcome_category_code, disposition_date, "
             "public_eligible, ineligibility_reason_codes "
             "FROM fact.charge_outcomes WHERE build_run_id = %s",
+            (build_run_id,),
+        )
+        return list(cur.fetchall())
+
+
+def _load_sentence_facts(
+    conn: psycopg.Connection, build_run_id: str
+) -> list[dict[str, object]]:
+    """Every sentence fact for the build run (one row per component; never collapsed).
+
+    Eligibility is read, never recomputed (SD 1). Multi-component sentences are
+    ``fact.charge_sentences`` rows 1:1 with the parsed components, so grouping these
+    rows by charge and category counts every component independently (SD 5).
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT normalized_charge_id, sentencing_category_code, sentence_date, "
+            "public_eligible, ineligibility_reason_codes "
+            "FROM fact.charge_sentences WHERE build_run_id = %s",
             (build_run_id,),
         )
         return list(cur.fetchall())
@@ -255,6 +302,105 @@ def build_charge_outcome_aggregates(
     return rows, report
 
 
+def build_charge_sentencing_aggregates(
+    facts: Sequence[Mapping[str, object]],
+    *,
+    data_start_date: date,
+    thin_min_sample: int,
+    taxonomy_version: str,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """Build every charge-sentencing aggregate row from the run's sentence facts.
+
+    Parallel to :func:`build_charge_outcome_aggregates` but over
+    ``fact.charge_sentences`` (pure; no DB). Groups ``public_eligible`` sentence facts
+    by normalized charge, then by sentencing category. Each row carries the charge's
+    INDEPENDENT sentencing sample size (its eligible-sentence-fact denominator, SD 5 —
+    never the outcome count), the category count, the count/sample_size percentage, the
+    charge's eligible ``sentence_date`` range (never before ``data_start_date``, SD 15),
+    the thin-data flag (``sample_size < thin_min_sample``), the run's taxonomy version,
+    and the run id (stamped by the caller). Charges with zero eligible sentence facts
+    produce no rows (SD 6) — the normal sentencing-unavailable case.
+
+    Returns ``(rows, report)``. ``report`` carries the sentencing tallies: sentence
+    facts loaded / included / excluded, the fact layer's own ineligibility reason-code
+    tally over the excluded sentence facts, distinct charges with sentencing, sentencing
+    aggregate rows, thin-data sentencing charges, and the eligible sentence-date span.
+    """
+    included: list[Mapping[str, object]] = []
+    excluded_reason_counts: Counter[str] = Counter()
+    for fact in facts:
+        if fact["public_eligible"]:
+            included.append(fact)
+        else:
+            for code in fact["ineligibility_reason_codes"] or ():  # type: ignore[union-attr]
+                excluded_reason_counts[str(code)] += 1
+
+    # Group included sentence facts by normalized charge (order-stable report).
+    by_charge: dict[str, list[Mapping[str, object]]] = {}
+    for fact in included:
+        charge_id = fact["normalized_charge_id"]
+        sentence_date = fact["sentence_date"]
+        # public_eligible structurally guarantees both; a violation is stop-and-report.
+        if charge_id is None:
+            raise FactIntegrityError(
+                "public_eligible sentence fact has a null normalized_charge_id"
+            )
+        if sentence_date is None:
+            raise FactIntegrityError(
+                "public_eligible sentence fact has a null sentence_date"
+            )
+        if sentence_date < data_start_date:
+            raise FactIntegrityError(
+                "public_eligible sentence fact predates the configured data start date"
+            )
+        by_charge.setdefault(str(charge_id), []).append(fact)
+
+    rows: list[dict[str, object]] = []
+    thin_charges = 0
+    run_date_max: date | None = None
+    for charge_id, charge_facts in by_charge.items():
+        sentencing_sample_size = len(charge_facts)
+        is_thin = sentencing_sample_size < thin_min_sample
+        if is_thin:
+            thin_charges += 1
+        dates = [f["sentence_date"] for f in charge_facts]
+        charge_start = min(dates)  # type: ignore[type-var]
+        charge_end = max(dates)  # type: ignore[type-var]
+        run_date_max = (
+            charge_end if run_date_max is None else max(run_date_max, charge_end)
+        )  # type: ignore[type-var]
+
+        category_counts = Counter(
+            str(f["sentencing_category_code"]) for f in charge_facts
+        )
+        for category_code, count in sorted(category_counts.items()):
+            rows.append(
+                {
+                    "charge_id": charge_id,
+                    "category_code": category_code,
+                    "count": count,
+                    "percentage": _percentage(count, sentencing_sample_size),
+                    "sentencing_sample_size": sentencing_sample_size,
+                    "date_range_start": charge_start,
+                    "date_range_end": charge_end,
+                    "is_thin_data": is_thin,
+                    "taxonomy_version": taxonomy_version,
+                }
+            )
+
+    report: dict[str, object] = {
+        "sentence_facts_loaded": len(facts),
+        "sentence_facts_included": len(included),
+        "sentence_facts_excluded": len(facts) - len(included),
+        "sentencing_excluded_by_reason": dict(sorted(excluded_reason_counts.items())),
+        "charges_with_sentencing": len(by_charge),
+        "sentencing_aggregates_generated": len(rows),
+        "thin_data_sentencing_charges": thin_charges,
+        "data_range_end": run_date_max,
+    }
+    return rows, report
+
+
 def _create_run(
     conn: psycopg.Connection,
     *,
@@ -317,6 +463,34 @@ def _write_aggregates(
     return len(rows)
 
 
+def _write_sentencing_aggregates(
+    conn: psycopg.Connection, run_id: str, rows: Sequence[Mapping[str, object]]
+) -> int:
+    """Delete-and-reinsert this run's charge-sentencing aggregate rows (caller's tx).
+
+    Same immutable-safe write path as :func:`_write_aggregates` (SD 4), targeting
+    ``analytics.charge_sentencing_aggregates``. Does not commit; the caller owns the
+    transaction boundary, so this write lands in the SAME transaction as the outcome
+    write for one atomic run.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM analytics.charge_sentencing_aggregates "
+            "WHERE aggregate_run_id = %s",
+            (run_id,),
+        )
+        if not rows:
+            return 0
+        columns = ", ".join(_SENTENCING_INSERT_COLUMNS)
+        placeholders = ", ".join(f"%({col})s" for col in _SENTENCING_INSERT_COLUMNS)
+        cur.executemany(
+            f"INSERT INTO analytics.charge_sentencing_aggregates ({columns}) "  # noqa: S608 - columns are module constants, never input
+            f"VALUES ({placeholders})",
+            [{**row, "aggregate_run_id": run_id} for row in rows],
+        )
+    return len(rows)
+
+
 def _fail_run(conn: psycopg.Connection, run_id: str) -> None:
     """Mark a run ``failed`` in its own transaction (no partial rows persist)."""
     with conn.cursor() as cur:
@@ -336,6 +510,8 @@ def _print_summary(
     data_range_start: date,
     data_range_end: date,
     report: Mapping[str, object],
+    sentencing_report: Mapping[str, object],
+    charges_outcomes_no_sentencing: int,
 ) -> None:
     """Counts-only run report (fixed codes + hash-prefix run ids; no docket data)."""
     source = "default" if is_default_build_run else "forced"
@@ -360,6 +536,27 @@ def _print_summary(
         f"thin_data_charges={report['thin_data_charges']} "
         f"({BELOW_MINIMUM_SAMPLE}; min_sample={thin_min_sample})"
     )
+    # Sentencing pass (Task 26.2): independent denominator, same run and transaction.
+    print(
+        f"sentence_facts_loaded={sentencing_report['sentence_facts_loaded']} "
+        f"sentence_facts_included={sentencing_report['sentence_facts_included']} "
+        f"sentence_facts_excluded={sentencing_report['sentence_facts_excluded']}"
+    )
+    print("sentencing_excluded_by_reason:")
+    for code, n in sentencing_report["sentencing_excluded_by_reason"].items():  # type: ignore[attr-defined]
+        if n:
+            print(f"  {code:34} {n}")
+    print(
+        f"charges_with_sentencing={sentencing_report['charges_with_sentencing']} "
+        "sentencing_aggregates_generated="
+        f"{sentencing_report['sentencing_aggregates_generated']}"
+    )
+    thin_sentencing = sentencing_report["thin_data_sentencing_charges"]
+    print(
+        f"thin_data_sentencing_charges={thin_sentencing} "
+        f"({BELOW_MINIMUM_SAMPLE}; min_sample={thin_min_sample})"
+    )
+    print(f"charges_with_outcomes_no_sentencing={charges_outcomes_no_sentencing}")
     print(f"data_range: {data_range_start.isoformat()}..{data_range_end.isoformat()}")
 
 
@@ -371,10 +568,12 @@ def generate_aggregates(
     thin_min_sample: int,
     label: str,
 ) -> int:
-    """Generate charge-only outcome aggregates over one build run under a new run.
+    """Generate charge-only outcome AND sentencing aggregates over one build run.
 
-    Returns 0 on a clean generated run, nonzero on a STOP (no completed build run /
-    bad ``--build-run`` / fact-integrity violation) or a failed write.
+    Both aggregate populations are written under the SAME new run and the SAME write
+    transaction (Task 26.2). Returns 0 on a clean generated run, nonzero on a STOP (no
+    completed build run / bad ``--build-run`` / fact-integrity violation) or a failed
+    write.
     """
     try:
         build_run_id, taxonomy_version, parser_version, is_default = _resolve_build_run(
@@ -387,12 +586,19 @@ def generate_aggregates(
         return 2
 
     facts = _load_outcome_facts(conn, build_run_id)
+    sentence_facts = _load_sentence_facts(conn, build_run_id)
 
-    # All reads + the pure build (including the fact-integrity STOP checks) happen
-    # BEFORE any write, so a STOP leaves no run row.
+    # All reads + both pure builds (including the fact-integrity STOP checks for BOTH
+    # populations) happen BEFORE any write, so a STOP leaves no run row.
     try:
         rows, report = build_charge_outcome_aggregates(
             facts,
+            data_start_date=data_start_date,
+            thin_min_sample=thin_min_sample,
+            taxonomy_version=taxonomy_version,
+        )
+        sentencing_rows, sentencing_report = build_charge_sentencing_aggregates(
+            sentence_facts,
             data_start_date=data_start_date,
             thin_min_sample=thin_min_sample,
             taxonomy_version=taxonomy_version,
@@ -403,10 +609,23 @@ def generate_aggregates(
         )
         return 2
 
-    # Run-level data range: the configured floor as start; the latest eligible
-    # disposition date as end (the floor itself when the run has no eligible facts,
-    # keeping the start <= end CHECK satisfied).
-    data_range_end = report["data_range_end"] or data_start_date  # type: ignore[assignment]
+    # Charges with eligible outcomes but no eligible sentence facts (SD 6 — the normal
+    # sentencing-unavailable case). Derived from the emitted rows, so neither pure
+    # builder is touched to expose its internal grouping.
+    outcome_charges = {row["charge_id"] for row in rows}
+    sentencing_charges = {row["charge_id"] for row in sentencing_rows}
+    charges_outcomes_no_sentencing = len(outcome_charges - sentencing_charges)
+
+    # Run-level data range: the configured floor as start; the latest eligible date as
+    # end, taken as the UNION envelope of both populations (outcome disposition dates
+    # and sentence dates), so the run row covers everything it wrote. The floor itself
+    # when the run has no eligible facts at all, keeping the start <= end CHECK happy.
+    date_maxes = [
+        d
+        for d in (report["data_range_end"], sentencing_report["data_range_end"])
+        if d is not None
+    ]
+    data_range_end = max(date_maxes) if date_maxes else data_start_date  # type: ignore[type-var]
 
     started_at = datetime.now(UTC)
     run_id = _create_run(
@@ -421,6 +640,7 @@ def generate_aggregates(
     try:
         with conn.transaction():
             _write_aggregates(conn, run_id, rows)
+            _write_sentencing_aggregates(conn, run_id, sentencing_rows)
     except Exception:
         conn.rollback()
         with conn.transaction():
@@ -440,6 +660,8 @@ def generate_aggregates(
         data_range_start=data_start_date,
         data_range_end=data_range_end,  # type: ignore[arg-type]
         report=report,
+        sentencing_report=sentencing_report,
+        charges_outcomes_no_sentencing=charges_outcomes_no_sentencing,
     )
     logger.info("aggregate generation complete", extra={"run": run_id[:16]})
     return 0
