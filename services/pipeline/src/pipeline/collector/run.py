@@ -27,6 +27,8 @@ from pipeline.collector.engine import (
     CollectParams,
 )
 from pipeline.collector.search_engine import SearchParams
+from pipeline.collector.window import LedgerMigrationError, migrate_shared_ledger
+from pipeline.paths import inside_git_worktree
 
 logger = logging.getLogger("pipeline.collector")
 
@@ -250,4 +252,48 @@ def run_collect_search(
         f"skipped_rows={report['totals']['skipped_rows']}; "
         f"duration={report['duration_hms']}; outputs under {report['output_dir']}"
     )
+    return 0
+
+
+def run_migrate_window_ledger(*, ledger_dir: Path, runs_dir: Path) -> int:
+    """One-time COL-3 migration of the shared window ledger. Returns exit code.
+
+    Offline (no portal access): reads run reports under ``runs_dir`` to
+    attribute each shared-ledger entry to its court, writes the court-scoped
+    ledgers, and archives the shared file. Console output is counts, run ids,
+    statuses, and paths only (hygiene).
+    """
+    for label, path in (("ledger-dir", ledger_dir), ("runs-dir", runs_dir)):
+        if inside_git_worktree(path):
+            logger.error(
+                "refusing to operate inside a git working tree",
+                extra={"dir": label},
+            )
+            return 2
+
+    try:
+        summary = migrate_shared_ledger(ledger_dir, runs_dir)
+    except LedgerMigrationError as exc:
+        logger.error("window ledger migration refused", extra={"reason": str(exc)})
+        return 2
+
+    if summary["status"] == "nothing_to_migrate":
+        print(
+            "migrate-window-ledger: nothing to migrate "
+            f"(no shared ledger at {summary['shared_path']})"
+        )
+        return 0
+
+    print(
+        "migrate-window-ledger: migrated "
+        f"{summary['total_entries']} entries -> "
+        f"MC={summary['entries']['MC']} entries ({summary['dates']['MC']} dates), "
+        f"CP={summary['entries']['CP']} entries ({summary['dates']['CP']} dates); "
+        f"shared ledger archived to {summary['archived_to']}"
+    )
+    for run in summary["runs"]:
+        print(
+            f"  {run['run_id']}: court={run['court']} "
+            f"entries={run['entries']} attribution={run['basis']}"
+        )
     return 0

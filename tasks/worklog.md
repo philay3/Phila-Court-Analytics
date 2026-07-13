@@ -5004,3 +5004,63 @@ the record field there.
   (this task only invalidated it). 'Held for Court' MC disposition mapping still
   banked. The two invalidated real runs (`84faecfc`, `65f4c65f`) are ordinary
   history — the sweep should target only seed-id runs.
+
+## Task COL-3 — Court-Scoped Window Ledger + Concurrent MC/CP Collection (2026-07-13)
+
+- **What was built:** the search-mode window ledger is now court-scoped
+  (`window-ledger-philadelphia-<court>.jsonl`, one per FETCHED court), matching
+  the enumeration-mode belt-and-braces: court in the filename AND a `court`
+  field in every entry, validated on load (misdirected-ledger guard). A window
+  is skipped only when EVERY fetched court completed it, so an MC completion
+  can never suppress a CP search and vice versa. Completion is monotonic and
+  order-independent across duplicate (date, court) entries: any
+  `complete`/`empty` entry wins; a later `blocked`/`truncated` never revokes
+  it; duplicates never error, warn, or distort (a `both` run re-searching a
+  window only one court completed appends an expected duplicate). Concurrent
+  MC+CP collection is the approved single interleaved process: `--court both`
+  (already wired) is now correct under scoped ledgers — one search serves both
+  courts' rows (strictly less portal load than two passes), one clock, one
+  RunGuard, one cooldown, so the counsel caps / 300s post-block cooldown /
+  block-streak stop are aggregate across courts by construction (tests prove
+  streak does not reset on court switch, cooldown idles the whole run, one
+  240-min budget). Live output labels courts distinctly: per-window and
+  progress log lines now carry per-court fetched/already_present/
+  fetch_failures (+ cumulative by_court on progress); counts only.
+- **Files touched:** `services/pipeline/src/pipeline/collector/window.py`,
+  `search_engine.py`, `run.py`, `src/pipeline/cli.py`;
+  tests `test_collector_window_ledger.py`, `test_collector_search_engine.py`,
+  `test_collector_search_cli.py`; this worklog. `engine.py` untouched
+  (read-only model).
+- **MIGRATION EXECUTED (one-time, idempotent, archived):**
+  `pipeline migrate-window-ledger` over `~/court-data/coverage/` +
+  `~/court-data/collection-runs/`: **215 shared-ledger entries → MC=122
+  entries (121 dates), CP=93 entries (91 dates)**; shared file retired by
+  rename to `window-ledger-philadelphia.jsonl.migrated-col3` (never deleted).
+  Immediate re-run: `nothing to migrate`, exit 0, files unchanged.
+  Attribution basis per run-id group (auditable): report-based — MC runs
+  run-20260712-005852 (37), -025810 (7), -044124 (1), -072248 (22),
+  -164622 (11), -235541 (20); CP runs run-20260713-030509 (27), -060332 (3),
+  -170548 (29). Activity-inferred (no run-report.json; run died before
+  writing one; fetch activity exclusively on one court) — MC:
+  run-20260712-042549 (1), -044430 (13), -182732 (10); CP:
+  run-20260713-124600 (34). The 93 CP entries are genuine workaround-era CP
+  completions (written under `--recheck-windows`) — preserved and attributed
+  to the CP-scoped ledger per pinned decision 6: CP starts CORRECT, not empty.
+  No ambiguous attribution; the STOP condition never triggered.
+- **`--recheck-windows` WORKAROUND RETIRED:** the flag remains as a
+  diagnostic, but CP collection no longer needs it. Post-migration
+  verification (raw output in the completion report): MC run over
+  2025-01-01..03 skipped all 3 windows (`skipped_complete=3`, 0 searches, 0
+  portal requests); CP run over MC-only-complete 2025-04-05 WITHOUT the flag
+  searched it live (`searched=1, skipped_complete=0`, honest CP `complete`
+  entry with 0 CP rows). Both smokes headful under the approved 1-2
+  window / `--max-fetches 1` shape, counted against session budget.
+- **Deviations from plan:** none.
+- **For COL-4 / next tasks:** search-mode ledger loads REQUIRE the `court`
+  field — pre-COL-3-format entries (no court) are skipped with a WARNING, so
+  never hand-write ledger entries without it. The run report's
+  `parameters.window_ledger_path` (string) is now `window_ledger_paths`
+  (dict court→path); anything parsing old reports should tolerate both.
+  Combined collection is `--court both` — do not run two per-court sessions.
+  `~/court-data/coverage-smoke-col2/` still holds an old-format smoke ledger
+  (untouched, unused by production runs).

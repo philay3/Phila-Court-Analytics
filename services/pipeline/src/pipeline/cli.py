@@ -74,6 +74,11 @@ SUBCOMMANDS = (
         "prior published run in one transaction.",
     ),
     ("collect", "Collect docket-sheet PDFs from the portal into an intake dir."),
+    (
+        "migrate-window-ledger",
+        "One-time COL-3 migration: split the shared search-mode window ledger "
+        "into court-scoped ledgers and archive the shared file.",
+    ),
     ("evaluate-extractors", "Compare candidate PDF text extractors."),
     (
         "run-fixtures",
@@ -96,6 +101,7 @@ IMPLEMENTED_COMMANDS = frozenset(
         "validate-aggregates",
         "publish-aggregates",
         "collect",
+        "migrate-window-ledger",
         "run-fixtures",
     }
 )
@@ -531,6 +537,34 @@ def build_parser() -> argparse.ArgumentParser:
                     "may since have become a hit."
                 ),
             )
+        if name == "migrate-window-ledger":
+            # Deliberately flag-minimal: two directories, no pacing or
+            # collection parameters — the counsel-locked values are not
+            # reachable from here (COL-3 AC-8).
+            subparser.add_argument(
+                "--ledger-dir",
+                type=Path,
+                # Resolved here, at the CLI/run boundary — never at import.
+                default=Path.home() / "court-data" / "coverage",
+                help=(
+                    "Directory holding the shared window ledger to migrate; "
+                    "the court-scoped ledgers are written alongside it and the "
+                    "shared file is archived in place (never deleted). Must be "
+                    "outside any git working tree. Default: "
+                    "~/court-data/coverage/."
+                ),
+            )
+            subparser.add_argument(
+                "--runs-dir",
+                type=Path,
+                default=Path.home() / "court-data" / "collection-runs",
+                help=(
+                    "Parent of per-run report dirs used to attribute each "
+                    "shared-ledger entry to its court "
+                    "(<runs-dir>/<run-id>/run-report.json). Default: "
+                    "~/court-data/collection-runs/."
+                ),
+            )
         if name == "evaluate-extractors":
             subparser.add_argument(
                 "--fixtures-dir",
@@ -740,6 +774,22 @@ def main(argv: list[str] | None = None) -> int:
             batch_size=args.batch_size,
             batch_cooldown_seconds=args.batch_cooldown_seconds,
             recheck_misses=args.recheck_misses,
+        )
+    if args.command == "migrate-window-ledger":
+        if running_in_ci():
+            logger.error(
+                "migrate-window-ledger operates on local court data and must "
+                "never run in a CI environment; refusing",
+                extra={"command": args.command},
+            )
+            return 2
+        # Imported here (not at module top) so the CLI stays importable — and
+        # the whole test suite runs — without the optional collector group.
+        from pipeline.collector.run import run_migrate_window_ledger
+
+        return run_migrate_window_ledger(
+            ledger_dir=args.ledger_dir,
+            runs_dir=args.runs_dir,
         )
     if args.command == "extract-text":
         return run_extraction(
