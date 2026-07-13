@@ -4639,3 +4639,60 @@ the record field there.
   non-terminal-semantics question (raised in 24.2) is restated in the report as a Sprint
   6/7 adjudication item. Sprint 7 aggregation must select the latest completed
   `build_run_id` (append semantics), never the global fact-table count.
+
+## Task 26.1 — Generator Command + Run Lifecycle + Charge-Only Outcome Aggregates (2026-07-13)
+
+- **What was built:** `pipeline generate-aggregates` — a new console-script subcommand that
+  opens an `analytics.aggregate_runs` row, aggregates `public_eligible` outcome facts from
+  ONE fact build run into `analytics.charge_outcome_aggregates` (charge × outcome-category
+  count / percentage / outcome sample size / eligible disposition-date range / thin-data
+  flag), and prints a counts-only run report. Charge-only outcomes only (sentencing 26.2,
+  judge-specific 27.x, validation 28.1, publish 28.2 remain unbuilt).
+- **Files touched (committed):** `services/pipeline/src/pipeline/aggregates/__init__.py` (new);
+  `services/pipeline/src/pipeline/aggregates/generate.py` (new); `services/pipeline/src/pipeline/cli.py`
+  (register subcommand + args + CI-refuse/`DATABASE_URL`-boundary dispatch);
+  `services/pipeline/tests/test_aggregates_generate.py` (new tier-1 suite);
+  `tasks/worklog.md` (this entry). No `db/**`, no `apps/**`, no `docs/**`; `tasks/current-task.md`
+  left uncommitted (human-managed, per the 24.3/25.1 commit precedent).
+- **STOP-and-report resolved in the planning chat (status vocabulary):** the spec's lifecycle
+  labels `generated`/`validated` are NOT `analytics.aggregate_runs.status` enum values — the
+  CHECK permits only `in_progress|completed|failed`, and the publish CHECK ties `published_at`
+  to `status='completed'`. Adjudicated mapping (no `analytics.*` migration this task, carried
+  forward for 28.1/28.2): **"generated" (26.1) → `status='in_progress'`, `published_at`/
+  `invalidated_at` NULL** (invisible to the §6.3 public-API predicate); **"validated" (28.1) →
+  `completed`**; **"failed" → `failed`**; **"published" (28.2) → set `published_at`**. The
+  mapping lives in the module docstring so later phases inherit it explicitly.
+- **Secondary adjudications:** aggregate-run `--label` is report/log only (no column exists,
+  not persisted); the thin-data reason `below_minimum_sample` is implied by the `is_thin_data`
+  boolean (no reason column) and surfaced only in the run report.
+- **Eligibility is READ, never recomputed (SD 1):** the generator selects `WHERE public_eligible`
+  and groups; it re-applies no date/match/review rule. The excluded-by-reason tally is read
+  straight off each excluded fact's `ineligibility_reason_codes`. No confidence threshold exists.
+- **Lifecycle / idempotency (SD 4):** each invocation opens a NEW run; rows are written via
+  delete-then-insert inside one transaction (aggregate rows are immutable → never ON CONFLICT
+  UPDATE). Published/invalidated runs are never read for reuse and never mutated; a generation
+  failure rolls the write back and marks the run `failed`. Confirmed on the real corpus: the
+  seeded published run and the seeded in_progress decoy were untouched (active-published count
+  stayed exactly 1).
+- **Build-run selection (pinned decision 1 / check B):** default = latest completed
+  (`WHERE status='completed' ORDER BY completed_at DESC LIMIT 1`); `--build-run <id>` overrides
+  and must be completed. The real-corpus demo resolved the **default** build run
+  `d591902f-8b2d-4c…` (latest completed) — reported `(default)` in the run output.
+- **Defensive STOP (check A) kept:** a `public_eligible` fact with a null `normalized_charge_id`,
+  a null `disposition_date`, or a pre-window date raises `FactIntegrityError` (exit 2, no run
+  row) rather than silently skipping — `public_eligible` structurally guarantees all three.
+- **Real-corpus demonstration (§6.10, verbatim in the completion report):** default build run
+  `d591902f…`; facts_loaded=11175, facts_included=730, facts_excluded=10445; charges_with_aggregates=64,
+  outcome_aggregates_generated=156, thin_data_charges=42; data_range 2025-01-01..2026-06-25.
+  Post-run invariants over all 64 charges: `SUM(count)=sample_size` and `SUM(percentage)≈100`
+  within tolerance; `is_thin_data == (sample_size<10)`; no `date_range_start` before 2025-01-01.
+  (The 730 figure is this active run's yield, not the historically-cited number — reported as-is.)
+- **Deviations from plan:** none. The status-vocabulary conflict was stopped-and-reported and
+  adjudicated in the planning chat before implementation (never self-resolved).
+- **Notes for 26.2 / 28.x:** 26.2 adds `analytics.charge_sentencing_aggregates` with an
+  independent sentencing sample size (SD 5) — reuse `build_charge_outcome_aggregates`' grouping
+  shape and `_write_aggregates`' delete-first path. 28.1 flips the working run to `completed`
+  on a clean validation and `failed` otherwise; 28.2 sets `published_at` (CHECK already requires
+  `completed`) and invalidates the seeded published run in the same transaction. The generator
+  currently leaves each generated run as `in_progress`; 28.x selects the run to validate/publish
+  explicitly (do not assume a single working run — the seed decoy is also `in_progress`).

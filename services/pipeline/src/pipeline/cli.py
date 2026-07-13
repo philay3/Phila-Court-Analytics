@@ -12,6 +12,18 @@ from datetime import date
 from pathlib import Path
 
 from pipeline import db
+from pipeline.aggregates.generate import (
+    DATA_START_DATE_DEFAULT as AGG_DATA_START_DATE_DEFAULT,
+)
+from pipeline.aggregates.generate import (
+    DEFAULT_RUN_LABEL as AGG_DEFAULT_RUN_LABEL,
+)
+from pipeline.aggregates.generate import (
+    THIN_DATA_MIN_SAMPLE_SIZE_DEFAULT as AGG_THIN_MIN_SAMPLE_DEFAULT,
+)
+from pipeline.aggregates.generate import (
+    run_generate_aggregates,
+)
 from pipeline.collector.engine import (
     BATCH_COOLDOWN_DEFAULT_SECONDS,
     BATCH_SIZE_DEFAULT,
@@ -44,6 +56,10 @@ SUBCOMMANDS = (
         "build-facts",
         "Build fact.charge_outcomes from the loaded parsed corpus under a new run.",
     ),
+    (
+        "generate-aggregates",
+        "Generate charge-only outcome aggregates from eligible facts under a run.",
+    ),
     ("collect", "Collect docket-sheet PDFs from the portal into an intake dir."),
     ("evaluate-extractors", "Compare candidate PDF text extractors."),
     (
@@ -63,6 +79,7 @@ IMPLEMENTED_COMMANDS = frozenset(
         "parse",
         "load",
         "build-facts",
+        "generate-aggregates",
         "collect",
         "run-fixtures",
     }
@@ -261,6 +278,43 @@ def build_parser() -> argparse.ArgumentParser:
                     "(<sha256>.json). An envelope whose source hash has no record "
                     "here is a per-docket failure (no rows written). Default: "
                     "~/court-data/imports/."
+                ),
+            )
+        if name == "generate-aggregates":
+            subparser.add_argument(
+                "--build-run",
+                default=None,
+                dest="build_run_id",
+                help=(
+                    "Fact build-run id to aggregate from. Default: the latest "
+                    "completed fact build run. Facts are run-scoped; the generator "
+                    "never aggregates across runs."
+                ),
+            )
+            subparser.add_argument(
+                "--data-start-date",
+                type=date.fromisoformat,
+                default=AGG_DATA_START_DATE_DEFAULT,
+                help=(
+                    "MVP window floor (ISO YYYY-MM-DD); no aggregate date range "
+                    "starts before it. Default: 2025-01-01."
+                ),
+            )
+            subparser.add_argument(
+                "--thin-min-sample",
+                type=int,
+                default=AGG_THIN_MIN_SAMPLE_DEFAULT,
+                help=(
+                    "Outcome sample size below which a charge is flagged thin-data "
+                    "(shown with a warning, never hidden). Default: 10."
+                ),
+            )
+            subparser.add_argument(
+                "--label",
+                default=AGG_DEFAULT_RUN_LABEL,
+                help=(
+                    "Human label for the aggregate run (report/log only; not "
+                    f"persisted). Default: {AGG_DEFAULT_RUN_LABEL!r}."
                 ),
             )
         if name == "collect":
@@ -700,6 +754,33 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         return run_build_facts(database_url)
+    if args.command == "generate-aggregates":
+        if running_in_ci():
+            logger.error(
+                "generate-aggregates reads local court facts and writes aggregates "
+                "into the database; it must never run in a CI environment; refusing "
+                "(CI runs only the synthetic aggregate tests against its own Postgres "
+                "service)",
+                extra={"command": args.command},
+            )
+            return 2
+        # DATABASE_URL read at the run boundary (never at import, never logged).
+        # No salt: analytics.* is aggregate-only and carries no defendant identity.
+        database_url = os.environ.get("DATABASE_URL", "")
+        if not database_url.strip():
+            logger.error(
+                "DATABASE_URL is required to generate aggregates; set it in the "
+                "environment (its value is never printed or written)",
+                extra={"command": args.command},
+            )
+            return 2
+        return run_generate_aggregates(
+            database_url,
+            build_run_id=args.build_run_id,
+            data_start_date=args.data_start_date,
+            thin_min_sample=args.thin_min_sample,
+            label=args.label,
+        )
     if args.command == "run-fixtures":
         # Tier 1 always runs (offline, repo-local, TIER1_TEST_SALT). Tier 2 runs
         # only with --corpus-dir and carries the local-court-data guards.
