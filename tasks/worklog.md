@@ -4411,3 +4411,184 @@ the record field there.
   future-collection target list (AC3). `parsed.docket_links` is delete-and-reinserted
   each `build-facts`, so 24.1's full-corpus run repopulates it; the informational
   boundary means these links never enter the eligibility funnel (Sprint 7 aggregation).
+
+## Task 24.1 — Full-Corpus Fact Build (Acceptance Authority) — 2026-07-12
+
+- **What was built:** no source changes. Task 24.1 is an orchestrated end-to-end
+  run over the loaded canonical corpus (1,603 dockets) using the already-merged
+  21.x/22.x/23.x modules, plus a run-report artifact and this worklog entry. All
+  R1–R5 recon items were resolved in the plan against the merged code + live DB
+  before running.
+- **Files touched (repo):** `tasks/worklog.md` only. Run report written OUTSIDE the
+  repo at `~/court-data/reports/24.1-fact-build-run-aef44371.txt` (counts / fixed
+  codes / run UUID only; no docket-derived data). `tasks/current-task.md` carries a
+  pre-existing human edit — deliberately NOT staged.
+- **R1 resolution (recorded):** fact builds are run-partitioned APPEND, confirmed
+  empirically (global `fact.charge_outcomes` 15,810→18,972 = 6×3,162; `fact.charge_
+  sentences` 16,648→20,810 = 5×4,162). SD 6's "delete-and-reinsert" wording is
+  realized as append for the fact tables (literal delete-and-reinsert applies only
+  to `parsed.docket_links`). Known, recorded divergence — not a bug, not a stop.
+  Every reconciliation gate is scoped to the new `build_run_id`; the invariant is
+  "one run's worth added" globally.
+- **Corpus acceptance run (verbatim, hygiene-clean, real corpus):**
+    - `build-facts run=aef44371-c09f-48 status=completed`
+    - `charges_processed=3625 facts_written=3162 held_skipped=463`;
+      `reconcile facts_written+held_skipped==charges_processed: True`.
+    - outcome eligibility: `mvp_eligible=437 public_eligible=411
+      judge_specific_eligible=411 review_needed=226`.
+    - `sentence_facts_written=4162 components_on_disposed=4162`;
+      `reconcile sentence_facts==components_on_disposed: True`; sentence eligibility
+      `mvp_eligible=493 public_eligible=432 judge_specific_eligible=432
+      review_needed=317`.
+    - SD-15 (amended) soft report: divergence=33 straddle_mvp=29 delta_days=218..757;
+      sentence eligibility keys off the captured `sentence_date`, not disposition_date.
+    - linkage: `mc_source_dockets=22 links_total=22 resolved=0 unresolved=22`.
+    - review: `generated=710 newly_inserted=0` (queue steady at 710 — idempotent).
+- **Reconciliation gates (all PASS, per-run on build_run_id=aef44371):** disposed
+  3,162 = outcome facts 3,162 + 0 exclusions; held charges with an outcome fact = 0;
+  components-on-disposed 4,162 = sentence facts 4,162 + 0; NON_TERMINAL_CASE (104
+  dockets) held charges → 0 outcome facts; recovered-5 SENTINEL_COLLISION (5 dockets,
+  12 outcome facts on disposed charges) show disposition surviving with judge
+  attribution empty (`judge_attribution_method=none`×12, `normalized_judge_id` NULL
+  ×12); review_needed dockets = 75 consistent with envelope tallies; queue = 710 after.
+- **Exclusion counts (AC2, explicit):** held-charge = 463; quarantine = 0 (all 1,603
+  loaded `imported`; zero `parse_failed`).
+- **Headline (Risk 2):** judge_specific_eligible / public_eligible = 411 / 411 =
+  100%. Within the MVP public-eligible surface judge attribution is complete this
+  run; judge data is NOT thinner than hoped for the judge-specific surface's first
+  sizing. The 72 'none'-attribution outcome facts all fall outside the public-eligible
+  set.
+- **Deviations:** none. No STOP condition triggered; no anomaly required planning-chat
+  adjudication.
+- **Notes for 24.2 / 24.3:** the 22 unresolved held-for-court CP targets remain the
+  MC→CP coverage gap (COL 24.2 targeting). 24.3 opens the court_type verify-then-decide
+  step; this run touched no parser and no record schema. Global fact tables now carry 6
+  outcome runs / 5 sentence runs of history (append) — Sprint 7 aggregation must select
+  the latest completed `build_run_id`, never the global table count.
+
+## Task 24.2 — COL Intake Protocol + First Intake — 2026-07-13
+
+- **What was built:** the COL intake protocol (documented + executed once), growing
+  the parsed corpus beyond the 1,603 invariant and materially deepening MC evidence.
+  Orchestration over already-merged 16.3/16.2/18.1/19.2/21.3/24.1 tooling — NO new
+  pipeline code, no module-body changes. One committed doc + this worklog entry.
+- **Files touched (committed):** `agent-docs/intake/col-intake-protocol.md` (new);
+  `tasks/worklog.md` (this entry). No source/schema/test/migration changes.
+- **Out-of-repo artifacts (~/court-data/, per §6.8):** frozen snapshot
+  `intake-snapshots/24.2-20260713T000946Z/` + `…​.MANIFEST.json`;
+  `extracted-intake-20260713/`; `envelopes-intake-20260713/`; 3,166 new tier-2
+  goldens under `goldens/`; run report `reports/24.2-intake-run-d591902f.txt`.
+- **Rulings executed (planning chat):** (1) full frozen intake (complete snapshotted
+  set); (2) exclude the 40 already-loaded MC docket numbers by FILTERING the input
+  set — NOT a load/16.x guard (option (a); (c) rejected). Freeze added as a PERMANENT
+  protocol step (collector appends continuously, so the staged set is a moving target
+  and a fact build cannot reconcile against a mutating denominator).
+- **Freeze + exclude (intake denominator):** staged-at-freeze 3,206 − 40 already-loaded
+  MC = **3,166 included** (3,166 unique content hashes; 70 PDFs arrived between recon
+  and freeze — exactly why the freeze exists). Content-hash dedupe alone caught 0 of
+  the 40 (re-collected copies have different bytes → different `file_hash`); the
+  docket-number exclusion is what prevents duplicate `parsed.dockets` rows.
+- **Stage counts (AC2; raw output verbatim in the run report):** import-manual
+  `imported=3166 duplicate=0 invalid=1 failed=0` (invalid=1 = the in-dir MANIFEST.json
+  sidecar, since relocated); extract-text `success=3166 partial=0 needs_ocr_or_review=0
+  failed=0`; parse `parsed=3166 failed=0` (**ZERO quarantine**); run-fixtures tier1
+  `match=34`, tier2 `new=3166 diverged=0 failed=0 golden_missing=0`; load `loaded=3166`
+  (all other categories 0). `--init-goldens` write recorded here per the 19.2 contract.
+- **Quarantine (R6):** 0 isolated, 0 systematic. All 3,166 parsed clean; no shared-layout
+  MC failure cluster → the parser is adequate on this MC class (MC-readiness evidence).
+  The 15 filing-year-2024 PDFs loaded normally (window enforced at fact eligibility, not
+  parse; they show as pre-window drops).
+- **Corpus counts formally restated (AC3 — supersedes 1,603 by name):** loaded dockets
+  **1,603 (1,563 CP + 40 MC) → 4,769 (1,563 CP + 3,206 MC)**; tier-2 goldens 1,604 →
+  4,770; import records 1,604 → 4,770; envelope artifacts 1,603 canonical (immutable,
+  `envelopes-2026-07-11-172514/`) + 3,166 intake = 4,769; `parsed.charges` 3,625 →
+  13,334; `parsed.sentences` 4,162 → 4,733. Capstone baseline UNTOUCHED; comparator not
+  run over new dockets (SD 14). CP side unchanged in every dimension — all growth is MC.
+- **MC evidence position restated (AC4):** MC dockets **40 → 3,206**; MC public-eligible
+  outcome facts **~0 → 319** (judge-specific 253); CP public-eligible 411 UNCHANGED;
+  total public-eligible outcome facts 730 = 411 CP + 319 MC. The POC "correct but
+  under-evidenced" verdict UPDATES to **materially evidenced for the terminal slice,
+  with a defined coverage tail** — honest, not dressed as maturity. Two caveats:
+  (a) most MC disposed-charge volume is **'Held for Court' bind-overs** (5,564 → outcome
+  `other`; 844 `IGJ/HP - Held for Court` → `unknown`/review) plus 1,786 MC held
+  (null-disposition) charges — NON-TERMINAL MC preliminary-hearing results, both
+  categories NON-PUBLIC so nothing leaks; (b) MC normalization-coverage tail
+  (`charge_not_normalized` 157 → 1,361; `unmapped_disposition` 7 → 928 — rosters curated
+  against the CP-dominant corpus; new MC vocabulary routes to review per SD 9).
+- **Corpus rerun (verbatim, hygiene-clean, real corpus; AC5):** `build-facts
+  run=d591902f-8b2d-4c status=completed`; `charges_processed=13334 facts_written=11175
+  held_skipped=2159`; `reconcile facts_written+held_skipped==charges_processed: True`;
+  `sentence_facts_written=4733 components_on_disposed=4733`; `reconcile
+  sentence_facts==components_on_disposed: True`. Higher per-run counts than 24.1
+  (3,625/3,162/463/4,162), as expected — a new `build_run_id` partition (run-partitioned
+  append; 24.1 retained). Outcome eligibility `mvp=1067 public=730 judge=664
+  review=7695`; sentence `mvp=1064 public=733 judge=672 review=356`.
+- **Reconciliation gates (all PASS, per-run on build_run_id=d591902f, grown corpus):**
+  disposed 11,175 = outcome facts 11,175 + 0; facts+held 11,175+2,159 = 13,334; held
+  charges with an outcome fact = 0; components-on-disposed 4,733 = sentence facts 4,733
+  + 0; NON_TERMINAL_CASE (687 dockets) held → 0 outcome facts; recovered-5
+  SENTINEL_COLLISION (original 5 dockets, 12 outcome facts) UNCHANGED
+  (`judge_attribution_method=none`×12, `normalized_judge_id` NULL ×12); **duplicate
+  docket_numbers = 0** (Decision-2 exclusion worked); review-item dedup holds — prior
+  queue 710 preserved, every type's (generated − newly_inserted) equals its 24.1 count,
+  new items only for new dockets (queue 710 → 10,369, all 'open').
+- **Deviations:** none from the approved plan. STOP conditions (reconciliation mismatch /
+  parse failures beyond quarantine / dedupe anomalies / unattributable surprise) — NONE
+  triggered.
+- **FLAGGED FOR PLANNING CHAT (not fixed — 24.2 is orchestration; surfacing ≠ fixing):**
+  should MC **'Held for Court'** be modeled as NON-TERMINAL (no outcome fact, like held
+  charges) rather than mapped to outcome `other`? Today it is contained (non-public,
+  reconciles cleanly) but it dominates MC outcome-fact volume — a real taxonomy/
+  eligibility-semantics decision for Sprint 6/7, tied to the CP↔MC linkage/coverage story
+  (`mc_source_dockets=2,023 links=2,017 resolved=4 unresolved=2,013`; the 2,013
+  out-of-corpus CP targets are the direct future-collection coverage signal).
+- **Notes for 24.3 / Sprint 7:** 24.3 opens the `court_type` verify-then-decide step over
+  this GROWN corpus (now 3,206 MC prefix-derivable dockets, not 40). Global fact tables
+  now carry 7 outcome runs / 6 sentence runs of history (append) — Sprint 7 aggregation
+  must select the latest completed `build_run_id`, never the global table count, and must
+  decide MC 'Held for Court' semantics before publishing MC results. MC-dominance
+  (3,206 MC vs 1,563 CP loaded) has no Sprint 5 consequence (no aggregates generated).
+
+## Task 24.3 — `court_type` Populate-vs-Drop Decision (verify-and-worklog) — 2026-07-12
+
+- **What was built:** nothing in code. 24.3 is verify-and-worklog: the sanctioned
+  `court_type` parser touch was NOT exercised because R1 verification found no defect
+  to fix. No parser change, no record-schema change, no `parser_version` bump (stays 2),
+  no migration, no `db/src/types.ts` change, no tier-1/tier-2/baseline golden delta.
+  Corpus untouched — no re-parse, no reload, no fact rebuild.
+- **Files touched (committed):** `tasks/worklog.md` (this entry) only.
+- **AC1 — verified finding (raw DB output over all 4,769 loaded dockets):**
+  `parsed.dockets.court_type_recorded` is populated 100% — `Municipal Court`=3206,
+  `Common Pleas`=1563; `rec_null`=0. It matches `court_type_derived` (`MC`/`CP`) on
+  every row: consistent=4769, mismatched=0. Versions uniform: (record=2, envelope=5)
+  across all 4769. `raw.source_documents.court_type` (16.3 import code) likewise
+  populated: `MC`=3206, `CP`=1563. Re-verified on the GROWN corpus (4,769), not
+  assumed to carry from the pre-intake 1,603.
+- **AC1 reconciliation (SD 13 recon-vs-finding discrepancy resolved):** SD 13's
+  "None everywhere" premise was a VERIFICATION ERROR, contradicted on every axis.
+  (a) Code: the record's `case.court_type` is set from `detect_court_type(docket_number)`,
+  which returns `"Municipal Court"` or `"Common Pleas"` and STRUCTURALLY cannot return
+  None; this has held since the v1 parser port (17.2) through the v1→v2 bump (18.3).
+  (b) Canonical envelopes store the populated string on disk. (c) The loader stores it
+  as-is into `court_type_recorded`. The ONLY `court_type: None` in the tree is the
+  `manual_import` fallback for a docket number that does not match the CP/MC prefix — a
+  DIFFERENT, same-named field on the import record; every real docket matched the prefix,
+  so even that column is fully populated. Best reconstruction: the earlier recon conflated
+  that import-path None default with the parsed record field (or read a pre-load state).
+- **Decision executed (planning-chat adjudicated):** KEEP AS-IS. R1 overrides the SD 13
+  premise; because `court_type_recorded` is populated and 100% consistent with the
+  prefix-derived value, there is no always-null field to drop and no missing value to
+  populate — the sanctioned touch has no target. Both columns are kept;
+  `court_type_derived` (docket-number prefix) remains authoritative by decision,
+  unchanged. The AC2 fallback (keep + loader consistency check, mismatch → review item)
+  was DECLINED in the planning chat as new behavior beyond the sanctioned scope and
+  zero-yield today (0 mismatches across 4,769).
+- **R2–R5:** not resolved — moot without a schema change (no drop/populate path taken).
+- **Deviations from plan:** the task framed 24.3 as a decision-scoping / version-reload
+  exercise premised on None-everywhere; R1 invalidated that premise, so per AC2 and the
+  Process STOP rule ("court_type populated anywhere → STOP, never self-resolved") the
+  direction was adjudicated in the planning chat to KEEP AS-IS. No unilateral scope change.
+- **Notes for next task / Sprint 6–7:** SD 13 as written is superseded by this finding —
+  `court_type_recorded` is populated and prefix-consistent corpus-wide; treat
+  `court_type_derived` as the authoritative court-type source (decision, not defect).
+  No court_type work remains. 24.3 closes Phase 24; the PR covers 24.1 + 24.2 + 24.3.
