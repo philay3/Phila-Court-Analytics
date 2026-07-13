@@ -4592,3 +4592,50 @@ the record field there.
   `court_type_recorded` is populated and prefix-consistent corpus-wide; treat
   `court_type_derived` as the authoritative court-type source (decision, not defect).
   No court_type work remains. 24.3 closes Phase 24; the PR covers 24.1 + 24.2 + 24.3.
+
+## Task 25.1 — Normalization and Attribution Report — 2026-07-12
+
+- **What was built:** `agent-docs/normalization-attribution-report.md`, the committed
+  aggregate-only summary of record for Sprint 5. Documentation only — no code, schema,
+  parser, seed, or fact-build change. It sizes the Sprint 6 review queue and the Sprint 7
+  eligible-fact volumes, carries explicit Sprint 6/7 readiness verdicts, and includes a
+  methodology section written to be lifted into Sprint 7 public methodology copy.
+- **Files touched (committed):** `agent-docs/normalization-attribution-report.md` (new);
+  `tasks/worklog.md` (this entry). Nothing under `docs/`, no source/schema/test/migration.
+- **File location (planning-chat resolved):** the sprint plan Task 25.1 names
+  `docs/…` but the task GOAL names `agent-docs/…`; the task's SCOPE AUTHORITY subordinates
+  the plan to §6, the CLAUDE.md documentation rule forbids agent-created files under
+  `docs/`, and the 20.1 precedent (`agent-docs/parser-proof-of-concept.md`) landed under
+  `agent-docs/`. Agent stopped-and-reported the conflict; human ruled **agent-docs/**.
+- **Provenance discipline (honesty bar):** every figure carries a named source run or a
+  read-only query scoped to the post-intake build. Pre-intake [24.1, `aef44371`] and
+  post-intake [24.2, `d591902f`] figures are labelled and never blended. Read-only queries
+  were run via the pipeline venv (psycopg) with `DATABASE_URL` sourced at the CLI boundary
+  (salt never echoed); raw output is pasted verbatim in the 25.1 completion report.
+- **RECON resolved (source run per figure class):** R1 post-intake corpus 4,769
+  (1,563 CP + 3,206 MC), primary run `d591902f`; R2 pre/post reconciled (23.3's 4,162/432
+  = [24.1] sentence facts/public; current 4,733/733); R3 judge-attributable fraction of
+  public-eligible outcome facts = 664/730 = 91.0% (CP 411/411=100%, MC 253/319=79.3%);
+  R4 linkage 2,023 source / 2,017 links / 4 resolved / 2,013 unresolved; R5 date-range
+  day-by-day MC collection over filing/docketing dates 2025-01-01→2025-04-29 (window
+  ledger).
+- **Load-bearing corrections carried straight:** SD-15 (amended) — `sentence_date`
+  captured at two parser sites, usually equal to disposition_date, can predate it,
+  eligibility keys off the actual sentence_date; post-intake divergence CONFIRMED against
+  the current corpus = 34 of 4,733 (always earlier, 29 straddle 2025-01-01, delta 218–757;
+  CP baseline was 33). SD 13 (court_type, per 24.3) — populated 100%, 100% prefix-consistent;
+  a one-liner, never "inert/None".
+- **Read-only queries run (all scoped to `build_run_id=d591902f`, verbatim in completion
+  report); every result reconciled with the 24.1/24.2 reports, NO STOP triggered:** fact
+  counts (11,175 outcome / 4,733 sentence); charge/outcome/judge/component match-method
+  distributions; sentencing-category split; money coverage (37/12/7/18); SD-15 divergence
+  recompute (34); public-eligible + judge-specific by court_type (CP 411/411, MC 319/253);
+  run-row `counts` jsonb (funnel, reason tallies, review-item by type, linkage).
+- **Deviations from plan:** none, after the plan-review location fix. The one open item
+  (docs/ vs agent-docs/) was stopped-and-reported per the task Process, not self-resolved.
+- **Notes for 25.2 / Sprint 6–7:** 25.2 is a no-code human exit demo, so 25.1 is the only
+  committed task on phase-25; the phase-25 PR fires after this commit (covers 25.1 alone)
+  and merges on green, and the exit demo runs on merged main. The MC 'Held for Court'
+  non-terminal-semantics question (raised in 24.2) is restated in the report as a Sprint
+  6/7 adjudication item. Sprint 7 aggregation must select the latest completed
+  `build_run_id` (append semantics), never the global fact-table count.
