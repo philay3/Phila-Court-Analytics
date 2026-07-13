@@ -4756,3 +4756,51 @@ the record field there.
   pipeline test DB is `pca_test`; `pca_pipeline_test` is behind on unrelated migrations
   (docket_links / build_facts / review) and fails those suites — the aggregate suite passes on
   both.
+
+## Task 27.1 — Judge-Specific Outcome Aggregates + Baseline (2026-07-13)
+
+- **What was built:** a judge-specific outcome aggregation pass INSIDE the existing
+  `pipeline generate-aggregates` invocation (Phase 26 shape preserved: read → pure build with all
+  STOP checks pre-write → single `_create_run` → one write transaction → summary). New pure builder
+  `build_judge_outcome_aggregates` groups `judge_specific_eligible` outcome facts by charge+judge
+  pair, then by outcome category, and writes `analytics.judge_outcome_aggregates` rows under the
+  SAME run and SAME transaction as the charge-only passes — no new `aggregate_runs` row, no new
+  status, no restructure of the existing builders, no `analytics.*` migration (recon confirmed the
+  Sprint 2 table matches: charge-only outcome shape + `judge_id`, unique on
+  run+charge+judge+category).
+- **Files touched:** `services/pipeline/src/pipeline/aggregates/generate.py` (loader gained
+  `normalized_judge_id, judge_specific_eligible` — `judge_attribution_method` deliberately NOT
+  selected, SD 1; new builder + `_write_judge_outcome_aggregates` delete-and-reinsert, SD 4; run
+  report gained `judge_outcome_aggregates_generated`, `charge_judge_pairs_covered`, and an approved
+  parity `thin_data_pairs` line; judge date-max joined the run-level union envelope — structurally
+  a subset of the outcome envelope, included defensively); `services/pipeline/tests/
+  test_aggregates_generate.py` (8 pure judge tests + 2 DB integration tests; seeder gained
+  `new_judge`, `fact()` gained optional `judge_id`/`judge_specific_eligible`; fixture truncates
+  `ref.normalized_judges`; sentencing STOP test also asserts zero judge rows leak).
+- **Per-pair denominator (pinned):** each row's `sample_size` is the PAIR's eligible fact count,
+  never the charge-wide count; percentages, thin flag (`THIN_DATA_MIN_SAMPLE_SIZE`, reason
+  `below_minimum_sample`), and per-row date ranges are all pair-population-specific.
+- **STOP guards extended:** a `judge_specific_eligible` fact with a null judge FK, null charge FK,
+  null disposition date, or pre-2025-01-01 date raises `FactIntegrityError` (exit 2, no run row) —
+  fact-layer defect surfaced pre-write, never silently filtered.
+- **Baseline (SD 7):** test-asserted only (every judge aggregate's charge has a same-run
+  charge-only outcome aggregate; NOT EXISTS query), no runtime enforcement — 28.1 re-validates
+  independently. Never generated separately.
+- **Housekeeping:** `pca_pipeline_test` brought current via `migrate:latest` — actual pending set
+  was ONE migration (`20260712120000_create_parsed_docket_links`); the handoff note listing
+  build_facts/review as pending was stale (they were applied 2026-07-12). Both test DBs now
+  equivalent.
+- **Real-corpus demonstration (§6.10, verbatim in the completion report):** default build run
+  `d591902f-8b2d-4c…` (latest completed); aggregate run `51d27853-4788-42…`.
+  judge_outcome_aggregates_generated=456, charge_judge_pairs_covered=395, thin_data_pairs=393.
+  Judge coverage is SPARSE (393/395 pairs thin) — reported as a finding of this run's yield, not a
+  failure and not a pinned figure. Charge-only side unchanged from 26.2 (156 outcome rows / 64
+  charges; 124 sentencing rows / 58 charges). Baseline spot-verified on the real run: 0 judge rows
+  without a same-run charge-only counterpart.
+- **Deviations from plan:** none (thin_data_pairs report line and housekeeping-discrepancy
+  handling were approved in planning before implementation).
+- **Notes for 27.2 / 28.x:** 27.2 mirrors this pass over `fact.charge_sentences`
+  (`judge_specific_eligible` + `normalized_judge_id` + independent per-pair sentencing denominator,
+  baseline against the same-run charge-only SENTENCING aggregate). 28.1 validation must now cover
+  THREE aggregate tables per run and re-validate the baseline itself. Phase-27 PR opens after 27.2
+  (one commit per task, never squash).

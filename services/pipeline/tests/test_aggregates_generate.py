@@ -1,24 +1,28 @@
-"""Tier-1 tests for charge-only outcome aggregate generation (Task 26.1).
+"""Tier-1 tests for aggregate generation (Tasks 26.1, 26.2, 27.1).
 
 Two suites:
 
-- ``build_charge_outcome_aggregates`` PURE tests over synthetic fact dicts (no DB;
-  always run). They cover the AC-8 scenarios directly on the aggregation core:
-  multi-category charge, single-category charge, thin-data charge, the thin-flag
-  boundary, 2025-window exclusion (read from the fact's own eligibility flag, never
-  recomputed), empty group, percentage/sample-size reconciliation, and the
-  fact-integrity STOP guards.
+- PURE tests over synthetic fact dicts (no DB; always run) for the three builders.
+  Charge-only outcomes (26.1): multi-category charge, single-category charge,
+  thin-data charge, the thin-flag boundary, 2025-window exclusion (read from the
+  fact's own eligibility flag, never recomputed), empty group, percentage/sample-size
+  reconciliation, and the fact-integrity STOP guards. Sentencing (26.2): independent
+  denominators and the mirrored guards. Judge-specific outcomes (27.1): solid pair,
+  thin pair, pair with no eligible judge facts, per-pair independent denominators,
+  and the extended STOP guards (null judge FK included).
 
 - ``generate_aggregates`` DB integration tests against a real Postgres TEST database
   (``PIPELINE_TEST_DATABASE_URL``): the full run lifecycle (a "generated" run opened as
   status ``in_progress`` and left unpublished), the written aggregate rows, re-run
-  independence (SD 4), and the no-completed-build-run refusal. DB guards mirror the
+  independence (SD 4), the no-completed-build-run refusal, all three populations under
+  one run, and the 27.1 baseline-present assertion (every judge-specific aggregate's
+  charge has a same-run charge-only counterpart — SD 7). DB guards mirror the
   23.2 fact suite: reads ONLY ``PIPELINE_TEST_DATABASE_URL`` (absent -> local skip / CI
   hard failure), and the connected database name must contain "test" before any
   TRUNCATE.
 
-Synthetic only: placeholder charge slugs and fabricated outcome codes; no docket
-numbers, no defendant data.
+Synthetic only: placeholder charge/judge slugs and fabricated outcome codes; no docket
+numbers, no defendant data, no real judge names.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ from pipeline.aggregates.generate import (
     FactIntegrityError,
     build_charge_outcome_aggregates,
     build_charge_sentencing_aggregates,
+    build_judge_outcome_aggregates,
     generate_aggregates,
 )
 from pipeline.fact_review_vocab import (
@@ -46,6 +51,8 @@ from pipeline.seam_check import running_in_ci
 TAXONOMY_VERSION = "test-taxonomy-1"
 CHARGE_A = "11111111-1111-1111-1111-111111111111"
 CHARGE_B = "22222222-2222-2222-2222-222222222222"
+JUDGE_X = "33333333-3333-3333-3333-333333333333"
+JUDGE_Y = "44444444-4444-4444-4444-444444444444"
 
 
 def _fact(
@@ -55,6 +62,8 @@ def _fact(
     disposition_date: date | None,
     public_eligible: bool,
     reason_codes: tuple[str, ...] = (),
+    judge_id: str | None = None,
+    judge_specific_eligible: bool = False,
 ) -> dict[str, object]:
     return {
         "normalized_charge_id": charge_id,
@@ -62,6 +71,8 @@ def _fact(
         "disposition_date": disposition_date,
         "public_eligible": public_eligible,
         "ineligibility_reason_codes": list(reason_codes),
+        "normalized_judge_id": judge_id,
+        "judge_specific_eligible": judge_specific_eligible,
     }
 
 
@@ -487,6 +498,165 @@ def test_sentencing_integrity_stop_on_eligible_fact_before_window():
 
 
 # --------------------------------------------------------------------------- #
+# Pure judge-specific outcome core (Task 27.1; no DB).                        #
+# --------------------------------------------------------------------------- #
+
+
+def _jbuild(facts, *, thin_min_sample: int = 10):
+    return build_judge_outcome_aggregates(
+        facts,
+        data_start_date=date(2025, 1, 1),
+        thin_min_sample=thin_min_sample,
+        taxonomy_version=TAXONOMY_VERSION,
+    )
+
+
+def _jfact(
+    *,
+    judge_id: str | None,
+    category: str,
+    disposition_date: date | None = date(2025, 2, 1),
+    charge_id: str | None = CHARGE_A,
+) -> dict[str, object]:
+    """A judge-specific-eligible fact (which is also public-eligible, per the
+    fact-layer invariant)."""
+    return _fact(
+        charge_id=charge_id,
+        category=category,
+        disposition_date=disposition_date,
+        public_eligible=True,
+        judge_id=judge_id,
+        judge_specific_eligible=True,
+    )
+
+
+def test_judge_solid_pair_percentages_and_per_pair_sample_size():
+    # 12 eligible facts for one charge+judge pair: 6 / 3 / 3 -> 50 / 25 / 25,
+    # per-pair denominator, not thin at min_sample=10.
+    facts = []
+    facts += [
+        _jfact(
+            judge_id=JUDGE_X, category="guilty_plea", disposition_date=date(2025, 2, 1)
+        )
+        for _ in range(6)
+    ]
+    facts += [
+        _jfact(
+            judge_id=JUDGE_X, category="dismissed", disposition_date=date(2025, 5, 1)
+        )
+        for _ in range(3)
+    ]
+    facts += [
+        _jfact(judge_id=JUDGE_X, category="guilty", disposition_date=date(2025, 8, 1))
+        for _ in range(3)
+    ]
+    rows, report = _jbuild(facts)
+
+    assert [(r["category_code"], r["count"], r["percentage"]) for r in rows] == [
+        ("dismissed", 3, "25.00"),
+        ("guilty", 3, "25.00"),
+        ("guilty_plea", 6, "50.00"),
+    ]
+    for r in rows:
+        assert r["charge_id"] == CHARGE_A
+        assert r["judge_id"] == JUDGE_X
+        assert r["sample_size"] == 12
+        assert r["is_thin_data"] is False
+        assert r["date_range_start"] == date(2025, 2, 1)
+        assert r["date_range_end"] == date(2025, 8, 1)
+        assert r["taxonomy_version"] == TAXONOMY_VERSION
+    assert report["judge_facts_included"] == 12
+    assert report["charge_judge_pairs_covered"] == 1
+    assert report["judge_outcome_aggregates_generated"] == 3
+    assert report["thin_data_pairs"] == 0
+    assert report["data_range_end"] == date(2025, 8, 1)
+
+
+def test_judge_thin_pair_flagged_at_the_boundary():
+    # 9 facts < min_sample=10 -> thin (flag, never a filter — SD 8); exactly 10 is not.
+    thin = [_jfact(judge_id=JUDGE_X, category="guilty") for _ in range(9)]
+    rows, report = _jbuild(thin)
+    assert all(r["is_thin_data"] is True for r in rows)
+    assert report["thin_data_pairs"] == 1
+
+    solid = [_jfact(judge_id=JUDGE_X, category="guilty") for _ in range(10)]
+    rows, report = _jbuild(solid)
+    assert all(r["is_thin_data"] is False for r in rows)
+    assert report["thin_data_pairs"] == 0
+
+
+def test_judge_pair_with_no_eligible_judge_facts_produces_no_rows():
+    # Public-eligible facts that are NOT judge-specific-eligible feed the charge-only
+    # pass but never the judge pass (SD 6: absence, not rows). The judge FK may even
+    # be present — eligibility is read from the flag, never recomputed (SD 1).
+    facts = [
+        _fact(
+            charge_id=CHARGE_A,
+            category="guilty_plea",
+            disposition_date=date(2025, 2, 1),
+            public_eligible=True,
+            judge_id=JUDGE_X,
+            judge_specific_eligible=False,
+        )
+        for _ in range(5)
+    ]
+    rows, report = _jbuild(facts)
+    assert rows == []
+    assert report["judge_facts_included"] == 0
+    assert report["charge_judge_pairs_covered"] == 0
+    assert report["judge_outcome_aggregates_generated"] == 0
+    assert report["data_range_end"] is None
+
+
+def test_judge_pairs_group_independently():
+    # Same charge, two judges: independent per-pair denominators (never charge-wide).
+    facts = [_jfact(judge_id=JUDGE_X, category="guilty") for _ in range(4)]
+    facts += [_jfact(judge_id=JUDGE_Y, category="guilty") for _ in range(1)]
+    facts += [_jfact(judge_id=JUDGE_Y, category="dismissed") for _ in range(1)]
+    rows, report = _jbuild(facts)
+
+    by_pair = {}
+    for r in rows:
+        by_pair.setdefault((r["charge_id"], r["judge_id"]), []).append(r)
+    assert set(by_pair) == {(CHARGE_A, JUDGE_X), (CHARGE_A, JUDGE_Y)}
+    (x_row,) = by_pair[(CHARGE_A, JUDGE_X)]
+    assert (x_row["count"], x_row["sample_size"], x_row["percentage"]) == (
+        4,
+        4,
+        "100.00",
+    )
+    for r in by_pair[(CHARGE_A, JUDGE_Y)]:
+        assert (r["count"], r["sample_size"], r["percentage"]) == (1, 2, "50.00")
+    assert report["charge_judge_pairs_covered"] == 2
+
+
+def test_judge_integrity_stop_on_eligible_fact_with_null_judge():
+    facts = [_jfact(judge_id=None, category="guilty")]
+    with pytest.raises(FactIntegrityError):
+        _jbuild(facts)
+
+
+def test_judge_integrity_stop_on_eligible_fact_with_null_charge():
+    facts = [_jfact(judge_id=JUDGE_X, category="guilty", charge_id=None)]
+    with pytest.raises(FactIntegrityError):
+        _jbuild(facts)
+
+
+def test_judge_integrity_stop_on_eligible_fact_with_null_date():
+    facts = [_jfact(judge_id=JUDGE_X, category="guilty", disposition_date=None)]
+    with pytest.raises(FactIntegrityError):
+        _jbuild(facts)
+
+
+def test_judge_integrity_stop_on_eligible_fact_before_window():
+    facts = [
+        _jfact(judge_id=JUDGE_X, category="guilty", disposition_date=date(2024, 12, 31))
+    ]
+    with pytest.raises(FactIntegrityError):
+        _jbuild(facts)
+
+
+# --------------------------------------------------------------------------- #
 # DB integration (real Postgres TEST database).                              #
 # --------------------------------------------------------------------------- #
 
@@ -530,6 +700,7 @@ def agg_conn():
             cur.execute("TRUNCATE fact.fact_build_runs CASCADE")
             cur.execute("TRUNCATE raw.source_documents CASCADE")
             cur.execute("TRUNCATE ref.normalized_charges CASCADE")
+            cur.execute("TRUNCATE ref.normalized_judges CASCADE")
         conn.commit()
         yield conn
     finally:
@@ -619,6 +790,19 @@ class _Seeder:
         self.conn.commit()
         return charge_id
 
+    def new_judge(self, slug: str, display_name: str) -> str:
+        """Insert a synthetic normalized judge and return its id (placeholder
+        names only — never real judge names in this suite)."""
+        with self.conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                "INSERT INTO ref.normalized_judges (slug, display_name) "
+                "VALUES (%s, %s) RETURNING id",
+                (slug, display_name),
+            )
+            judge_id = str(cur.fetchone()["id"])
+        self.conn.commit()
+        return judge_id
+
     def fact(
         self,
         build_run_id: str,
@@ -628,6 +812,8 @@ class _Seeder:
         public_eligible: bool,
         reason_codes: tuple[str, ...] = (),
         charge_id: str | None = None,
+        judge_id: str | None = None,
+        judge_specific_eligible: bool = False,
     ) -> None:
         with self.conn.cursor(row_factory=dict_row) as cur:
             parsed_charge_id = self._parsed_charge(cur)
@@ -636,10 +822,12 @@ class _Seeder:
                 INSERT INTO fact.charge_outcomes
                   (build_run_id, parsed_charge_id, parsed_docket_id,
                    normalized_charge_id, outcome_category_code, disposition_date,
+                   normalized_judge_id, judge_attribution_method,
                    attribution_method, charge_match_method, outcome_match_method,
                    mvp_eligible, public_eligible, judge_specific_eligible,
                    ineligibility_reason_codes, review_needed, taxonomy_version)
-                VALUES (%s, %s, %s, %s, %s, %s, 'charge_row', 'exact', 'exact',
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                        'charge_row', 'exact', 'exact',
                         %s, %s, %s, %s, false, %s)
                 """,
                 (
@@ -649,9 +837,11 @@ class _Seeder:
                     charge_id or self.charge_id,
                     category,
                     disposition_date,
+                    judge_id,
+                    "synthetic" if judge_id is not None else None,
                     public_eligible,
                     public_eligible,
-                    False,
+                    judge_specific_eligible,
                     list(reason_codes),
                     TAXONOMY_VERSION,
                 ),
@@ -766,6 +956,16 @@ def _sent_rows(conn: psycopg.Connection, run_id: str) -> list[dict]:
         cur.execute(
             "SELECT * FROM analytics.charge_sentencing_aggregates "
             "WHERE aggregate_run_id = %s ORDER BY category_code",
+            (run_id,),
+        )
+        return list(cur.fetchall())
+
+
+def _judge_rows(conn: psycopg.Connection, run_id: str) -> list[dict]:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT * FROM analytics.judge_outcome_aggregates "
+            "WHERE aggregate_run_id = %s ORDER BY judge_id, category_code",
             (run_id,),
         )
         return list(cur.fetchall())
@@ -1047,3 +1247,163 @@ def test_db_sentencing_before_window_stops_leaving_no_run(agg_conn):
         assert cur.fetchone()[0] == 0
         cur.execute("SELECT count(*) FROM analytics.charge_sentencing_aggregates")
         assert cur.fetchone()[0] == 0
+        cur.execute("SELECT count(*) FROM analytics.judge_outcome_aggregates")
+        assert cur.fetchone()[0] == 0
+
+
+def test_db_judge_pass_shares_run_and_baseline_present(agg_conn, capsys):
+    # Two synthetic judges on one charge (Task 27.1): judge rows land under the SAME
+    # run as the charge-only rows, with per-pair denominators, and every judge
+    # aggregate's charge has its same-run charge-only counterpart (SD 7 baseline).
+    seeder = _Seeder(agg_conn)
+    judge_x = seeder.new_judge("placeholder-judge-x", "Placeholder Judge X")
+    judge_y = seeder.new_judge("placeholder-judge-y", "Placeholder Judge Y")
+    build_run_id = seeder.build_run()
+
+    # Pair (charge_a, judge_x): 10 facts, 7 guilty_plea / 3 dismissed — solid.
+    for _ in range(7):
+        seeder.fact(
+            build_run_id,
+            category="guilty_plea",
+            disposition_date=date(2025, 2, 1),
+            public_eligible=True,
+            judge_id=judge_x,
+            judge_specific_eligible=True,
+        )
+    for _ in range(3):
+        seeder.fact(
+            build_run_id,
+            category="dismissed",
+            disposition_date=date(2025, 6, 1),
+            public_eligible=True,
+            judge_id=judge_x,
+            judge_specific_eligible=True,
+        )
+    # Pair (charge_a, judge_y): 2 facts — thin.
+    for _ in range(2):
+        seeder.fact(
+            build_run_id,
+            category="guilty",
+            disposition_date=date(2025, 4, 1),
+            public_eligible=True,
+            judge_id=judge_y,
+            judge_specific_eligible=True,
+        )
+    # Public-eligible fact with NO judge attribution: counts in the charge-only
+    # denominator only; produces no judge rows (SD 6 — absence, not rows).
+    seeder.fact(
+        build_run_id,
+        category="guilty_plea",
+        disposition_date=date(2025, 3, 1),
+        public_eligible=True,
+    )
+
+    rc = generate_aggregates(
+        agg_conn,
+        build_run_id=None,
+        data_start_date=date(2025, 1, 1),
+        thin_min_sample=10,
+        label="unit-test",
+    )
+    assert rc == 0
+
+    with agg_conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT id FROM analytics.aggregate_runs")
+        run_ids = [str(r["id"]) for r in cur.fetchall()]
+    assert len(run_ids) == 1
+    run_id = run_ids[0]
+
+    # Judge rows: same run id, same metadata shape as charge-only plus judge_id.
+    judge_rows = _judge_rows(agg_conn, run_id)
+    by_pair: dict[tuple[str, str], list[dict]] = {}
+    for r in judge_rows:
+        assert str(r["aggregate_run_id"]) == run_id
+        assert r["taxonomy_version"] == TAXONOMY_VERSION
+        by_pair.setdefault((str(r["charge_id"]), str(r["judge_id"])), []).append(r)
+    assert set(by_pair) == {
+        (seeder.charge_id, judge_x),
+        (seeder.charge_id, judge_y),
+    }
+
+    # Solid pair: per-pair denominator of 10 (never the charge-wide 13).
+    x_rows = sorted(
+        by_pair[(seeder.charge_id, judge_x)], key=lambda r: r["category_code"]
+    )
+    assert [(r["category_code"], r["count"], str(r["percentage"])) for r in x_rows] == [
+        ("dismissed", 3, "30.00"),
+        ("guilty_plea", 7, "70.00"),
+    ]
+    for r in x_rows:
+        assert r["sample_size"] == 10
+        assert r["is_thin_data"] is False
+        assert r["date_range_start"] == date(2025, 2, 1)
+        assert r["date_range_end"] == date(2025, 6, 1)
+
+    # Thin pair: flagged, never filtered (SD 8); pair-specific date range.
+    (y_row,) = by_pair[(seeder.charge_id, judge_y)]
+    assert (y_row["category_code"], y_row["count"], y_row["sample_size"]) == (
+        "guilty",
+        2,
+        2,
+    )
+    assert y_row["is_thin_data"] is True
+    assert y_row["date_range_start"] == date(2025, 4, 1)
+    assert y_row["date_range_end"] == date(2025, 4, 1)
+
+    # Baseline-present assertion (SD 7 / AC 3): every judge aggregate's charge has a
+    # same-run charge-only outcome aggregate.
+    with agg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT count(*) FROM analytics.judge_outcome_aggregates j
+            WHERE j.aggregate_run_id = %s
+              AND NOT EXISTS (
+                SELECT 1 FROM analytics.charge_outcome_aggregates c
+                WHERE c.aggregate_run_id = j.aggregate_run_id
+                  AND c.charge_id = j.charge_id
+              )
+            """,
+            (run_id,),
+        )
+        assert cur.fetchone()[0] == 0
+
+    # Charge-only denominator includes ALL 13 public-eligible facts (10 + 2 + 1).
+    charge_rows = _agg_rows(agg_conn, run_id)
+    assert all(r["sample_size"] == 13 for r in charge_rows)
+
+    # Run report extends with the judge tallies (counts only; no judge names).
+    out = capsys.readouterr().out
+    assert "judge_outcome_aggregates_generated=3" in out
+    assert "charge_judge_pairs_covered=2" in out
+    assert "thin_data_pairs=1" in out
+    assert "Placeholder Judge" not in out
+
+
+def test_db_judge_pass_with_no_eligible_judge_facts_writes_no_rows(agg_conn):
+    # Charge-only facts exist, none judge-specific-eligible: the run succeeds with
+    # charge-only rows and ZERO judge rows (AC 2 — absence, not rows).
+    seeder = _Seeder(agg_conn)
+    build_run_id = seeder.build_run()
+    for _ in range(3):
+        seeder.fact(
+            build_run_id,
+            category="guilty_plea",
+            disposition_date=date(2025, 2, 1),
+            public_eligible=True,
+        )
+
+    rc = generate_aggregates(
+        agg_conn,
+        build_run_id=None,
+        data_start_date=date(2025, 1, 1),
+        thin_min_sample=10,
+        label="unit-test",
+    )
+    assert rc == 0
+
+    with agg_conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT id FROM analytics.aggregate_runs")
+        run_ids = [str(r["id"]) for r in cur.fetchall()]
+    assert len(run_ids) == 1
+    assert _agg_rows(agg_conn, run_ids[0]) != []
+    assert _judge_rows(agg_conn, run_ids[0]) == []
