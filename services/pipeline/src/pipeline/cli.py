@@ -414,14 +414,17 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "collect":
             subparser.add_argument(
                 "--mode",
-                choices=["enumerate", "search"],
+                choices=["enumerate", "search", "refresh"],
                 default="enumerate",
                 help=(
                     "Collection mode. 'enumerate' (default): the existing "
                     "docket-sequence probing (audit mode). 'search': one "
                     "Date-Filed advanced search per calendar day, harvesting "
                     "CP/MC criminal dockets from the results grid. Search mode "
-                    "requires --start-date and --end-date."
+                    "requires --start-date and --end-date. 'refresh': re-fetch "
+                    "the loaded corpus's non-terminal dockets (COL-4b) so later "
+                    "dispositions enter the corpus; requires --refresh-dir, an "
+                    "EXPLICIT --court, and DATABASE_URL in the environment."
                 ),
             )
             subparser.add_argument(
@@ -432,7 +435,26 @@ def build_parser() -> argparse.ArgumentParser:
                     "Court to collect. Enumerate mode supports only MC "
                     "(MC-51-CR). Search mode accepts MC, CP, or both and gates "
                     "which harvested rows are FETCHED (both are always recorded "
-                    "in the window ledger). Default: MC."
+                    "in the window ledger). Refresh mode accepts MC, CP, or "
+                    "both, filters the target list by docket-number prefix, and "
+                    "REQUIRES the flag explicitly — no default is applied, so a "
+                    "full refresh cannot silently shrink to one court. "
+                    "Default (enumerate/search): MC."
+                ),
+            )
+            subparser.add_argument(
+                "--refresh-dir",
+                type=Path,
+                default=None,
+                help=(
+                    "Refresh mode only (required with --mode refresh): the "
+                    "cycle-scoped directory where re-fetched docket sheets land "
+                    "(<docket>.pdf); created if needed and must be outside any "
+                    "git working tree. Keep ONE directory per refresh cycle, "
+                    "stable across that cycle's sessions (a PDF already present "
+                    "is skipped as already-fetched, making interrupted cycles "
+                    "resumable); start every new cycle with a FRESH dated "
+                    "directory (e.g. ~/court-data/refresh-intake-<UTC-date>/)."
                 ),
             )
             subparser.add_argument(
@@ -458,9 +480,9 @@ def build_parser() -> argparse.ArgumentParser:
                 type=int,
                 default=None,
                 help=(
-                    "Search mode only (smoke tooling): cap on live PDF fetches "
-                    "for the whole run; reaching it stops the run. Omitted: no "
-                    "cap. Not used in production runs."
+                    "Search/refresh modes only (smoke tooling): cap on live PDF "
+                    "fetches for the whole run; reaching it stops the run. "
+                    "Omitted: no cap. Not used in production runs."
                 ),
             )
             subparser.add_argument(
@@ -693,8 +715,19 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _court_given_explicitly(argv: list[str]) -> bool:
+    """True if ``--court`` appears in argv (either ``--court X`` or ``--court=X``).
+
+    Refresh mode refuses to fall back to the flag's parse-level default: an
+    accidental default-MC run would silently half-refresh the corpus and leave
+    CP frozen — the exact bias COL-4b closes. argparse cannot distinguish an
+    explicit ``--court MC`` from the default, so the raw argv is consulted.
+    """
+    return any(a == "--court" or a.startswith("--court=") for a in argv)
+
+
 def _validate_collect_args(
-    parser: argparse.ArgumentParser, args: argparse.Namespace
+    parser: argparse.ArgumentParser, args: argparse.Namespace, argv: list[str]
 ) -> None:
     """Mode-aware validation for ``collect`` (raises SystemExit(2) on error).
 
@@ -702,7 +735,8 @@ def _validate_collect_args(
     but enumerate mode still supports only MC — enforced here at parse time so
     ``collect --court CP`` (enumerate) fails with the same argparse-style
     'invalid choice' error and exit code as before search mode existed. Search
-    mode additionally requires the inclusive date range.
+    mode additionally requires the inclusive date range. Refresh mode requires
+    --refresh-dir and an EXPLICIT --court (COL-4b; no default court).
     """
     if args.mode == "enumerate":
         if args.court != "MC":
@@ -710,9 +744,17 @@ def _validate_collect_args(
                 f"argument --court: invalid choice: {args.court!r} for enumerate "
                 "mode (only 'MC' is supported); use --mode search for CP/both"
             )
-    else:  # search
+    elif args.mode == "search":
         if args.start_date is None or args.end_date is None:
             parser.error("--mode search requires --start-date and --end-date")
+    else:  # refresh
+        if args.refresh_dir is None:
+            parser.error("--mode refresh requires --refresh-dir")
+        if not _court_given_explicitly(argv):
+            parser.error(
+                "--mode refresh requires an explicit --court (MC, CP, or both); "
+                "no default is applied in refresh mode"
+            )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -722,7 +764,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_usage(sys.stderr)
         return 2
     if args.command == "collect":
-        _validate_collect_args(parser, args)
+        # The effective argv mirrors what parse_args consumed (needed for the
+        # refresh-mode explicit---court check).
+        _validate_collect_args(parser, args, argv if argv is not None else sys.argv[1:])
     configure_logging()
     if args.command == "evaluate-extractors":
         return run_evaluation(
@@ -777,6 +821,32 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         # Imported here (not at module top) so the CLI stays importable — and
         # the whole test suite runs — without the optional collector group.
+        if args.mode == "refresh":
+            # DATABASE_URL read at the run boundary (never at import, never
+            # logged) — refresh derives its target list from the loaded
+            # corpus. The other collect modes never read it.
+            database_url = os.environ.get("DATABASE_URL", "")
+            if not database_url.strip():
+                logger.error(
+                    "DATABASE_URL is required for refresh mode (target-list "
+                    "derivation); set it in the environment (its value is "
+                    "never printed or written)",
+                    extra={"command": args.command},
+                )
+                return 2
+            from pipeline.collector.run import run_collect_refresh
+
+            return run_collect_refresh(
+                database_url=database_url,
+                court=args.court,
+                refresh_dir=args.refresh_dir,
+                max_minutes=args.max_minutes,
+                report_dir=args.report_dir,
+                headless=args.headless,
+                batch_size=args.batch_size,
+                batch_cooldown_seconds=args.batch_cooldown_seconds,
+                max_fetches=args.max_fetches,
+            )
         if args.mode == "search":
             from pipeline.collector.run import run_collect_search
 
