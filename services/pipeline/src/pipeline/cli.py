@@ -24,6 +24,8 @@ from pipeline.aggregates.generate import (
 from pipeline.aggregates.generate import (
     run_generate_aggregates,
 )
+from pipeline.aggregates.publish import run_publish_aggregates
+from pipeline.aggregates.validate import run_validate_aggregates
 from pipeline.collector.engine import (
     BATCH_COOLDOWN_DEFAULT_SECONDS,
     BATCH_SIZE_DEFAULT,
@@ -61,6 +63,16 @@ SUBCOMMANDS = (
         "Generate charge-only outcome and sentencing aggregates from eligible facts "
         "under a run.",
     ),
+    (
+        "validate-aggregates",
+        "Validate a generated (unpublished) aggregate run: integrity, baseline, "
+        "and privacy checks gating publish.",
+    ),
+    (
+        "publish-aggregates",
+        "Publish a validated aggregate run: set published_at and invalidate the "
+        "prior published run in one transaction.",
+    ),
     ("collect", "Collect docket-sheet PDFs from the portal into an intake dir."),
     ("evaluate-extractors", "Compare candidate PDF text extractors."),
     (
@@ -81,6 +93,8 @@ IMPLEMENTED_COMMANDS = frozenset(
         "load",
         "build-facts",
         "generate-aggregates",
+        "validate-aggregates",
+        "publish-aggregates",
         "collect",
         "run-fixtures",
     }
@@ -317,6 +331,42 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Human label for the aggregate run (report/log only; not "
                     f"persisted). Default: {AGG_DEFAULT_RUN_LABEL!r}."
+                ),
+            )
+        if name == "validate-aggregates":
+            subparser.add_argument(
+                "--run",
+                default=None,
+                dest="aggregate_run_id",
+                help=(
+                    "Aggregate run id to validate; must be unpublished and "
+                    "generated (in_progress) or validated (completed — "
+                    "re-validation). Failed and published runs are refused. "
+                    "Default: the latest generated (in_progress, unpublished) run."
+                ),
+            )
+            subparser.add_argument(
+                "--data-start-date",
+                type=date.fromisoformat,
+                default=AGG_DATA_START_DATE_DEFAULT,
+                help=(
+                    "MVP window floor (ISO YYYY-MM-DD); validation fails any "
+                    "aggregate date range starting before it. Default: 2025-01-01."
+                ),
+            )
+        if name == "publish-aggregates":
+            subparser.add_argument(
+                "--run",
+                default=None,
+                dest="aggregate_run_id",
+                help=(
+                    "Aggregate run id to publish; must be validated (completed) "
+                    "and uninvalidated. An already-published, still-active run "
+                    "is an idempotent no-op. Failed and invalidated runs are "
+                    "refused. Default: the latest validated (completed, "
+                    "unpublished) run — refused as stale if it was validated "
+                    "before the active published run (pass --run to force an "
+                    "older run)."
                 ),
             )
         if name == "collect":
@@ -782,6 +832,55 @@ def main(argv: list[str] | None = None) -> int:
             data_start_date=args.data_start_date,
             thin_min_sample=args.thin_min_sample,
             label=args.label,
+        )
+    if args.command == "validate-aggregates":
+        if running_in_ci():
+            logger.error(
+                "validate-aggregates reads local aggregate data and writes run "
+                "verdicts into the database; it must never run in a CI "
+                "environment; refusing (CI runs only the synthetic validation "
+                "tests against its own Postgres service)",
+                extra={"command": args.command},
+            )
+            return 2
+        # DATABASE_URL read at the run boundary (never at import, never logged).
+        # No salt: analytics.* is aggregate-only and carries no defendant identity.
+        database_url = os.environ.get("DATABASE_URL", "")
+        if not database_url.strip():
+            logger.error(
+                "DATABASE_URL is required to validate aggregates; set it in the "
+                "environment (its value is never printed or written)",
+                extra={"command": args.command},
+            )
+            return 2
+        return run_validate_aggregates(
+            database_url,
+            run_id=args.aggregate_run_id,
+            data_start_date=args.data_start_date,
+        )
+    if args.command == "publish-aggregates":
+        if running_in_ci():
+            logger.error(
+                "publish-aggregates swaps the active published aggregate run in "
+                "the database; it must never run in a CI environment; refusing "
+                "(CI runs only the synthetic publish tests against its own "
+                "Postgres service)",
+                extra={"command": args.command},
+            )
+            return 2
+        # DATABASE_URL read at the run boundary (never at import, never logged).
+        # No salt: analytics.* is aggregate-only and carries no defendant identity.
+        database_url = os.environ.get("DATABASE_URL", "")
+        if not database_url.strip():
+            logger.error(
+                "DATABASE_URL is required to publish aggregates; set it in the "
+                "environment (its value is never printed or written)",
+                extra={"command": args.command},
+            )
+            return 2
+        return run_publish_aggregates(
+            database_url,
+            run_id=args.aggregate_run_id,
         )
     if args.command == "run-fixtures":
         # Tier 1 always runs (offline, repo-local, TIER1_TEST_SALT). Tier 2 runs

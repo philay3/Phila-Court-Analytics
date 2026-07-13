@@ -60,7 +60,9 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
         'When a figure rests on a small sample, it is labeled as thin data and ' +
         'displayed with that warning rather than hidden. Small samples can shift ' +
         'noticeably as new cases arrive, so thin-data figures should be read with ' +
-        'extra caution.',
+        'extra caution. At this stage most judge-specific figures are thin: the ' +
+        'thin-data warning is the norm for judge-level results, and judge-level ' +
+        'coverage deepens as collection continues.',
     },
     chargeLevelAnalytics: {
       heading: 'Charge-level figures',
@@ -72,25 +74,39 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
     },
     sentencing: {
       heading: 'Sentencing figures',
+      // SD-15 disclosure: sentencing dates are captured independently of
+      // disposition dates, usually coincide, can fall earlier, and decide
+      // covered-period eligibility for sentencing figures.
       body:
         'Sentencing distributions summarize the sentence types recorded for charges ' +
         'that reached sentencing. They carry their own sentencing sample size, ' +
         'separate from and typically smaller than the outcome sample size, and may ' +
-        'be unavailable for some charges.',
+        'be unavailable for some charges. Sentencing dates are recorded ' +
+        'independently of disposition dates: the two usually coincide, but a small ' +
+        'share of sentencing dates fall earlier, and whether a sentencing event is ' +
+        'inside the covered period is decided by the sentencing date itself.',
     },
     limitations: {
       heading: 'Known limitations',
-      // Seeded-data disclosure (Sprint 2 standing requirement): every currently
-      // published figure is fabricated seed data. Remove the final two
-      // sentences in Sprint 7 when real aggregates replace the seeds.
+      // The Sprint 2 seeded-data disclosure lived here until the first real
+      // aggregate run was published (task 28.2); published figures now come
+      // from real Philadelphia court records.
+      // Ambiguity handling (no "admin review in this version"-style wording:
+      // this route's tests forbid internal-process vocabulary): unclear
+      // records are excluded automatically, and no figure is corrected by
+      // hand in this version — a manual correction process is future work.
       body:
-        'Coverage starts on January 1, 2025, so earlier history is absent. Docket ' +
-        'sheets are summaries and may be amended after we aggregate them. ' +
-        'Aggregation groups many distinct dispositions into broad categories, and ' +
-        'some charges have little or no data yet. Where the data is thin, the ' +
-        'figures say so. All figures currently published are seeded demonstration ' +
-        'data created for development and testing. They do not describe real ' +
-        'Philadelphia court outcomes.',
+        'Coverage starts on January 1, 2025, so earlier history is absent. ' +
+        'Collection is ongoing: the covered records are a growing subset of ' +
+        'Philadelphia criminal cases, and figures change as newly collected ' +
+        'records are aggregated. Docket sheets are summaries and may be amended ' +
+        'after we aggregate them. Aggregation groups many distinct dispositions ' +
+        'into broad categories, and some charges have little or no data yet. ' +
+        'Where the data is thin, the figures say so. Records whose outcome or ' +
+        'judge attribution is unclear are excluded from the figures automatically ' +
+        'rather than resolved by hand, and in this version no figure is adjusted ' +
+        'or corrected manually after aggregation — a process for that is planned ' +
+        'as future work.',
     },
   },
 };

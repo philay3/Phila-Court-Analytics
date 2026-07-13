@@ -130,10 +130,13 @@ function expectCommonFields(body: DataCoverageResponse) {
   expect(body.courtScope).toBe(DATA_COVERAGE_COURT_SCOPE);
   expect(body.plannedDataStart).toBe(DATA_COVERAGE_PLANNED_DATA_START);
   expect(body.knownLimitations).toEqual(DATA_COVERAGE_KNOWN_LIMITATIONS);
-  // FIX 1 (plan review): the seeded-demonstration-data disclosure must be
-  // stated until real aggregates replace the seeds (Sprint 7).
-  expect(body.knownLimitations.join(' ')).toMatch(/seeded demonstration data/i);
-  expect(body.knownLimitations.join(' ')).toMatch(/do not describe real/i);
+  // Task 28.2: real aggregates replaced the seeds, so the Sprint 2
+  // seeded-demonstration-data disclosure must be GONE — serving it against a
+  // published real run would be false.
+  expect(body.knownLimitations.join(' ')).not.toMatch(/seeded demonstration data/i);
+  expect(body.knownLimitations.join(' ')).not.toMatch(/do not describe real/i);
+  // The real-run limitations state that collection is ongoing.
+  expect(body.knownLimitations.join(' ')).toMatch(/collection is ongoing/i);
 }
 
 // Expected values are restated by hand from db/seeds/aggregate-data.ts — an
