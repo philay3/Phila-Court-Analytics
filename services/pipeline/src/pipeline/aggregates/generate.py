@@ -1,21 +1,26 @@
-"""Charge-only + judge-specific OUTCOME and charge-only SENTENCING aggregate
-generation + ``generate-aggregates`` (Tasks 26.1, 26.2, 27.1).
+"""Charge-only + judge-specific OUTCOME and SENTENCING aggregate
+generation + ``generate-aggregates`` (Tasks 26.1, 26.2, 27.1, 27.2).
 
 Reads eligible outcome facts and eligible sentence facts from ONE
 ``fact.fact_build_runs`` run and writes ``analytics.charge_outcome_aggregates``,
-``analytics.charge_sentencing_aggregates``, and ``analytics.judge_outcome_aggregates``
-rows under a single ``analytics.aggregate_runs`` run, in the SAME generation
-invocation and the SAME write transaction (Tasks 26.2, 27.1). No judge-specific
-sentencing (27.2), no validation (28.1), no publish (28.2).
+``analytics.charge_sentencing_aggregates``, ``analytics.judge_outcome_aggregates``,
+and ``analytics.judge_sentencing_aggregates`` rows under a single
+``analytics.aggregate_runs`` run, in the SAME generation invocation and the SAME
+write transaction (Tasks 26.2, 27.1, 27.2). No validation (28.1), no publish (28.2).
 
-The judge-specific pass (Task 27.1) groups ``judge_specific_eligible`` outcome facts
-by charge+judge pair, then by outcome category. The denominator is PER PAIR: each
-row's ``sample_size`` is that pair's eligible fact count, never the charge-wide
-count. The baseline guarantee (Sprint 6 SD 7 — every judge-specific aggregate has a
+The judge-specific passes (Tasks 27.1, 27.2) group ``judge_specific_eligible``
+outcome facts (27.1) and sentence facts (27.2) by charge+judge pair, then by
+category. The denominator is PER PAIR: each row's ``sample_size`` /
+``sentencing_sample_size`` is that pair's eligible fact count, never the
+charge-wide count — and the pair's sentencing sample is counted over sentence
+facts independently, never copied from the pair's outcome sample (SD 5). The
+baseline guarantee (Sprint 6 SD 7 — every judge-specific aggregate has a
 same-run charge-only counterpart) is structural (``judge_specific_eligible`` implies
-``public_eligible`` at fact build) and is asserted in tests and re-validated in 28.1;
-the generator never generates baseline data separately and adds no runtime
-enforcement.
+``public_eligible`` at fact build, for outcome AND sentence facts) and is asserted
+in tests and re-validated in 28.1; the generator never generates baseline data
+separately and adds no runtime enforcement. A pair with judge-specific outcomes
+but no eligible judge-specific sentence facts simply gets no judge-sentencing
+rows — the API's sentencing-unavailable arm covers it (SD 6), never a placeholder.
 
 Sentencing sample size is computed INDEPENDENTLY (Sprint 6 SD 5): it counts the
 charge's eligible *sentence* facts (one row per sentence component, never collapsed),
@@ -114,6 +119,23 @@ _JUDGE_INSERT_COLUMNS = (
     "count",
     "percentage",
     "sample_size",
+    "date_range_start",
+    "date_range_end",
+    "is_thin_data",
+    "taxonomy_version",
+)
+
+# The judge-specific sentencing table (task 6.2) is the charge-only sentencing
+# shape plus ``judge_id`` (Task 27.2): ``sentencing_sample_size``, never
+# ``sample_size``.
+_JUDGE_SENTENCING_INSERT_COLUMNS = (
+    "aggregate_run_id",
+    "charge_id",
+    "judge_id",
+    "category_code",
+    "count",
+    "percentage",
+    "sentencing_sample_size",
     "date_range_start",
     "date_range_end",
     "is_thin_data",
@@ -232,11 +254,18 @@ def _load_sentence_facts(
     Eligibility is read, never recomputed (SD 1). Multi-component sentences are
     ``fact.charge_sentences`` rows 1:1 with the parsed components, so grouping these
     rows by charge and category counts every component independently (SD 5).
+
+    ``normalized_judge_id`` / ``judge_specific_eligible`` feed the judge-specific
+    sentencing pass (Task 27.2), the same two-column extension 27.1 made to the
+    outcome loader. ``judge_attribution_method`` is deliberately NOT selected:
+    the fact layer already folded attribution validity into
+    ``judge_specific_eligible`` (SD 1).
     """
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             "SELECT normalized_charge_id, sentencing_category_code, sentence_date, "
-            "public_eligible, ineligibility_reason_codes "
+            "public_eligible, ineligibility_reason_codes, "
+            "normalized_judge_id, judge_specific_eligible "
             "FROM fact.charge_sentences WHERE build_run_id = %s",
             (build_run_id,),
         )
@@ -528,6 +557,109 @@ def build_charge_sentencing_aggregates(
     return rows, report
 
 
+def build_judge_sentencing_aggregates(
+    facts: Sequence[Mapping[str, object]],
+    *,
+    data_start_date: date,
+    thin_min_sample: int,
+    taxonomy_version: str,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """Build every judge-sentencing aggregate row from the run's sentence facts.
+
+    Parallel to :func:`build_judge_outcome_aggregates` over the SAME loaded sentence
+    facts (pure; no DB), selecting ``judge_specific_eligible`` (read, never
+    recomputed — SD 1) and grouping by charge+judge pair, then by sentencing
+    category. Each row carries the PAIR's INDEPENDENT ``sentencing_sample_size``
+    (its eligible-sentence-fact denominator, SD 5 — never the pair's outcome count,
+    never the charge-wide count), the category count, the count/sample percentage,
+    the pair's eligible ``sentence_date`` range (never before ``data_start_date``;
+    SD 15 — the independently-captured sentence date, never the parent disposition
+    date), the per-pair thin-data flag (``sentencing_sample_size <
+    thin_min_sample``), the run's taxonomy version, and the run id (stamped by the
+    caller). Pairs with zero eligible sentence facts produce no rows (SD 6) — the
+    normal sentencing-unavailable case, including pairs that DO have judge-specific
+    outcome aggregates.
+
+    An eligible fact with a null judge FK, null charge FK, null sentence date, or
+    pre-window sentence date is a fact-layer defect surfaced pre-write via
+    :class:`FactIntegrityError` — never silently filtered.
+
+    Returns ``(rows, report)``. ``report`` carries the run-report tallies: judge
+    sentence facts included, distinct charge+judge sentencing pairs covered, judge
+    sentencing aggregate rows, thin-data sentencing pairs, and the pair-population
+    sentence-date range end.
+    """
+    included = [f for f in facts if f["judge_specific_eligible"]]
+
+    # Group included facts by (charge, judge) pair (order-stable for a stable report).
+    by_pair: dict[tuple[str, str], list[Mapping[str, object]]] = {}
+    for fact in included:
+        charge_id = fact["normalized_charge_id"]
+        judge_id = fact["normalized_judge_id"]
+        sentence_date = fact["sentence_date"]
+        # judge_specific_eligible structurally guarantees all three; a violation is
+        # stop-and-report.
+        if charge_id is None:
+            raise FactIntegrityError(
+                "judge_specific_eligible sentence fact has a null normalized_charge_id"
+            )
+        if judge_id is None:
+            raise FactIntegrityError(
+                "judge_specific_eligible sentence fact has a null normalized_judge_id"
+            )
+        if sentence_date is None:
+            raise FactIntegrityError(
+                "judge_specific_eligible sentence fact has a null sentence_date"
+            )
+        if sentence_date < data_start_date:
+            raise FactIntegrityError(
+                "judge_specific_eligible sentence fact predates the configured "
+                "data start date"
+            )
+        by_pair.setdefault((str(charge_id), str(judge_id)), []).append(fact)
+
+    rows: list[dict[str, object]] = []
+    thin_pairs = 0
+    run_date_max: date | None = None
+    for (charge_id, judge_id), pair_facts in by_pair.items():
+        sentencing_sample_size = len(pair_facts)
+        is_thin = sentencing_sample_size < thin_min_sample
+        if is_thin:
+            thin_pairs += 1
+        dates = [f["sentence_date"] for f in pair_facts]
+        pair_start = min(dates)  # type: ignore[type-var]
+        pair_end = max(dates)  # type: ignore[type-var]
+        run_date_max = pair_end if run_date_max is None else max(run_date_max, pair_end)  # type: ignore[type-var]
+
+        category_counts = Counter(
+            str(f["sentencing_category_code"]) for f in pair_facts
+        )
+        for category_code, count in sorted(category_counts.items()):
+            rows.append(
+                {
+                    "charge_id": charge_id,
+                    "judge_id": judge_id,
+                    "category_code": category_code,
+                    "count": count,
+                    "percentage": _percentage(count, sentencing_sample_size),
+                    "sentencing_sample_size": sentencing_sample_size,
+                    "date_range_start": pair_start,
+                    "date_range_end": pair_end,
+                    "is_thin_data": is_thin,
+                    "taxonomy_version": taxonomy_version,
+                }
+            )
+
+    report: dict[str, object] = {
+        "judge_sentence_facts_included": len(included),
+        "charge_judge_sentencing_pairs_covered": len(by_pair),
+        "judge_sentencing_aggregates_generated": len(rows),
+        "thin_data_sentencing_pairs": thin_pairs,
+        "data_range_end": run_date_max,
+    }
+    return rows, report
+
+
 def _create_run(
     conn: psycopg.Connection,
     *,
@@ -646,6 +778,36 @@ def _write_judge_outcome_aggregates(
     return len(rows)
 
 
+def _write_judge_sentencing_aggregates(
+    conn: psycopg.Connection, run_id: str, rows: Sequence[Mapping[str, object]]
+) -> int:
+    """Delete-and-reinsert this run's judge-sentencing aggregate rows (caller's tx).
+
+    Same immutable-safe write path as :func:`_write_aggregates` (SD 4), targeting
+    ``analytics.judge_sentencing_aggregates``. Does not commit; the caller owns the
+    transaction boundary, so this write lands in the SAME transaction as the other
+    three passes for one atomic run.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM analytics.judge_sentencing_aggregates "
+            "WHERE aggregate_run_id = %s",
+            (run_id,),
+        )
+        if not rows:
+            return 0
+        columns = ", ".join(_JUDGE_SENTENCING_INSERT_COLUMNS)
+        placeholders = ", ".join(
+            f"%({col})s" for col in _JUDGE_SENTENCING_INSERT_COLUMNS
+        )
+        cur.executemany(
+            f"INSERT INTO analytics.judge_sentencing_aggregates ({columns}) "  # noqa: S608 - columns are module constants, never input
+            f"VALUES ({placeholders})",
+            [{**row, "aggregate_run_id": run_id} for row in rows],
+        )
+    return len(rows)
+
+
 def _fail_run(conn: psycopg.Connection, run_id: str) -> None:
     """Mark a run ``failed`` in its own transaction (no partial rows persist)."""
     with conn.cursor() as cur:
@@ -667,6 +829,7 @@ def _print_summary(
     report: Mapping[str, object],
     sentencing_report: Mapping[str, object],
     judge_report: Mapping[str, object],
+    judge_sentencing_report: Mapping[str, object],
     charges_outcomes_no_sentencing: int,
 ) -> None:
     """Counts-only run report (fixed codes + hash-prefix run ids; no docket data)."""
@@ -724,6 +887,20 @@ def _print_summary(
         f"thin_data_pairs={judge_report['thin_data_pairs']} "
         f"({BELOW_MINIMUM_SAMPLE}; min_sample={thin_min_sample})"
     )
+    # Judge-specific sentencing pass (Task 27.2): independent per-pair sentencing
+    # denominators, same run and transaction. Counts and ids only — judge names
+    # never reach console output.
+    print(
+        "judge_sentencing_aggregates_generated="
+        f"{judge_sentencing_report['judge_sentencing_aggregates_generated']} "
+        "charge_judge_sentencing_pairs_covered="
+        f"{judge_sentencing_report['charge_judge_sentencing_pairs_covered']}"
+    )
+    thin_sentencing_pairs = judge_sentencing_report["thin_data_sentencing_pairs"]
+    print(
+        f"thin_data_sentencing_pairs={thin_sentencing_pairs} "
+        f"({BELOW_MINIMUM_SAMPLE}; min_sample={thin_min_sample})"
+    )
     print(f"data_range: {data_range_start.isoformat()}..{data_range_end.isoformat()}")
 
 
@@ -735,11 +912,11 @@ def generate_aggregates(
     thin_min_sample: int,
     label: str,
 ) -> int:
-    """Generate charge-only outcome, sentencing, AND judge-specific outcome aggregates.
+    """Generate charge-only AND judge-specific outcome and sentencing aggregates.
 
-    All three aggregate populations are read from one build run and written under the
-    SAME new run and the SAME write transaction (Tasks 26.2, 27.1). Returns 0 on a
-    clean generated run, nonzero on a STOP (no completed build run / bad
+    All four aggregate populations are read from one build run and written under the
+    SAME new run and the SAME write transaction (Tasks 26.2, 27.1, 27.2). Returns 0
+    on a clean generated run, nonzero on a STOP (no completed build run / bad
     ``--build-run`` / fact-integrity violation) or a failed write.
     """
     try:
@@ -776,6 +953,14 @@ def generate_aggregates(
             thin_min_sample=thin_min_sample,
             taxonomy_version=taxonomy_version,
         )
+        judge_sentencing_rows, judge_sentencing_report = (
+            build_judge_sentencing_aggregates(
+                sentence_facts,
+                data_start_date=data_start_date,
+                thin_min_sample=thin_min_sample,
+                taxonomy_version=taxonomy_version,
+            )
+        )
     except FactIntegrityError as exc:
         logger.error(
             "refusing to generate aggregates", extra={"reason": type(exc).__name__}
@@ -791,16 +976,18 @@ def generate_aggregates(
 
     # Run-level data range: the configured floor as start; the latest eligible date as
     # end, taken as the UNION envelope of all populations (outcome disposition dates,
-    # sentence dates, and judge-pair disposition dates — the last is structurally a
-    # subset of the first, included so the run row covers everything it wrote even if
-    # that fact-layer invariant were ever violated). The floor itself when the run has
-    # no eligible facts at all, keeping the start <= end CHECK happy.
+    # sentence dates, and the judge-pair disposition/sentence dates — the judge maxes
+    # are structurally subsets of their charge-only counterparts, included so the run
+    # row covers everything it wrote even if that fact-layer invariant were ever
+    # violated). The floor itself when the run has no eligible facts at all, keeping
+    # the start <= end CHECK happy.
     date_maxes = [
         d
         for d in (
             report["data_range_end"],
             sentencing_report["data_range_end"],
             judge_report["data_range_end"],
+            judge_sentencing_report["data_range_end"],
         )
         if d is not None
     ]
@@ -821,6 +1008,7 @@ def generate_aggregates(
             _write_aggregates(conn, run_id, rows)
             _write_sentencing_aggregates(conn, run_id, sentencing_rows)
             _write_judge_outcome_aggregates(conn, run_id, judge_rows)
+            _write_judge_sentencing_aggregates(conn, run_id, judge_sentencing_rows)
     except Exception:
         conn.rollback()
         with conn.transaction():
@@ -842,6 +1030,7 @@ def generate_aggregates(
         report=report,
         sentencing_report=sentencing_report,
         judge_report=judge_report,
+        judge_sentencing_report=judge_sentencing_report,
         charges_outcomes_no_sentencing=charges_outcomes_no_sentencing,
     )
     logger.info("aggregate generation complete", extra={"run": run_id[:16]})

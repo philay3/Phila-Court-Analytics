@@ -4804,3 +4804,55 @@ the record field there.
   baseline against the same-run charge-only SENTENCING aggregate). 28.1 validation must now cover
   THREE aggregate tables per run and re-validate the baseline itself. Phase-27 PR opens after 27.2
   (one commit per task, never squash).
+
+## Task 27.2 — Judge-Specific Sentencing Aggregates + Baseline (2026-07-13)
+
+- **What was built:** the fourth aggregation pass INSIDE `pipeline generate-aggregates`
+  (27.1's shape preserved exactly: read → pure build with all STOP checks pre-write → single
+  `_create_run` → one write transaction → summary). New pure builder
+  `build_judge_sentencing_aggregates` groups `judge_specific_eligible` sentence facts by
+  charge+judge pair, then by sentencing category, and writes
+  `analytics.judge_sentencing_aggregates` rows under the SAME run and SAME transaction as the
+  other three passes — no restructure of existing builders, no `analytics.*` migration (recon
+  confirmed the Sprint 2 table: charge-only sentencing shape + `judge_id`, sample column
+  `sentencing_sample_size`).
+- **Files touched:** `services/pipeline/src/pipeline/aggregates/generate.py` (sentence loader
+  gained `normalized_judge_id, judge_specific_eligible` — the same two-column extension 27.1
+  made to the outcome loader; `judge_attribution_method` again deliberately NOT selected, SD 1;
+  new builder + `_write_judge_sentencing_aggregates` delete-and-reinsert, SD 4; run report
+  gained `judge_sentencing_aggregates_generated`, `charge_judge_sentencing_pairs_covered`, and
+  the parity `thin_data_sentencing_pairs` line in 27.1's exact console format; judge-sentencing
+  date-max joined the run-level union envelope); `services/pipeline/tests/
+  test_aggregates_generate.py` (9 pure judge-sentencing tests incl. the independent-denominator
+  check + 2 DB integration tests; `_sfact` gained the two judge keys mirroring the loader shape;
+  seeder `sentenced_outcome` gained optional `judge_id`/`judge_specific_eligible`, stamping
+  parent AND components with the sentence-fact invariant `judge_specific_eligible and
+  public_eligible`).
+- **Independent denominator (SD 5, pinned):** each row's `sentencing_sample_size` is the PAIR's
+  eligible SENTENCE-fact count — never the pair's outcome sample, never charge-wide, never
+  copied. Test-proven pure (3 outcome facts vs 1 sentence fact, same pair) and in the DB suite
+  (pair outcome sample 2 vs sentencing sample 10).
+- **STOP guards (SD 15):** a `judge_specific_eligible` sentence fact with a null judge FK, null
+  charge FK, null `sentence_date`, or pre-2025-01-01 `sentence_date` raises
+  `FactIntegrityError` pre-write (exit 2, no run row). Guards check `sentence_date` — the
+  independently-captured sentencing date — never the parent disposition date.
+- **Baseline (SD 7):** test-asserted only (NOT EXISTS against same-run
+  `charge_sentencing_aggregates`), no runtime enforcement; 28.1 re-validates. Recon note: the
+  guarantee is structural DIRECTLY on sentence facts — `sentence_facts.py` enforces
+  `judge_specific_eligible implies public_eligible` as a dataclass invariant, so every
+  judge-sentencing fact is itself in the charge-only sentencing denominator; the assertion
+  guards regressions, it does not carry unique weight.
+- **Real-corpus acceptance run (verbatim in the completion report):** default build run
+  `d591902f-8b2d-4c…` (latest completed); aggregate run `65f4c65f-4691-48…`.
+  judge_sentencing_aggregates_generated=423, charge_judge_sentencing_pairs_covered=344,
+  thin_data_sentencing_pairs=339. FINDING (unanchored): coverage is NOT the near-zero the task
+  anticipated — 344 pairs, 339/344 thin, consistent with the 27.1 judge-outcome sparsity
+  pattern (395 pairs / 393 thin). Baseline spot-verified on the real run: 0 judge-sentencing
+  rows without a same-run charge-only sentencing counterpart. Charge-only and judge-outcome
+  passes unchanged (156/124/456 rows as in 27.1).
+- **Deviations from plan:** none.
+- **Notes for 28.x:** 28.1 validation must now cover FOUR aggregate tables per run
+  (`SUM(count)=sentencing_sample_size` on both sentencing tables, percentages within tolerance,
+  `date_range_start` ≥ 2025-01-01, baseline re-validation for BOTH judge tables — outcome
+  against charge-only outcome, sentencing against charge-only sentencing). Phase 27 closes with
+  this task's PR (one commit, never squash).
