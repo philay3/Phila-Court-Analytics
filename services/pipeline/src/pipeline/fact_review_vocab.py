@@ -90,6 +90,17 @@ ADDITIVE_SENTENCING_CATEGORY = "additive_sentencing_category"
 # linkage is informational (AC4) and MUST NOT introduce a concept into
 # ``ELIGIBILITY_REASON_CODES``, which would soften the eligibility boundary.
 UNRESOLVABLE_CROSS_COURT_REFERENCE = "unresolvable_cross_court_reference"
+# Task COL-4a addition (plan-approved): a superseding parse (same docket number +
+# court, new source hash) that regressed against the parse it replaced — fewer
+# charges, or a previously disposed charge now undisposed/absent. The parse itself
+# is valid (nothing is unmapped or ambiguous), so no existing type fits. The two
+# sub-cases (charge shrink / disposition loss) share this one type and are
+# distinguished by ``candidate_context`` (the 23.5 sub-case precedent). Its
+# ``reason_code`` is the generic ``REVIEW_NEEDED`` (also the 23.5 precedent):
+# the guard flags, never blocks, and MUST NOT introduce a concept into
+# ``ELIGIBILITY_REASON_CODES``. Anchored to the NEW source document (the
+# actionable object is the new parse), docket-scoped (empty locator).
+SUPERSESSION_REGRESSION = "supersession_regression"
 
 REVIEW_ITEM_TYPES: frozenset[str] = frozenset(
     {
@@ -107,6 +118,7 @@ REVIEW_ITEM_TYPES: frozenset[str] = frozenset(
         SENTINEL_COLLISION,
         ADDITIVE_SENTENCING_CATEGORY,
         UNRESOLVABLE_CROSS_COURT_REFERENCE,
+        SUPERSESSION_REGRESSION,
     }
 )
 
@@ -124,9 +136,23 @@ STATUS_OPEN = "open"
 STATUS_IN_REVIEW = "in_review"
 STATUS_RESOLVED = "resolved"
 STATUS_DISMISSED = "dismissed"
+# Task COL-4a addition (plan-approved): terminal close-out for items whose parsed
+# graph was replaced by a docket supersession (COL-4a loader arm). Distinct from
+# ``dismissed`` so mechanical closure is never conflated with human dismissal;
+# triage state never transfers to the superseding document's items (its next fact
+# build regenerates them fresh under new dedup keys). Set by the loader on every
+# NON-terminal item (open / in_review) anchored to the superseded source document;
+# resolved / dismissed items are already terminal and stay untouched.
+STATUS_SUPERSEDED = "superseded"
 
 REVIEW_ITEM_STATUSES: frozenset[str] = frozenset(
-    {STATUS_OPEN, STATUS_IN_REVIEW, STATUS_RESOLVED, STATUS_DISMISSED}
+    {
+        STATUS_OPEN,
+        STATUS_IN_REVIEW,
+        STATUS_RESOLVED,
+        STATUS_DISMISSED,
+        STATUS_SUPERSEDED,
+    }
 )
 
 # The DB default for review.queue_items.status.

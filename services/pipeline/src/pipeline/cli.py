@@ -39,6 +39,7 @@ from pipeline.facts.build_facts import run_build_facts
 from pipeline.load import run_load
 from pipeline.logging_utils import configure_logging
 from pipeline.manual_import import run_manual_import
+from pipeline.prune_fact_runs import run_prune_fact_runs
 from pipeline.run_fixtures import run_fixtures
 from pipeline.seam_check import run_seam_check, running_in_ci
 
@@ -57,6 +58,11 @@ SUBCOMMANDS = (
     (
         "build-facts",
         "Build fact.charge_outcomes from the loaded parsed corpus under a new run.",
+    ),
+    (
+        "prune-fact-runs",
+        "Delete fact build runs WHOLE (run row + facts via CASCADE) so parsed "
+        "reloads/supersessions can proceed past the fail-loud fact FKs.",
     ),
     (
         "generate-aggregates",
@@ -97,6 +103,7 @@ IMPLEMENTED_COMMANDS = frozenset(
         "parse",
         "load",
         "build-facts",
+        "prune-fact-runs",
         "generate-aggregates",
         "validate-aggregates",
         "publish-aggregates",
@@ -299,6 +306,35 @@ def build_parser() -> argparse.ArgumentParser:
                     "(<sha256>.json). An envelope whose source hash has no record "
                     "here is a per-docket failure (no rows written). Default: "
                     "~/court-data/imports/."
+                ),
+            )
+        if name == "prune-fact-runs":
+            subparser.add_argument(
+                "run_ids",
+                nargs="*",
+                metavar="RUN_ID",
+                help=(
+                    "fact.fact_build_runs ids (UUIDs) to prune whole. Mutually "
+                    "exclusive with --all-completed; exactly one selection form "
+                    "is required. Already-absent ids are idempotent success "
+                    "(counted not_found); a non-completed id refuses the whole "
+                    "invocation."
+                ),
+            )
+            subparser.add_argument(
+                "--all-completed",
+                action="store_true",
+                help=(
+                    "Select every completed fact build run instead of naming "
+                    "ids (the full prune-before-refresh form)."
+                ),
+            )
+            subparser.add_argument(
+                "--confirm",
+                action="store_true",
+                help=(
+                    "Actually delete. Without it the command is a DRY RUN that "
+                    "reports the selection and writes nothing."
                 ),
             )
         if name == "generate-aggregates":
@@ -856,6 +892,38 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         return run_build_facts(database_url)
+    if args.command == "prune-fact-runs":
+        if running_in_ci():
+            logger.error(
+                "prune-fact-runs deletes fact build runs from the database and "
+                "must never run in a CI environment; refusing (CI runs only the "
+                "synthetic prune tests against its own Postgres service)",
+                extra={"command": args.command},
+            )
+            return 2
+        if bool(args.run_ids) == args.all_completed:
+            logger.error(
+                "exactly one selection form is required: explicit RUN_ID "
+                "arguments or --all-completed (not both, not neither)",
+                extra={"command": args.command},
+            )
+            return 2
+        # DATABASE_URL read at the run boundary (never at import, never logged).
+        database_url = os.environ.get("DATABASE_URL", "")
+        if not database_url.strip():
+            logger.error(
+                "DATABASE_URL is required to prune fact runs; set it in the "
+                "environment (its value is never printed or written)",
+                extra={"command": args.command},
+            )
+            return 2
+        with db.connect(database_url) as conn:
+            return run_prune_fact_runs(
+                conn,
+                run_ids=args.run_ids,
+                all_completed=args.all_completed,
+                confirm=args.confirm,
+            )
     if args.command == "generate-aggregates":
         if running_in_ci():
             logger.error(

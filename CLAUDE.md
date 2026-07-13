@@ -144,7 +144,14 @@ Unchanged and absolute:
 - Stop conditions are literal and adjudicated in the planning chat,
   never by the agent.
 - Acceptance-relevant runs (corpus reruns, gates, scans) must have their
-  raw summary output pasted VERBATIM in completion reports.
+  raw summary output pasted VERBATIM in completion reports. VERBATIM means
+  COPY-PASTED from the tool output, never retyped or reconstructed from
+  memory — the loader's run report reconciles by construction, so a
+  non-reconciling line in a report is always a transcription artifact (see
+  the COL-4a incident, where a retyped third-run block corrupted a category
+  count and broke the sum). Where a run writes a report file under
+  ~/court-data/ (e.g. reports/), reference it by filename alongside the
+  pasted line.
 
 This supersedes any prior instruction that real-data operations are
 human-only steps.
