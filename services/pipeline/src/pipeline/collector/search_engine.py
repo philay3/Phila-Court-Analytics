@@ -7,8 +7,15 @@ counsel-locked constants, the ``RunGuard`` streak logic, and the per-fetch
 
 Per calendar-day window (PD-1): one advanced search → ``classify_search`` →
 (if complete) harvest CP/MC-51-CR rows → fetch the ``--court``-selected rows
-in-session → append one window-ledger entry. All pacing/stop conditions are
-enforced in code and reused from enumeration:
+in-session → append one window-ledger entry per FETCHED court to that court's
+ledger (COL-3: ledgers are court-scoped; a window is skipped only when every
+fetched court has completed it, so an MC completion can never suppress a CP
+search, and vice versa). One search serves both courts' rows, so a
+``--court both`` run collects MC and CP concurrently at strictly less portal
+load than two per-court passes, under ONE clock, ONE ``RunGuard``, and ONE
+cooldown — the counsel caps, block cooldown, and streak stops are aggregate
+across courts by construction. All pacing/stop conditions are enforced in
+code and reused from enumeration:
 
   - counsel-locked 240-minute ceiling and 300s post-block cooldown;
   - jittered 2.0-5.0s delay after EVERY portal request — searches AND fetches;
@@ -185,11 +192,19 @@ def run(
 
     budget_seconds = min(params.max_minutes, HARD_CEILING_MINUTES) * 60
     windows = daily_windows(params.start_date, params.end_date)
-    ledger_path = window_ledger_path(params.ledger_dir)
-    complete_windows: set[str] = (
-        set() if params.recheck_windows else load_complete_windows(ledger_path)
-    )
     fetch_courts = FETCH_COURTS[params.court]
+    # COL-3: one court-scoped ledger per FETCHED court. A window is skipped
+    # only when every fetched court completed it, so cross-court completions
+    # can never suppress a search.
+    ledger_paths = {c: window_ledger_path(params.ledger_dir, c) for c in fetch_courts}
+    complete_by_court: dict[str, set[str]] = {
+        c: (
+            set()
+            if params.recheck_windows
+            else load_complete_windows(ledger_paths[c], c)
+        )
+        for c in fetch_courts
+    }
     guard = RunGuard()
 
     attempts: list[dict] = []
@@ -287,6 +302,18 @@ def run(
                 "elapsed_minutes": round(elapsed / 60, 1),
                 "cap_minutes": round(budget_seconds / 60, 1),
                 "projected_stop": projected_stop,
+                # AC-7 (COL-3): cumulative per-court activity, labeled per
+                # court, so a combined MC+CP run's progress is distinguishable
+                # live. Counts only — console hygiene.
+                "by_court": {
+                    c: {
+                        "harvested": totals[c]["harvested"],
+                        "fetched": totals[c]["fetched"],
+                        "already_present": totals[c]["already_present"],
+                        "fetch_failures": totals[c]["fetch_failures"],
+                    }
+                    for c in fetch_courts
+                },
             },
         )
 
@@ -321,7 +348,7 @@ def run(
             break
 
         wkey = window.isoformat()
-        if wkey in complete_windows:
+        if all(wkey in complete_by_court[c] for c in fetch_courts):
             skipped_complete += 1
             continue
 
@@ -360,7 +387,7 @@ def run(
             # rerun). Post-block cooldown then the block streak.
             window_outcomes[LEDGER_BLOCKED] += 1
             _write_ledger(
-                ledger_path, wkey, run_id, now, LEDGER_BLOCKED, win_counts, win_skipped
+                ledger_paths, wkey, run_id, now, LEDGER_BLOCKED, win_counts, win_skipped
             )
             window_summaries.append(
                 _window_summary(
@@ -389,7 +416,7 @@ def run(
             # AC-7a: a truncation banner on any daily window is a literal stop.
             window_outcomes[LEDGER_TRUNCATED] += 1
             _write_ledger(
-                ledger_path,
+                ledger_paths,
                 wkey,
                 run_id,
                 now,
@@ -414,7 +441,7 @@ def run(
             # streaks. Marks the window complete for rerun-skip.
             window_outcomes[LEDGER_EMPTY] += 1
             _write_ledger(
-                ledger_path, wkey, run_id, now, LEDGER_EMPTY, win_counts, win_skipped
+                ledger_paths, wkey, run_id, now, LEDGER_EMPTY, win_counts, win_skipped
             )
             window_summaries.append(
                 _window_summary(
@@ -533,7 +560,7 @@ def run(
         # run always yields its entry).
         window_outcomes[LEDGER_COMPLETE] += 1
         _write_ledger(
-            ledger_path, wkey, run_id, now, LEDGER_COMPLETE, win_counts, win_skipped
+            ledger_paths, wkey, run_id, now, LEDGER_COMPLETE, win_counts, win_skipped
         )
         window_summaries.append(
             _window_summary(
@@ -547,15 +574,16 @@ def run(
                 "outcome": LEDGER_COMPLETE,
                 "cp_harvested": win_counts["CP"]["harvested"],
                 "mc_harvested": win_counts["MC"]["harvested"],
-                # AC-1: flat totals over the run's FETCHED courts (harvested
-                # stays per-court because both courts are always harvested).
-                "fetched": sum(win_counts[c]["fetched"] for c in fetch_courts),
-                "already_present": sum(
-                    win_counts[c]["already_present"] for c in fetch_courts
-                ),
-                "fetch_failures": sum(
-                    win_counts[c]["fetch_failures"] for c in fetch_courts
-                ),
+                # AC-7 (COL-3): fetch accounting labeled per fetched court so
+                # a combined MC+CP run's window activity is distinguishable
+                # live (was flat sums over fetch courts pre-COL-3).
+                "fetched": {c: win_counts[c]["fetched"] for c in fetch_courts},
+                "already_present": {
+                    c: win_counts[c]["already_present"] for c in fetch_courts
+                },
+                "fetch_failures": {
+                    c: win_counts[c]["fetch_failures"] for c in fetch_courts
+                },
                 "skipped_rows": win_skipped,
             },
         )
@@ -573,7 +601,7 @@ def run(
         run_dir=run_dir,
         params=params,
         windows=windows,
-        ledger_path=ledger_path,
+        ledger_paths=ledger_paths,
         started_at=started_at,
         ended_at=ended_at,
         duration_seconds=duration_seconds,
@@ -617,7 +645,7 @@ def _attempt(
 
 
 def _write_ledger(
-    path: Path,
+    paths: dict[str, Path],
     wkey: str,
     run_id: str,
     now: Callable[[], datetime],
@@ -625,22 +653,28 @@ def _write_ledger(
     win_counts: dict[str, dict[str, int]],
     skipped_rows: int,
 ) -> None:
-    """Append the window-ledger entry for one searched window (PD-5 schema)."""
-    append_window_entry(
-        path,
-        {
-            "date": wkey,
-            "run_id": run_id,
-            "searched_at": now().isoformat(),
-            "outcome": outcome,
-            "cp_harvested": win_counts["CP"]["harvested"],
-            "mc_harvested": win_counts["MC"]["harvested"],
-            "fetched": {c: win_counts[c]["fetched"] for c in _COURTS},
-            "already_present": {c: win_counts[c]["already_present"] for c in _COURTS},
-            "fetch_failures": {c: win_counts[c]["fetch_failures"] for c in _COURTS},
-            "skipped_rows": skipped_rows,
-        },
-    )
+    """Append one searched-window entry per fetched court (PD-5 schema + COL-3
+    ``court`` scope field) to that court's ledger."""
+    searched_at = now().isoformat()
+    for court, path in paths.items():
+        append_window_entry(
+            path,
+            {
+                "date": wkey,
+                "court": court,
+                "run_id": run_id,
+                "searched_at": searched_at,
+                "outcome": outcome,
+                "cp_harvested": win_counts["CP"]["harvested"],
+                "mc_harvested": win_counts["MC"]["harvested"],
+                "fetched": {c: win_counts[c]["fetched"] for c in _COURTS},
+                "already_present": {
+                    c: win_counts[c]["already_present"] for c in _COURTS
+                },
+                "fetch_failures": {c: win_counts[c]["fetch_failures"] for c in _COURTS},
+                "skipped_rows": skipped_rows,
+            },
+        )
 
 
 def _window_summary(
@@ -693,7 +727,7 @@ def _build_report(
     run_dir: Path,
     params: SearchParams,
     windows: list[date],
-    ledger_path: Path,
+    ledger_paths: dict[str, Path],
     started_at: datetime,
     ended_at: datetime,
     duration_seconds: float,
@@ -739,7 +773,7 @@ def _build_report(
             "max_fetches": params.max_fetches,
             "recheck_windows": params.recheck_windows,
             "headful": not params.headless,
-            "window_ledger_path": str(ledger_path),
+            "window_ledger_paths": {c: str(p) for c, p in ledger_paths.items()},
         },
         "date_range": {
             "start": params.start_date.isoformat(),

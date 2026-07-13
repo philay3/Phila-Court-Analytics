@@ -117,11 +117,22 @@ def _read_attempts(params, report):
     return [json.loads(x) for x in text.splitlines()] if text.strip() else []
 
 
-def _read_ledger(params):
-    path = window_ledger_path(params.ledger_dir)
+def _read_ledger(params, court="MC"):
+    path = window_ledger_path(params.ledger_dir, court)
     if not path.exists():
         return []
     return [json.loads(x) for x in path.read_text().splitlines()]
+
+
+def _seed_complete(params, court, *dates):
+    """Seed the COURT-SCOPED ledger with complete entries for the dates."""
+    path = window_ledger_path(params.ledger_dir, court)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as handle:
+        for day in dates:
+            handle.write(
+                json.dumps({"date": day, "court": court, "outcome": "complete"}) + "\n"
+            )
 
 
 # --- AC-1: daily iteration + per-window pipeline ---------------------------
@@ -164,10 +175,8 @@ def test_skips_windows_the_ledger_marks_complete(tmp_path):
     params = make_params(
         tmp_path, start_date=date(2025, 6, 1), end_date=date(2025, 6, 2)
     )
-    # Seed the ledger: 2025-06-01 already complete.
-    path = window_ledger_path(params.ledger_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"date": "2025-06-01", "outcome": "complete"}) + "\n")
+    # Seed the MC-scoped ledger: 2025-06-01 already complete for MC.
+    _seed_complete(params, "MC", "2025-06-01")
     transport = FakeSearchTransport(lambda d: _EMPTY)
     report = run_engine(params, transport, clock)
     # Only 2025-06-02 was searched.
@@ -183,9 +192,7 @@ def test_recheck_windows_ignores_the_ledger(tmp_path):
         end_date=date(2025, 6, 1),
         recheck_windows=True,
     )
-    path = window_ledger_path(params.ledger_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"date": "2025-06-01", "outcome": "complete"}) + "\n")
+    _seed_complete(params, "MC", "2025-06-01")
     transport = FakeSearchTransport(lambda d: _EMPTY)
     report = run_engine(params, transport, clock)
     assert transport.searches == [date(2025, 6, 1)]  # re-searched despite ledger
@@ -579,7 +586,7 @@ def test_no_page_content_in_outputs(tmp_path):
     attempts_text = (
         params.report_dir / report["run_id"] / search_engine.ATTEMPT_LOG_FILENAME
     ).read_text()
-    ledger_text = window_ledger_path(params.ledger_dir).read_text()
+    ledger_text = window_ledger_path(params.ledger_dir, "MC").read_text()
     for haystack in (report_text, attempts_text, ledger_text):
         assert "Jane" not in haystack
         assert "Defendant" not in haystack
@@ -617,8 +624,8 @@ def _log_records(caplog, message):
 
 
 def test_window_log_line_carries_fetch_accounting(tmp_path, caplog):
-    # AC-1: the complete-window line gains flat fetched/already_present/
-    # fetch_failures over the run's fetched courts; harvested stays per-court.
+    # COL-3 AC-7: the complete-window line labels fetched/already_present/
+    # fetch_failures PER FETCHED COURT; harvested stays per-court.
     clock = FakeClock()
     params = make_params(tmp_path, court="MC")
     params.intake_dir.mkdir(parents=True, exist_ok=True)
@@ -642,9 +649,9 @@ def test_window_log_line_carries_fetch_accounting(tmp_path, caplog):
     ]
     assert len(win) == 1
     rec = win[0]
-    assert rec.fetched == 1
-    assert rec.already_present == 1
-    assert rec.fetch_failures == 1
+    assert rec.fetched == {"MC": 1}
+    assert rec.already_present == {"MC": 1}
+    assert rec.fetch_failures == {"MC": 1}
     # Existing fields unchanged.
     assert rec.mc_harvested == 3
     assert rec.cp_harvested == 0
@@ -738,3 +745,203 @@ def test_progress_line_projects_time_cap_when_pace_exceeds_budget(tmp_path, capl
     progs = _log_records(caplog, "progress")
     assert progs
     assert progs[0].projected_stop == "time_cap"
+
+
+# --- COL-3: court-scoped ledgers, cross-court isolation, aggregate guard ----
+
+
+def test_mc_completion_never_skips_cp_run(tmp_path):
+    # AC-1: cross-court isolation of the skip path. MC completed the window;
+    # a CP run must still search it.
+    clock = FakeClock()
+    _seed_complete(make_params(tmp_path), "MC", "2025-06-03")
+    params = make_params(tmp_path, court="CP")
+    transport = FakeSearchTransport(lambda d: _EMPTY)
+    report = run_engine(params, transport, clock)
+    assert transport.searches == [date(2025, 6, 3)]  # NOT skipped
+    assert report["date_range"]["skipped_complete"] == 0
+
+
+def test_cp_completion_never_skips_mc_run(tmp_path):
+    # AC-1: and vice versa.
+    clock = FakeClock()
+    _seed_complete(make_params(tmp_path), "CP", "2025-06-03")
+    params = make_params(tmp_path, court="MC")
+    transport = FakeSearchTransport(lambda d: _EMPTY)
+    report = run_engine(params, transport, clock)
+    assert transport.searches == [date(2025, 6, 3)]
+    assert report["date_range"]["skipped_complete"] == 0
+
+
+def test_misdirected_ledger_entries_never_suppress_searches(tmp_path):
+    # AC-2: entries whose court field does not match the ledger's scope (a
+    # renamed/misdirected file) are ignored on load — the window is searched.
+    clock = FakeClock()
+    params = make_params(tmp_path, court="MC")
+    path = window_ledger_path(params.ledger_dir, "MC")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"date": "2025-06-03", "court": "CP", "outcome": "complete"}) + "\n"
+    )
+    transport = FakeSearchTransport(lambda d: _EMPTY)
+    report = run_engine(params, transport, clock)
+    assert transport.searches == [date(2025, 6, 3)]
+    assert report["date_range"]["skipped_complete"] == 0
+
+
+def test_both_run_searches_window_complete_for_only_one_court(tmp_path):
+    # A window MC completed but CP did not: a both run must re-search it, and
+    # its completion is then recorded to BOTH court ledgers (duplicate MC
+    # completion entries are tolerated and dedupe on load).
+    clock = FakeClock()
+    params = make_params(tmp_path, court="both")
+    _seed_complete(params, "MC", "2025-06-03")
+    transport = FakeSearchTransport(lambda d: _EMPTY)
+    report = run_engine(params, transport, clock)
+    assert transport.searches == [date(2025, 6, 3)]
+    assert report["date_range"]["skipped_complete"] == 0
+    mc = _read_ledger(params, "MC")
+    cp = _read_ledger(params, "CP")
+    assert [(e["date"], e["court"], e["outcome"]) for e in cp] == [
+        ("2025-06-03", "CP", "empty")
+    ]
+    # MC ledger: the seed plus the duplicate from this run — never an error.
+    assert [(e["date"], e["court"]) for e in mc] == [
+        ("2025-06-03", "MC"),
+        ("2025-06-03", "MC"),
+    ]
+
+
+def test_both_run_skips_window_complete_for_both_courts(tmp_path):
+    clock = FakeClock()
+    params = make_params(tmp_path, court="both")
+    _seed_complete(params, "MC", "2025-06-03")
+    _seed_complete(params, "CP", "2025-06-03")
+    transport = FakeSearchTransport(lambda d: _EMPTY)
+    report = run_engine(params, transport, clock)
+    assert transport.searches == []
+    assert report["date_range"]["skipped_complete"] == 1
+
+
+def test_both_run_writes_one_entry_per_fetched_court(tmp_path):
+    clock = FakeClock()
+    params = make_params(tmp_path, court="both")
+    harvest = _rows(
+        ("MC", 1, "/x/CpDocketSheet?h=1"),
+        ("CP", 2, "/x/CpDocketSheet?h=2"),
+    )
+    transport = FakeSearchTransport(lambda d: _complete(), lambda d: harvest)
+    run_engine(params, transport, clock)
+    mc = _read_ledger(params, "MC")
+    cp = _read_ledger(params, "CP")
+    assert len(mc) == 1 and mc[0]["court"] == "MC" and mc[0]["outcome"] == "complete"
+    assert len(cp) == 1 and cp[0]["court"] == "CP" and cp[0]["outcome"] == "complete"
+    # Both entries carry the full per-court fetch accounting.
+    assert mc[0]["fetched"] == {"CP": 1, "MC": 1}
+    assert cp[0]["fetched"] == {"CP": 1, "MC": 1}
+
+
+def test_block_streak_is_aggregate_across_courts(tmp_path):
+    # AC-6: a CP-fetch block followed by an MC-fetch block is a streak of 2 —
+    # switching courts cannot reset the aggregate counter.
+    clock = FakeClock()
+    params = make_params(tmp_path, court="both")
+    harvest = _rows(
+        ("CP", 1, "/x/CpDocketSheet?h=1"),
+        ("MC", 2, "/x/CpDocketSheet?h=2"),
+    )
+    transport = FakeSearchTransport(
+        lambda d: _complete(),
+        lambda d: harvest,
+        lambda h: FetchSignal(rate_limited=True),  # every fetch blocked
+    )
+    report = run_engine(params, transport, clock)
+    assert report["max_block_streak"] == 2  # CP block + MC block, no reset
+
+
+def test_block_on_either_court_cools_down_whole_run(tmp_path):
+    # AC-6: the 300s post-block cooldown after a CP-fetch block runs BEFORE
+    # the next (MC) fetch — one operator, one cooldown, both courts idle.
+    clock = FakeClock()
+    params = make_params(tmp_path, court="both")
+    harvest = _rows(
+        ("CP", 1, "/x/CpDocketSheet?h=1"),
+        ("MC", 2, "/x/CpDocketSheet?h=2"),
+    )
+
+    def fetch_for(href):
+        if href.endswith("h=1"):  # the CP fetch is blocked
+            return FetchSignal(rate_limited=True)
+        return FetchSignal(pdf_ok=True, pdf_bytes=b"%PDF-1.7 x")
+
+    transport = FakeSearchTransport(lambda d: _complete(), lambda d: harvest, fetch_for)
+    report = run_engine(params, transport, clock, jitter=3.0)
+    assert report["cooldowns_taken"]["post_block"] == 1
+    # sleeps: search jitter, CP-fetch jitter, 300s cooldown, MC-fetch jitter —
+    # the cooldown precedes the other court's next portal request.
+    assert clock.sleeps == [3.0, 3.0, 300, 3.0]
+    assert transport.fetches == ["/x/CpDocketSheet?h=1", "/x/CpDocketSheet?h=2"]
+
+
+def test_single_time_budget_governs_both_courts(tmp_path):
+    # AC-5: one monotonic clock, one budget. A both run whose first window
+    # burns past max_minutes (via the post-block cooldown) never starts the
+    # second window for EITHER court.
+    clock = FakeClock()
+    params = make_params(
+        tmp_path,
+        court="both",
+        max_minutes=1,  # 60s effective budget
+        start_date=date(2025, 6, 1),
+        end_date=date(2025, 6, 2),
+    )
+    transport = FakeSearchTransport(lambda d: _BLOCKED)  # 300s cooldown
+    report = run_engine(params, transport, clock)
+    assert report["stop_reason"] == "time_cap"
+    assert transport.searches == [date(2025, 6, 1)]
+
+
+def test_report_parameters_carry_per_court_ledger_paths(tmp_path):
+    clock = FakeClock()
+    params = make_params(tmp_path, court="both")
+    transport = FakeSearchTransport(lambda d: _EMPTY)
+    report = run_engine(params, transport, clock)
+    paths = report["parameters"]["window_ledger_paths"]
+    assert set(paths) == {"CP", "MC"}
+    assert paths["MC"].endswith("window-ledger-philadelphia-MC.jsonl")
+    assert paths["CP"].endswith("window-ledger-philadelphia-CP.jsonl")
+
+
+def test_progress_line_labels_each_court_distinctly(tmp_path, caplog):
+    # AC-7: a combined run's progress line carries per-court cumulative
+    # activity (counts only — console hygiene).
+    clock = FakeClock()
+    params = make_params(
+        tmp_path,
+        court="both",
+        start_date=date(2025, 6, 1),
+        end_date=date(2025, 6, 5),
+    )  # 5 windows -> one progress line
+
+    def harvest_for(d):
+        return (
+            _rows(("CP", 1, None), ("MC", 2, None))
+            if d == date(2025, 6, 1)
+            else (_rows())
+        )
+
+    def signal_for(d):
+        return _complete() if d == date(2025, 6, 1) else _EMPTY
+
+    transport = FakeSearchTransport(signal_for, harvest_for)
+    with caplog.at_level(logging.INFO, logger="pipeline.collector"):
+        run_engine(params, transport, clock)
+
+    progs = _log_records(caplog, "progress")
+    assert len(progs) == 1
+    by_court = progs[0].by_court
+    assert set(by_court) == {"CP", "MC"}
+    assert by_court["CP"]["harvested"] == 1
+    assert by_court["MC"]["harvested"] == 1
+    assert by_court["CP"]["fetch_failures"] == 1  # no sheet link
+    assert by_court["MC"]["fetch_failures"] == 1
