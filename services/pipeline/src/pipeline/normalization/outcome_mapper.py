@@ -9,12 +9,15 @@ folding anywhere in this module (contrast the 22.2 charge matcher, which folds).
 
 Three arms:
 
-- **held carve-out (AC 4)** — ``disposition_raw`` IS NULL: the charge ended the
-  parse undisposed (the 18.1 terminality predicate,
-  :func:`charge_has_terminal_disposition`, is False). :meth:`OutcomeMapper.map`
-  returns ``None`` — NO outcome fact and NO review item. A held charge is NOT
-  "unmapped"; routing a null disposition to review as a false ``unmapped`` is the
-  one quiet-bug spot this task guards against.
+- **held carve-out (AC 4; extended by Task 29.3)** — ``disposition_raw`` IS NULL
+  *or* is one of the :data:`HELD_FOR_COURT_DISPOSITIONS` forms: the charge ended
+  the parse undisposed (the 18.1 terminality predicate,
+  :func:`charge_has_terminal_disposition`, is False), or it is a non-terminal MC
+  bind-over recorded as a disposition value (Task 29.3 Mechanism A).
+  :meth:`OutcomeMapper.map` returns ``None`` — NO outcome fact and NO review
+  item. A held charge is NOT "unmapped"; routing a null disposition or a
+  bind-over to review as a false ``unmapped`` is the quiet-bug spot these tasks
+  guard against.
 - **mapped** — a terminal ``disposition_raw`` present in the table -> its outcome
   code, ``public_eligible`` per taxonomy, ``review_needed`` False.
 - **unmapped (AC 3)** — a terminal ``disposition_raw`` NOT in the table -> code
@@ -59,6 +62,36 @@ OUTCOME_UNKNOWN = "unknown"
 # Entity tag carried on the review item (parallel to 22.2 "charge" / 22.3 "judge").
 ENTITY_DISPOSITION = "disposition"
 
+# --- Held-for-court carve-out (Task 29.3, Mechanism A — planning-chat pinned) --
+# A "Held for Court" disposition is a non-terminal MC bind-over — the case
+# continues on a CP docket — so it is NOT an outcome. These charges take the
+# held arm (`map()` returns None: no fact, no review item), exactly like a null
+# disposition. Keys are BYTE-EXACT to the corpus-evidenced variant scan (recon
+# 29.3 stage 1; the 18.2/22.4 repair-table precedent: exact-match on captured
+# state, never pattern matching). This set is the SINGLE authority on which
+# disposition values are held forms — the fact builder and the review-queue
+# closure tool consume it; nothing re-lists the five forms.
+#
+# Fail-safe for unseen future variants (DESIGNED behavior, not a gap): a held
+# form not listed here arrives as a terminal unmapped value -> `unknown`
+# (never public-eligible) + one `unmapped_disposition` review item. It cannot
+# reach public aggregates; adding it here is a planning-chat adjudication.
+#
+# "Held for Court - Hearsay" is the sixth corpus-evidenced entry, surfaced by
+# the 29.3 intake scan gate (2 charges, one MC docket, disposed-with-no-date,
+# zero sentence components — structurally identical to the original five) and
+# adjudicated in planning chat (C2, Option 1) exactly per that process.
+HELD_FOR_COURT_DISPOSITIONS: frozenset[str] = frozenset(
+    {
+        "Held for Court",
+        "IGJ - Held for Court",
+        "HP - Held for Court",
+        "Held for Court IC",
+        "GJ - Held for Court",
+        "Held for Court - Hearsay",
+    }
+)
+
 # --- The APPROVED exact-match table (Task 22.4 map-approval gate) -------------
 # disposition_raw string -> outcome taxonomy code. Keys are BYTE-EXACT to the
 # Part A distinct-value report over the corpus; every value is a real taxonomy
@@ -101,8 +134,9 @@ DISPOSITION_OUTCOME_MAP: dict[str, str] = {
     "ARD - County": "ard",
     # withdrawn — prosecution withdrew the charge
     "Withdrawn": "withdrawn",
-    # other — recorded disposition outside the defined categories
-    "Held for Court": "other",
+    # other — recorded disposition outside the defined categories. NOTE (Task
+    # 29.3): "Held for Court" is deliberately ABSENT — a bind-over is not an
+    # outcome; it takes the held arm via HELD_FOR_COURT_DISPOSITIONS above.
     "Transferred to Another Jurisdiction": "other",
     "Mistrial - Hung Jury": "other",
 }
@@ -261,8 +295,10 @@ class OutcomeMapper:
 
         Arms:
 
-        1. held    — ``disposition_raw`` IS NULL -> ``None`` (AC 4; no fact, no
-           review). This is the 18.1 held carve-out at the disposition grain.
+        1. held    — ``disposition_raw`` IS NULL (AC 4; the 18.1 held carve-out
+           at the disposition grain) OR a byte-exact
+           ``HELD_FOR_COURT_DISPOSITIONS`` member (Task 29.3: a non-terminal MC
+           bind-over is not an outcome) -> ``None``; no fact, no review.
         2. mapped  — exact-match hit in the table -> its outcome code.
         3. unmapped — a terminal value not in the table -> ``unknown`` + review.
 
@@ -273,6 +309,13 @@ class OutcomeMapper:
         # on `is None` (not truthiness) mirrors the 18.1 predicate, which keys on
         # `disposition_raw is not None`.
         if disposition_raw is None:
+            return None
+
+        # Task 29.3 held-for-court carve-out: a recorded bind-over form is
+        # non-terminal — same held arm as NULL (no fact, no review item).
+        # Byte-exact membership only; an unlisted future variant deliberately
+        # falls through to the unmapped -> `unknown` + review fail-safe below.
+        if disposition_raw in HELD_FOR_COURT_DISPOSITIONS:
             return None
 
         code = self._map.get(disposition_raw)

@@ -1,6 +1,7 @@
 import { Kysely, PostgresDialect } from 'kysely';
 import pg from 'pg';
 import { seedAggregates, seedReference, type Database } from '@pca/db';
+import { assertTestDatabaseUrl } from '@pca/db/test-db-guard';
 
 /**
  * Seeds reference + aggregate data ONCE per test run, before any suite
@@ -21,6 +22,13 @@ export default async function globalSetup(): Promise<void> {
     console.warn('vitest globalSetup: DATABASE_URL not set — skipping database seeding.');
     return;
   }
+
+  // Test-database guard (task 29.2): seeding below runs via direct function
+  // calls, bypassing the 29.1-guarded `db:seed` script — so the name-shaped
+  // check happens here, before any pool or connection exists. A non-test
+  // database name (e.g. the live DB auto-loaded from the root .env) aborts
+  // the whole test run before any write.
+  assertTestDatabaseUrl(connectionString, 'api vitest globalSetup');
 
   const db = new Kysely<Database>({
     dialect: new PostgresDialect({ pool: new pg.Pool({ connectionString }) }),

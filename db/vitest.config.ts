@@ -23,5 +23,14 @@ export default defineConfig({
   ssr: { resolve: { conditions: ['pca-source', 'module', 'node'] } },
   test: {
     server: { deps: { inline: [/@pca\//] } },
+    // Test-database guard (task 29.2): refuses a non-test DATABASE_URL before
+    // any suite runs — see vitest.global-setup.ts.
+    globalSetup: './vitest.global-setup.ts',
+    // DB-backed suites share one database: the reference suite asserts ref.*
+    // equals exactly the demo seeds while the roster suites insert additional
+    // ref.* rows, so parallel workers race (task 29.2, D-A ruling). Run test
+    // files sequentially; the suite is small enough that wall-clock cost is
+    // negligible.
+    fileParallelism: false,
   },
 });

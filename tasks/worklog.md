@@ -5250,3 +5250,386 @@ the record field there.
   expected). The first refresh's load step carries the deferred COL-4a
   real-data supersession proof; if zero sheets changed, state it and carry
   forward per AC-7.
+
+## Operational intake — April 2025 window collection (2026-07-14)
+
+Standard COL Intake Protocol run over the collector drop zone after window
+collection reached 2025-05-01 (MC) / late April (CP). No code changes; all
+artifacts under `~/court-data/`. Counts only below; all pipeline lines pasted
+verbatim from tool output.
+
+- **Step-0 recon (pre-intake baseline):** parsed.dockets=7,128
+  (3,419 CP / 3,709 MC), parsed.charges=20,935, held=4,303,
+  duplicate docket numbers=0; fact run `b873298d…` (16,632 outcomes);
+  published aggregate run `c82d8be2…`.
+- **[0] Freeze + [0b] exclusion (snapshot
+  `apr2025-window-intake-20260714T032507Z`, manifest beside it):**
+  `staged_at_freeze=6202`, `mtime_guard_dropped=0`,
+  `excluded_already_loaded=5569`, `included=633` (618 CP / 15 MC; includes
+  the 3 known parse_failed re-flows).
+- **Import (verbatim):** `imported=630 duplicate=3 invalid=0 failed=0`
+  (duplicates = the byte-identical parse_failed trio, as in prior intakes).
+- **Extract (verbatim):** `success=633 partial=0 needs_ocr_or_review=0 failed=0`
+  (dir `extracted-intake-apr2025-20260714/`).
+- **Parse (verbatim):** `parsed=630 failed=3 skipped=0`
+  (dir `envelopes-intake-apr2025-20260714/`; failures are the known trio).
+- **GOLDEN WRITE NOTE (required per protocol):** `run-fixtures --init-goldens`
+  wrote 630 absent tier-2 goldens for the new dockets; zero existing goldens
+  touched; zero drift. Report `tier2-report-20260714T033225_272264Z.json`
+  totals: `match=0 diverged=0 updated=0 new=630 golden_missing=0 failed=3`.
+- **Load (exit 0, verbatim):** `loaded=630 skipped_same_version=0
+  replaced_newer_version=0 refused_older_version=0 superseded=0
+  skipped_stale_superseded=0 failed_envelope_loaded=3 failed_exception=0
+  missing_import_record=0 total=633`. Reconciles with import/parse
+  (630 + 3 == 633).
+- **Corpus:** 7,128 → 7,758 dockets (+615 CP → 4,034; +15 MC → 3,724),
+  charges 20,935 → 22,865, held 4,303 → 4,896. Zero duplicate docket numbers.
+- **INCIDENT (operator, self-caused, remediated): build-facts ran twice.**
+  The second invocation was issued only to re-display summary lines; each
+  invocation writes a fresh run, so two identical partitions existed
+  (`6204741e…` then `7e26b002…`, both completed, 17,969 outcomes / 9,240
+  sentence facts each — deterministic over the same corpus). Review-item
+  dedup held across the pair: first run `newly_inserted=712`, second run
+  `generated_total=14806` / `newly_inserted_total=0`. Remediation: the
+  redundant FIRST run was pruned with the sanctioned tool. Dry run
+  (verbatim): `would_prune=1 not_found=0 outcomes_deleted=0
+  sentences_deleted=0 outcomes_selected=17969 sentences_selected=9240`;
+  confirm (verbatim): `pruned=1 not_found=0 outcomes_deleted=17969
+  sentences_deleted=9240 outcomes_selected=17969 sentences_selected=9240`.
+  Post-prune: 2 runs remain (`b873298d…` + `7e26b002…`), 34,601 outcomes
+  total. Lesson recorded: never re-run a state-writing pipeline command to
+  re-show its output; read the run row's `counts` jsonb instead.
+- **Fact build (kept run `7e26b002-cb66-4712-bae2-361c7bc1466c`), counts from
+  the run row:** `facts_written=17969 held_skipped=4896
+  charges_processed=22865 reconciles=true` (17,969 + 4,896 == 22,865 ==
+  parsed.charges, independently verified). Console (verbatim):
+  `sentence_facts_written=9240 components_on_disposed=9240` and
+  `reconcile sentence_facts==components_on_disposed: True`.
+- **Aggregates:** generate-aggregates run
+  `6ecf1fed-0b73-4cb8-bf50-2d8d213f1fa7` from build run `7e26b002…`
+  (default=latest); console tail (verbatim): `data_range:
+  2025-01-01..2026-07-13`. validate-aggregates (verbatim):
+  `verdict=validated`; `charge_outcome_aggregates: rows_checked=274
+  violations=0`; `charge_sentencing_aggregates: rows_checked=213
+  violations=0`; `judge_outcome_aggregates: rows_checked=1510 violations=0`;
+  `judge_sentencing_aggregates: rows_checked=1424 violations=0`.
+  publish-aggregates (verbatim): `publish-aggregates run=6ecf1fed-0b73-4c
+  published` / `prior published run c82d8be2-48cf-42 invalidated
+  (superseded)`. Exactly one active published run verified post-swap.
+- **Post-publish spot check:** public charge-results endpoint serves
+  `aggregateRunId=6ecf1fed-0b73-4cb8-bf50-2d8d213f1fa7`,
+  `lastRefreshed=2026-07-14T03:38:13.293Z`, dateRange end `2026-07-13`
+  (sample: retail-theft outcomes sampleSize=145).
+- **For the next cycle:** the 3 parse_failed sheets re-flowed idempotently
+  again (expected; remedy remains parser work). The deferred COL-4b refresh
+  cycle (AC-7/AC-8) is unaffected; held-charge count for fresh refresh
+  derivation is now 4,896 at this build.
+
+## Task 29.1 — Seed Sweep (2026-07-14)
+
+**What was built.** Registry-driven sweep tooling for the live database:
+`db/scripts/sweep-seed-rows.ts` (core: interlocks + deletes + report, one
+transaction) and `db/scripts/sweep-seed-rows-cli.ts` (CLI: CI refusal before
+any connection, mandatory explicit `--database <name>` matched against
+`current_database()`, dry-run default with `--confirm` to execute). Targets
+are imported from the `db/seeds/` registry — `JUDGE_SEEDS` slugs and both
+run UUID constants (`SEED_PUBLISHED_RUN_ID`, `SEED_UNPUBLISHED_RUN_ID`) —
+never name patterns. Per plan review D1 the unpublished decoy run is swept
+along with the invalidated seeded published run. Demo charges and their
+aliases are retained (no statement touches them); fake-judge aliases are
+deleted explicitly so the count is reported rather than hidden in the FK
+cascade. Dry run executes the same deletes and rolls back via a sentinel, so
+would-delete counts are exact. Interlocks (any violation = abort + full
+rollback): zero fact.* rows referencing fake judges; no judge-aggregate rows
+outside the registry runs referencing fake judges; the seeded published run
+must be invalidated; no registry run may be the active published run (F1).
+
+**SD-3 resolution (plan review D2): refuse-via-guard.**
+`db/scripts/seed-guard.ts` now runs before `seeds/run.ts` in the `db:seed`
+package script and refuses (exit 2) when the target database contains real
+corpus data (`raw.source_documents` or `fact.fact_build_runs` nonempty);
+unmigrated targets get a run-migrations-first refusal (F2). The seed scripts
+in `db/seeds/` are byte-identical — only invocation wiring changed. Without
+the guard, `db:seed` against the post-sweep live DB would re-insert the
+three fake judges (reference transaction commits first) and then fail on the
+active-published unique index.
+
+**Rollback-target surrender (Sprint 7 SD 2, stated per AC 3):** deleting the
+invalidated seeded aggregate run `5eedda7a-0000-4000-8000-000000000001`
+deliberately surrenders it as a rollback target. Once 29.3 republishes, real
+runs are each other's rollback targets under the existing published-run
+model.
+
+**Files touched:** `db/scripts/sweep-seed-rows.ts`,
+`db/scripts/sweep-seed-rows-cli.ts`, `db/scripts/seed-guard.ts`,
+`db/tests/sweep-seed-rows.test.ts`, `db/package.json` (seed guard wiring +
+`sweep:seeds` script), `db/tsconfig.json` (add `scripts/` to include),
+`agent-docs/seed-sweep-runbook.md`, this worklog.
+
+**Tests.** `db/tests/sweep-seed-rows.test.ts`: CLI CI refusal proven by
+spawning the real CLI with `CI=1` and a bogus `DATABASE_URL` (refusal
+precedes any connection); `--database` mismatch and missing-arg refusals;
+guard verdicts for unmigrated / clean / real-corpus databases; F1 refusal
+while the seeded run is still active-published; dry-run exactness;
+confirmed-sweep deletion + retention (demo charges/aliases by before/after
+snapshot, full judge roster, simulated active run); second-run no-op. The
+behavior tests build a scratch database (`pca_sweep_test_<hex>` prefix per
+F3c, force-dropped in afterAll) on the connected server, migrated
+programmatically and seeded via the imported seed functions; they skip
+LOUDLY when `DATABASE_URL` points at the live `pca` database (F3a).
+
+**Deviations from plan:** none in scope. Two test-shape adjustments during
+implementation: the simulated publish swap must invalidate the seeded run
+BEFORE inserting the new published run (partial unique index allows one
+active row), and demo-alias retention is asserted by before/after snapshot
+because the 22.2 roster task adds `DEMO_ALIAS_ADDITIONS` to demo charges.
+
+**For the next task (29.2, pinned recon input confirmed at plan review):**
+db-package and API vitest configs auto-load the root `.env` — the 28.2
+incident class. Separately, a PRE-EXISTING latent flake surfaced (not fixed,
+out of scope): `db/seeds/reference.test.ts` asserts ref.* equals exactly the
+Sprint-2 demo seeds, but the roster test files seed roster rows into the
+same database in parallel vitest workers — on a fresh migrated DB this
+machine reproduces the failure while 2-core CI runners win the race and stay
+green. It fails against any long-lived DB (`pca_test`, live) regardless.
+
+## Task 29.2 — Test-Database Guard (2026-07-14)
+
+**What was built.** Structural test-dbname guard closing the 28.2 incident
+class: both vitest global-setups now assert a test-database name BEFORE any
+connection or write. New pure module `db/src/test-db-guard.ts`
+(`isTestDbName`, `dbNameFromUrl`, `assertTestDatabaseUrl`), exported via the
+new `@pca/db/test-db-guard` subpath (forbidden-scan precedent — off the main
+runtime surface; conditional-exports triple in `db/package.json`, emit added
+to `db/tsconfig.build.json`). Pattern per plan-review ruling: dbname contains
+`test` (case-insensitive, the `PIPELINE_TEST_DATABASE_URL` convention) OR is
+exactly `pca_ci`; fail-closed on a missing/unparseable dbname. Refusal
+messages name the dbname ONLY — never the URL (credential hygiene, public CI
+logs). Wired into `apps/api/vitest.global-setup.ts` ahead of the direct-call
+seeding (the vector 29.1 left open) and into a NEW `db/vitest.global-setup.ts`
+covering the seed/roster/sweep suites. A throwing globalSetup aborts the whole
+run, so per-test writes are blocked at entry. Per-path coverage of every DB
+test entry path recorded in `agent-docs/test-db-guard.md` (E2E → 29.1
+data-shaped seed-guard; pipeline pytest → pre-existing guard; shared/web/
+taxonomy/ui → no DB access).
+
+**Deliberate-failure tests (AC 3).** `db/src/test-db-guard.test.ts` (pure):
+live `pca` rejected; `pca_test`/`pca_pipeline_test`/`pca_ci`/
+`pca_sweep_test_<hex>` pass; fail-closed cases; message-hygiene assertions
+(no credentials/host/URL). `apps/api/vitest.global-setup.test.ts`: invokes
+the REAL global-setup with a live-shaped dbname on a closed port — rejected
+with the guard message (proving pre-connection blocking); `pca_ci` clears the
+guard and proceeds to a connection error (CI-name pass proven locally).
+
+**reference.test.ts race fix (D-A: FOLD IN).** `fileParallelism: false` in
+`db/vitest.config.ts`. Mechanism: `seeds/reference.test.ts` asserts `ref.*`
+equals exactly the demo seeds while the roster suites insert additional
+`ref.*` rows into the SAME database; parallelism was the trigger because
+vitest runs test files in separate concurrent workers sharing one database,
+so roster inserts could land between the reference suite's seeding and its
+exact-equality assertions. Reproduced pre-fix on this machine (fresh migrated
+`pca_test`, `pnpm --filter @pca/db test`: 2 failed); post-fix same conditions:
+all green. Residual pre-existing property, flagged for planning chat: the
+suite remains file-ORDER-dependent on a fresh DB (vitest orders by size on a
+cold cache, by prior duration warm; both currently run reference before the
+roster suites).
+
+**D-B (decision, not deferral):** no root-`.env` auto-load change, now or
+later — the structural guard closes the incident class; a live-pointing root
+`.env` now fails loudly at test entry.
+
+**Files touched.** `db/src/test-db-guard.ts`, `db/src/test-db-guard.test.ts`,
+`db/vitest.global-setup.ts`, `db/vitest.config.ts`, `db/package.json`,
+`db/tsconfig.build.json`, `db/tsconfig.json` (include the new global-setup),
+`apps/api/vitest.global-setup.ts`, `apps/api/vitest.global-setup.test.ts`,
+`agent-docs/test-db-guard.md`, this worklog.
+
+**Deviations from plan:** none in mechanism. Two trivially-necessary config
+touches beyond the plan's file list, called out per CLAUDE.md:
+`db/tsconfig.build.json` (emit the subpath module — part of the §6.6
+exports-triple mechanics) and `db/tsconfig.json` (typecheck the new
+global-setup, matching how `vitest.config.ts` is already listed).
+
+**For the next task:** local test runs need a shell-exported test-DB URL
+(root `.env` points at live `pca` and now fails loudly); `pca_test` on the
+Docker Postgres (port 5433) is the working local target. CI is unaffected
+(`pca_ci` passes by allowlist; E2E seeds through the 29.1-guarded
+`pnpm db:seed`). Phase-close CI run confirms both 29.1 and 29.2 per D-C.
+
+## Task 29.3 — "Held for Court" Fix, Phase A: code + tests + fixture (2026-07-14)
+
+**What was built (Mechanism A, planning-chat pinned).** The five corpus-
+evidenced held-for-court forms are now a non-terminal carve-out in the 22.4
+outcome mapper: new byte-exact `HELD_FOR_COURT_DISPOSITIONS` frozenset in
+`outcome_mapper.py` ("Held for Court", "IGJ - Held for Court", "HP - Held for
+Court", "Held for Court IC", "GJ - Held for Court"); `OutcomeMapper.map()`
+returns `None` for members exactly as for NULL (no fact, no review item); the
+`"Held for Court": "other"` row is REMOVED from `DISPOSITION_OUTCOME_MAP`
+("other" retains Transferred to Another Jurisdiction + Mistrial - Hung Jury).
+No taxonomy change (1.0.0), no new eligibility reason codes, no parser or
+envelope change (`charge_has_terminal_disposition` untouched). Fail-safe for
+unseen future variants is documented at the carve-out site: an unlisted held
+form arrives unmapped -> `unknown` (non-public) + `unmapped_disposition`
+review item.
+
+**Skip accounting (decision 6; F1 ruling).** The former single `held_skipped`
+counter is RENAMED and split: `undisposed_skipped` (null disposition) +
+`held_for_court_skipped` (bind-over forms). OLD->NEW key mapping for readers
+of historical run reports: `held_skipped` -> `undisposed_skipped`; the
+held-form population was previously invisible (counted inside
+`facts_written`). Reconciliation identity extended and asserted:
+`facts_written + undisposed_skipped + held_for_court_skipped ==
+charges_processed`. F1 contingency grep found no code consumers of the old
+key outside `build_facts.py` and its test (both updated here) plus the
+`refresh_targets.py` docstring (amended per ruling R-a — comment-only; the
+null-keyed refresh predicate is untouched and stays correct).
+
+**Closure tooling (AC 10; separability proven in the approved plan).** New
+`close_held_review_items.py` + `pipeline close-held-review-items` CLI (CI
+refusal + DATABASE_URL boundary per the prune precedent). Key-scoped, never
+ILIKE: candidate dedup keys are reconstructed via the canonical 22.1
+`build_dedup_key` from current held-form charges — the form set is IMPORTED
+from the mapper (F2: single authority, never re-listed). Scope: item types
+`unmapped_disposition` + `unmapped_charge`, status `open` only;
+`missing_disposition_date` is out of scope by construction (item_type is a
+key segment). Closes as `superseded` (COL-4a precedent); dry-run default;
+idempotent (post-confirm re-run selects zero).
+
+**AC-3 decomposition (ruling R-c, stated explicitly).** The tier-1 fixture +
+golden lock the PARSE-layer capture shape (parse behavior is intentionally
+unchanged); the FACT-layer proof lives in the tests: `test_outcome_mapper.py`
+locks all five forms -> `None` with no review item (the pinned
+no-builder-guard regression lock, plus map-disjointness and the unlisted-
+variant fail-safe test), and `test_facts_build_facts.py` seeds a held-form
+charge (seq 8) beside terminal siblings and proves no fact for the held form,
+siblings still facting, both counters, and the extended identity. New fixture
+`held_for_court_disposed_mc.txt` (disposed MC bind-over under a Final
+Disposition event, no date line, cross-court reference, terminal sibling) +
+`fixture-index.yaml` entry; golden written via `pipeline run-fixtures
+--update-goldens` (this note is the required golden-writing record):
+`tier1: match=34 diverged=0 updated=0 new=1 missing=0`. Also added
+`test_held_form_charge_sentence_is_stop`: a sentence on a held-form charge is
+a structural in-transaction STOP (no parent fact) — live corpus carries zero
+such sentences (recon).
+
+**Files touched.** `services/pipeline/src/pipeline/normalization/
+outcome_mapper.py`, `services/pipeline/src/pipeline/facts/build_facts.py`,
+`services/pipeline/src/pipeline/close_held_review_items.py` (new),
+`services/pipeline/src/pipeline/cli.py`, `services/pipeline/src/pipeline/
+collector/refresh_targets.py` (docstring only, R-a),
+`services/pipeline/tests/test_outcome_mapper.py`,
+`services/pipeline/tests/test_facts_build_facts.py`,
+`services/pipeline/tests/test_close_held_review_items.py` (new),
+`services/pipeline/tests/tier1/fixtures/held_for_court_disposed_mc.txt`
+(new), `services/pipeline/tests/tier1/goldens/held_for_court_disposed_mc.json`
+(new), `services/pipeline/tests/tier1/fixture-index.yaml`,
+`agent-docs/held-for-court-fix-runbook.md` (new),
+`agent-docs/intake/col-intake-protocol.md` (reconciliation-gate line),
+`agent-docs/intake/refresh-runbook.md` (step-8 identity), this worklog.
+
+**Deviations from plan:** none in mechanism. All four required fixes applied
+(F1 rename ruling, F2 import-not-relist, F3 pinned both review deltas in the
+runbook, F4 protocol citations — `run-fixtures --init-goldens` confirmed a
+committed protocol step, cited as such).
+
+**GOLDEN WRITE NOTE (29.3 intake, 2026-07-14, required per protocol):**
+`run-fixtures --init-goldens` over snapshot `29.3-intake-20260714T211046Z`
+wrote 2,174 absent tier-2 goldens for the new dockets; zero existing goldens
+touched; zero drift. Report `tier2-report-20260714T213043_253487Z.json`
+totals: `match=0 diverged=0 updated=0 new=2174 golden_missing=0 failed=3`
+(the known parse_failed trio).
+
+**C2 ADJUDICATION + PHASE-A ADDENDUM (2026-07-14).** The intake scan gate
+fired on a sixth held variant: "Held for Court - Hearsay" (2 charges, one MC
+docket, disposed-with-no-date, zero sentence components). Planning chat ruled
+Option 1: it joins `HELD_FOR_COURT_DISPOSITIONS` as the sixth corpus-evidenced
+entry (sourcing comment extended at the site). Tests updated: the exact-set
+lock is now six forms; the map-to-None parametrization covers all six; the
+closure suite's F2 membership spot-check is six. No new fixture — parse
+behavior is unchanged and the mapper test is the fact-layer lock (R-c
+decomposition unchanged). F2 confirmed post-addendum: the closure tool's
+scope followed automatically via the import; the form strings exist in no
+code outside the mapper set, its content-lock test, and closure-suite seed
+data (the parser's separate NON_TERMINAL_DISPOSITIONS event-routing
+vocabulary is untouched by design — parser out of scope).
+
+**Closure-count note for C3 (so nobody hunts for +2):** expected closure
+scope stays 1,004 `unmapped_disposition` + 1,002 `unmapped_charge`. The two
+hearsay charges have never been through a fact build (they entered the corpus
+after rebuild 1 and are carved out before rebuild 2), so no open review items
+exist for them and none will be generated post-addendum.
+
+**Rebuild-2 expectations (restated per the AC-4 guard pattern, post-intake
+corpus 9,932 dockets / 30,285 charges):** `undisposed_skipped=6538`,
+`held_for_court_skipped=10955` (10,953 five-form + 2 hearsay),
+`facts_written=12792` (30,285 − 6,538 − 10,955), reconcile `True`. Fresh
+counts verified before the run; drift = STOP and restate.
+
+**OPERATIONAL RECORD, PHASES B–E (2026-07-14; all pipeline invocations
+Chops-run; agent steps read-only).**
+
+- **Rebuild 1** (run `7dcb0789-2ae6-41fe-8553-34701396c87c`, recon corpus
+  7,758 dockets): `charges_processed=22865 facts_written=10347
+  undisposed_skipped=4896 held_for_court_skipped=7622`, reconcile True.
+  Keyed comparison vs baseline `7e26b002…`: outcomes only_in_old=7622
+  (exactly the five forms: 6618/522/478/2/2), only_in_new=0, content_diff=0;
+  `other` retained 155, `unknown` 188; sentence facts 0/0/0; review
+  generation deltas exactly `unmapped_disposition` −1004 and
+  `unmapped_charge` −1002, all other types unchanged, newly_inserted=0
+  (checkpoint C1, cleared).
+- **Intake** (snapshot `29.3-intake-20260714T211046Z`): staged 8388 /
+  mtime-dropped 12 / excluded 6199 / included 2177 → imported 2174 +
+  3 duplicates (known trio) → extract 2177 success → parse 2174 + 3 failed →
+  goldens new=2174, zero drift (noted above) → load 2174 loaded +
+  3 failed_envelope_loaded, supersession family 0. Corpus 7,758 → 9,932
+  dockets (4,724 CP / 5,208 MC), charges 22,865 → 30,285, zero duplicate
+  docket numbers.
+- **Scan gate + C2 adjudication:** sixth variant "Held for Court - Hearsay"
+  (2 charges) → Option 1, Phase-A addendum (noted above); six-form re-scan:
+  zero rows.
+- **Rebuild 2** (run `cc71204b-8264-4a7f-91f1-3f447cb1bd8c`):
+  `charges_processed=30285 facts_written=12792 undisposed_skipped=6538
+  held_for_court_skipped=10955`, reconcile True — exactly the restated
+  expectations. Structural-exclusion proof: 0 facts for the six held forms.
+  Review dedup held: newly_inserted=5078, all intake-docket growth.
+- **Publish:** generate run `d47dcd20-2059-46ad-92a9-6dfd3846dc23` from
+  build run `cc71204b…` (default=latest), data_range 2025-01-01..2026-07-13;
+  validate `verdict=validated` (284/227/1749/1608 rows, 0 violations);
+  publish invalidated `6ecf1fed…` in the same transaction (rollback target,
+  standing decision 2). Post-publish verification: sole published row is
+  `d47dcd20…`; zero `other`/`unknown` rows in charge AND judge aggregates;
+  `simple-assault` serves six terminal categories (sample 430) with the new
+  run id; data-coverage serves the new run id + live counts dynamically
+  (verified, not rebuilt).
+- **Queue closure (AC 10):** dry `would_close=2006` (1004
+  unmapped_disposition + 1002 unmapped_charge) → confirm `closed=2006` →
+  re-run dry `would_close=0` (idempotent). Queue state after: exactly
+  1004 + 1002 superseded; `missing_disposition_date` untouched (14,652 open,
+  by design — parser still emits the warning); the +2 hearsay non-delta is
+  explained in the closure-count note above.
+
+**SD-14 FORMAL COUNT RESTATEMENT (AC 11).** The 29.3 intake grew the corpus:
+dockets 7,758 → 9,932 (+2,174: CP 4,034 → 4,724, MC 3,724 → 5,208); charges
+22,865 → 30,285; undisposed (null-disposition) 4,896 → 6,538; held-form
+bind-overs 7,622 (five forms) → 10,955 (six forms). Fact layer on the grown
+corpus: 12,792 outcome facts / 10,578 sentence facts under run `cc71204b…`.
+Published aggregate run: `d47dcd20…` (77 charges with outcome aggregates,
+73 with sentencing, 1,170 judge-charge pairs).
+
+**AC-9 RESTATEMENT (exit-demo item 7 / DoD item 3).** Satisfied by
+STRUCTURAL-EXCLUSION proof, not by a visible distribution change: held-form
+facts are zero on the published run's build; no non-terminal category row
+exists in any published aggregate table; the demo anchor `simple-assault`
+(highest held concentration, 537 held facts at recon) serves only terminal
+outcome categories, and its expected visible change is NONE — the 29.3
+pollution was latent at the fact layer (recon finding, adjudicated framing).
+31.1's demo script and 31.4 inherit this honest framing.
+
+**For the operational phases (B–E).** The ordered Chops-run command sequence,
+the keyed-comparison SQL, the held-variant scan gate, and the closure
+sequence live in `agent-docs/held-for-court-fix-runbook.md`. Expected deltas
+are pinned to the recon corpus (7,758 dockets, baseline run `7e26b002…`) with
+the AC-4 fresh-count guard. Checkpoints C1 (post-rebuild-1 comparison), C2
+(scan gate), C3 (final report) go to planning chat before proceeding.
+Expected visible change to published distributions: NONE (structural-
+exclusion framing per AC 9; the pollution was latent at the fact layer).

@@ -175,9 +175,12 @@ pipeline build-facts
 ```
 
 New `build_run_id` over the full corpus. All intake-protocol reconciliation gates apply
-(`facts_written + held_skipped == charges_processed`, held charges produce zero facts, review-item
-dedup holds, zero duplicate docket numbers). Expect `held_skipped` to **drop or hold** vs step 0;
-a rise is an anomaly — STOP.
+(`facts_written + undisposed_skipped + held_for_court_skipped == charges_processed`, held and
+held-form charges produce zero facts, review-item dedup holds, zero duplicate docket numbers).
+Pre-29.3 run reports named the undisposed counter `held_skipped`. Expect `undisposed_skipped` to
+**drop or hold** vs step 0 (a refresh disposes pending charges); a rise is an anomaly — STOP.
+`held_for_court_skipped` may rise (newly fetched sheets can carry new bind-overs) — a drop with no
+supersession explaining it is the anomaly signal there.
 
 **Failure behavior:** any reconciliation mismatch is STOP-AND-REPORT, adjudicated in planning
 chat, never self-resolved.

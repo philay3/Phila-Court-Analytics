@@ -140,7 +140,12 @@ chat, never self-resolved:
 - disposed-charge count = outcome-fact count + explained exclusions;
 - sentence-component count (on disposed) = sentence-fact count + explained
   exclusions;
-- held charges produce **zero** outcome facts;
+- held charges produce **zero** outcome facts — both skip populations (Task
+  29.3): undisposed charges (`undisposed_skipped`; the pre-29.3 run reports
+  named this key `held_skipped`) and held-for-court bind-over forms
+  (`held_for_court_skipped`), reconciling as
+  `facts_written + undisposed_skipped + held_for_court_skipped ==
+charges_processed`;
 - the original recovered SENTINEL_COLLISION dockets show **unchanged**
   conservative judge behavior;
 - review-item dedup holds: pre-existing items are **not** multiplied; new items

@@ -3,11 +3,14 @@
 The first consumer that lands facts in the database. Reads the loaded ``parsed.*``
 corpus, applies the 22.2 charge matcher, the 22.4 outcome mapper, and the 23.1
 judge-attribution resolver (all imported UNCHANGED), and writes one
-``fact.charge_outcomes`` row per DISPOSED charge (``disposition_raw`` non-null)
-under a single new ``fact.fact_build_runs`` run. Held charges (null
-``disposition_raw``) produce NO fact and are counted; failed-parse (quarantine)
-envelopes contribute zero charges structurally (the 21.3 loader writes no
-``parsed.*`` rows for them), so they produce zero facts.
+``fact.charge_outcomes`` row per TERMINALLY DISPOSED charge under a single new
+``fact.fact_build_runs`` run. Two skip populations produce NO fact and are
+counted separately (Task 29.3 decision 6): undisposed charges (null
+``disposition_raw`` -> ``undisposed_skipped``) and held-for-court bind-overs (a
+``HELD_FOR_COURT_DISPOSITIONS`` form -> ``held_for_court_skipped``; the 22.4
+mapper owns that set — this module never re-lists it). Failed-parse
+(quarantine) envelopes contribute zero charges structurally (the 21.3 loader
+writes no ``parsed.*`` rows for them), so they produce zero facts.
 
 Run lifecycle (append-only history; a completed run is a full consistent set; a
 failed build leaves no partial facts):
@@ -217,13 +220,15 @@ def _collect_outcome_rows(
 ) -> tuple[list[dict[str, object]], dict[str, object], list[dict[str, object]]]:
     """Read the corpus and build every outcome-fact row (no writes here).
 
-    Returns ``(rows, counts, review_items)``. One row per disposed charge; held
-    charges are counted, never rowed. ``counts`` carries the run-report tallies used
-    for the completion reconciliation (facts_written + held_skipped ==
-    charges_processed; the outcome-code split equals the 22.4 mapper split over the
-    same corpus). ``review_items`` are ``review.queue_items`` payloads built via the
-    22.1 helpers (Task 23.4) for the charge / judge / outcome / attribution review
-    paths this loop already computes — the 22.x/23.1 modules are consumed unchanged.
+    Returns ``(rows, counts, review_items)``. One row per terminally disposed
+    charge; undisposed and held-for-court charges are counted, never rowed.
+    ``counts`` carries the run-report tallies used for the completion
+    reconciliation (facts_written + undisposed_skipped + held_for_court_skipped
+    == charges_processed; the outcome-code split equals the 22.4 mapper split
+    over the same corpus). ``review_items`` are ``review.queue_items`` payloads
+    built via the 22.1 helpers (Task 23.4) for the charge / judge / outcome /
+    attribution review paths this loop already computes — the 22.x/23.1 modules
+    are consumed unchanged.
     """
     charge_warnings = _load_charge_warning_codes(conn)
     dockets = _load_dockets(conn)
@@ -232,7 +237,8 @@ def _collect_outcome_rows(
     rows: list[dict[str, object]] = []
     review_items: list[dict[str, object]] = []
     charges_processed = 0
-    held_skipped = 0
+    undisposed_skipped = 0
+    held_for_court_skipped = 0
     mvp_eligible = public_eligible = judge_specific_eligible = 0
     review_needed_count = 0
     outcome_split: Counter[str] = Counter()
@@ -280,12 +286,18 @@ def _collect_outcome_rows(
 
         for charge in charges:
             charges_processed += 1
-            # Fact-creation domain: exactly one outcome fact per DISPOSED charge.
-            # A null disposition_raw is a held charge -> no fact, no row (the 22.4
-            # mapper returns None for it).
+            # Fact-creation domain: exactly one outcome fact per TERMINALLY
+            # disposed charge. The 22.4 mapper returns None for both held arms —
+            # null disposition_raw (undisposed) and a held-for-court bind-over
+            # form (Task 29.3) — so the builder only distinguishes the two for
+            # the skip accounting; the mapper stays the single authority on
+            # which values are held forms.
             outcome_result = mapper.map(charge["disposition_raw"])
             if outcome_result is None:
-                held_skipped += 1
+                if charge["disposition_raw"] is None:
+                    undisposed_skipped += 1
+                else:
+                    held_for_court_skipped += 1
                 continue
 
             sequence = int(charge["sequence"])
@@ -383,7 +395,11 @@ def _collect_outcome_rows(
     counts: dict[str, object] = {
         "charges_processed": charges_processed,
         "facts_written": len(rows),
-        "held_skipped": held_skipped,
+        # Task 29.3 decision 6: the former single `held_skipped` key is split —
+        # `undisposed_skipped` (null disposition) + `held_for_court_skipped`
+        # (bind-over forms). Historical run reports carry the old key.
+        "undisposed_skipped": undisposed_skipped,
+        "held_for_court_skipped": held_for_court_skipped,
         "mvp_eligible": mvp_eligible,
         "public_eligible": public_eligible,
         "judge_specific_eligible": judge_specific_eligible,
@@ -925,12 +941,16 @@ def _print_summary(run_id: str, counts: dict[str, object]) -> None:
     print(
         f"charges_processed={counts['charges_processed']} "
         f"facts_written={counts['facts_written']} "
-        f"held_skipped={counts['held_skipped']}"
+        f"undisposed_skipped={counts['undisposed_skipped']} "
+        f"held_for_court_skipped={counts['held_for_court_skipped']}"
     )
-    reconciles = int(counts["facts_written"]) + int(counts["held_skipped"]) == int(
-        counts["charges_processed"]
+    reconciles = int(counts["facts_written"]) + int(counts["undisposed_skipped"]) + int(
+        counts["held_for_court_skipped"]
+    ) == int(counts["charges_processed"])
+    print(
+        "reconcile facts_written+undisposed_skipped+held_for_court_skipped"
+        f"==charges_processed: {reconciles}"
     )
-    print(f"reconcile facts_written+held_skipped==charges_processed: {reconciles}")
     print(
         f"mvp_eligible={counts['mvp_eligible']} "
         f"public_eligible={counts['public_eligible']} "
