@@ -23,7 +23,11 @@ from pathlib import Path
 import psycopg
 import pytest
 
-from pipeline.load import STATUS_PARSE_FAILED, run_load
+from pipeline.fact_review_vocab import (
+    STATUS_SUPERSEDED,
+    SUPERSESSION_REGRESSION,
+)
+from pipeline.load import STATUS_PARSE_FAILED, STATUS_PARSE_SUPERSEDED, run_load
 from pipeline.seam_check import running_in_ci
 
 # The UJS docket-number shape, as a SUBSTRING probe for the hygiene assertion.
@@ -595,3 +599,369 @@ def test_guard2_rejects_non_test_dbname():
     assert _is_test_dbname("pca_test") is True
     assert _is_test_dbname("PCA_TEST") is True  # case-insensitive
     assert _is_test_dbname("pipeline_test_db") is True
+
+
+# --------------------------------------------------------------------------- #
+# Task COL-4a: docket supersession (same docket number + court, new hash)     #
+#                                                                             #
+# Fabricated docket numbers / hashes throughout, per the module header. Each  #
+# scenario loads an original envelope (hash A), then a superseding envelope   #
+# (hash B, same docket_number, different content) in a second run.            #
+# --------------------------------------------------------------------------- #
+_SHA_A = "4" + _FAKE_HASH[1:]
+_SHA_B = "5" + _FAKE_HASH[1:]
+
+
+def _load_single(loader_conn, tmp_path: Path, envelope: dict, label: str) -> str:
+    """Run one envelope through run_load in its own dirs; return stdout."""
+    env_dir = tmp_path / f"env_{label}"
+    imp_dir = tmp_path / f"imp_{label}"
+    env_dir.mkdir()
+    imp_dir.mkdir()
+    write_pair(env_dir, imp_dir, envelope)
+    run_load(env_dir, imp_dir, loader_conn)
+    return ""
+
+
+def _supersession_pair(
+    *, old_charges: list | None = None, new_charges: list | None = None
+) -> tuple[dict, dict]:
+    """(original envelope A, superseding envelope B) for one docket number."""
+    original = make_envelope(_SHA_A, record=make_record(charges=old_charges))
+    superseding = make_envelope(_SHA_B, record=make_record(charges=new_charges))
+    return original, superseding
+
+
+def _raw_status(conn, sha: str) -> str | None:
+    row = _one(
+        conn,
+        "SELECT status FROM raw.source_documents WHERE file_hash = %(sha)s",
+        {"sha": sha},
+    )
+    return None if row is None else row[0]
+
+
+def test_supersession_replaces_graph_and_keeps_old_raw_row(
+    loader_conn, tmp_path, capsys
+):
+    # AC-1: new hash + same (docket_number, court) supersedes transactionally.
+    original, superseding = _supersession_pair(
+        old_charges=[make_charge(1)],
+        new_charges=[make_charge(1), make_charge(2, offense="Theft")],
+    )
+    _load_single(loader_conn, tmp_path, original, "a")
+    capsys.readouterr()
+
+    _load_single(loader_conn, tmp_path, superseding, "b")
+    out = capsys.readouterr().out
+    assert "superseded=1" in out and "total=1" in out
+
+    # One parsed graph, linked to the NEW source document.
+    assert _count(loader_conn, "parsed.dockets") == 1
+    row = _one(
+        loader_conn,
+        """SELECT s.file_hash FROM parsed.dockets d
+           JOIN raw.source_documents s ON s.id = d.source_document_id""",
+    )
+    assert row[0] == _SHA_B
+    assert _count(loader_conn, "parsed.charges") == 2  # the NEW graph's content
+
+    # Old raw row KEPT as provenance with the superseded parse recorded;
+    # new raw row created alongside it.
+    assert _count(loader_conn, "raw.source_documents") == 2
+    assert _raw_status(loader_conn, _SHA_A) == STATUS_PARSE_SUPERSEDED
+    assert _raw_status(loader_conn, _SHA_B) == "imported"
+
+    # A growing parse is not a regression: no guard item filed.
+    assert _count(loader_conn, "review.queue_items") == 0
+
+
+def test_supersession_shrink_guard_fires_and_replacement_proceeds(
+    loader_conn, tmp_path, capsys, caplog
+):
+    # AC-2: charge-count shrink -> warning + review item; replace anyway.
+    # The dropped old charge is UNDISPOSED so only the shrink subcase fires
+    # (dropping a disposed charge would also fire disposition_loss).
+    original, superseding = _supersession_pair(
+        old_charges=[
+            make_charge(1),
+            make_charge(
+                2,
+                disposition_raw=None,
+                disposition_date=None,
+                disposition_judge_raw=None,
+                sentences=[],
+            ),
+        ],
+        new_charges=[make_charge(1)],
+    )
+    _load_single(loader_conn, tmp_path, original, "a")
+    with caplog.at_level("WARNING", logger="pipeline.load"):
+        _load_single(loader_conn, tmp_path, superseding, "b")
+
+    # Replacement proceeded despite the shrink.
+    assert _count(loader_conn, "parsed.charges") == 1
+
+    row = _one(
+        loader_conn,
+        """SELECT q.item_type, q.severity, q.status, q.reason_code,
+                  q.candidate_context, s.file_hash, q.parsed_docket_id
+           FROM review.queue_items q
+           JOIN raw.source_documents s ON s.id = q.source_document_id""",
+    )
+    assert row is not None
+    item_type, severity, status, reason_code, context, anchor_hash, docket_ptr = row
+    assert item_type == SUPERSESSION_REGRESSION
+    assert severity == "high"
+    assert status == "open"
+    assert reason_code == "review_needed"
+    assert anchor_hash == _SHA_B  # anchored to the NEW source document
+    assert docket_ptr is not None  # points at the NEW parsed docket
+    assert context["subcases"] == ["charge_shrink"]
+    assert context["old_charge_count"] == 2
+    assert context["new_charge_count"] == 1
+
+    # Hygiene: the guard warning carries hash prefixes + counts only.
+    assert "supersession regression" in caplog.text
+    assert not _DOCKET_RE.search(caplog.text)
+
+
+def test_supersession_disposition_loss_guard_fires(loader_conn, tmp_path):
+    # AC-2: a previously disposed charge now undisposed at the same sequence.
+    original, superseding = _supersession_pair(
+        old_charges=[make_charge(1), make_charge(2)],
+        new_charges=[
+            make_charge(1),
+            make_charge(
+                2,
+                disposition_raw=None,
+                disposition_date=None,
+                disposition_judge_raw=None,
+            ),
+        ],
+    )
+    _load_single(loader_conn, tmp_path, original, "a")
+    _load_single(loader_conn, tmp_path, superseding, "b")
+
+    assert _count(loader_conn, "parsed.charges") == 2  # same count: no shrink
+    row = _one(loader_conn, "SELECT candidate_context FROM review.queue_items")
+    assert row is not None
+    assert row[0]["subcases"] == ["disposition_loss"]
+    assert row[0]["lost_disposition_sequences"] == [2]
+
+
+def test_supersession_closes_out_nonterminal_review_items(loader_conn, tmp_path):
+    # AC-3 / R1: open + in_review items anchored to the superseded document
+    # close out as terminal `superseded`; already-terminal items are untouched.
+    original, superseding = _supersession_pair()
+    _load_single(loader_conn, tmp_path, original, "a")
+
+    old_doc = _one(
+        loader_conn,
+        "SELECT id FROM raw.source_documents WHERE file_hash = %(sha)s",
+        {"sha": _SHA_A},
+    )[0]
+    with loader_conn.cursor() as cur:
+        for n, status in enumerate(["open", "in_review", "resolved", "dismissed"]):
+            cur.execute(
+                """INSERT INTO review.queue_items
+                     (item_type, severity, source_document_id, reason_code,
+                      status, dedup_key)
+                   VALUES ('unmapped_charge', 'low', %(doc)s, 'review_needed',
+                           %(status)s, %(key)s)""",
+                {"doc": old_doc, "status": status, "key": f"colfoura-test-{n}"},
+            )
+    loader_conn.commit()
+
+    _load_single(loader_conn, tmp_path, superseding, "b")
+
+    with loader_conn.cursor() as cur:
+        cur.execute(
+            """SELECT dedup_key, status, parsed_docket_id FROM review.queue_items
+               WHERE source_document_id = %(doc)s ORDER BY dedup_key""",
+            {"doc": old_doc},
+        )
+        rows = cur.fetchall()
+    by_key = {key: (status, docket_ptr) for key, status, docket_ptr in rows}
+    assert by_key["colfoura-test-0"][0] == STATUS_SUPERSEDED  # was open
+    assert by_key["colfoura-test-1"][0] == STATUS_SUPERSEDED  # was in_review
+    assert by_key["colfoura-test-2"][0] == "resolved"  # terminal, untouched
+    assert by_key["colfoura-test-3"][0] == "dismissed"  # terminal, untouched
+
+
+def test_superseding_envelope_reload_is_idempotent(loader_conn, tmp_path, capsys):
+    # AC-5 subset: re-loading the superseding envelope alone -> skip, no writes.
+    original, superseding = _supersession_pair()
+    _load_single(loader_conn, tmp_path, original, "a")
+    _load_single(loader_conn, tmp_path, superseding, "b")
+    docket_before = _one(loader_conn, "SELECT id, loaded_at FROM parsed.dockets")
+    capsys.readouterr()
+
+    _load_single(loader_conn, tmp_path, superseding, "b2")
+    out = capsys.readouterr().out
+    assert "skipped_same_version=1" in out and "superseded=0" in out
+    assert _one(loader_conn, "SELECT id, loaded_at FROM parsed.dockets") == (
+        docket_before
+    )
+
+
+def test_full_dir_reload_after_supersession_is_noop(loader_conn, tmp_path, capsys):
+    # AC-5 (plan-approved stale-skip): the envelopes dir accumulates BOTH the
+    # losing and the winning envelope; a full-dir re-load must be a complete
+    # no-op — the stale envelope never supersedes the winner back (no
+    # ping-pong).
+    env_dir = tmp_path / "envelopes"
+    imp_dir = tmp_path / "imports"
+    env_dir.mkdir()
+    imp_dir.mkdir()
+    original, superseding = _supersession_pair()
+    write_pair(env_dir, imp_dir, original)
+
+    rc = run_load(env_dir, imp_dir, loader_conn)  # A loads fresh
+    assert rc == 0
+    write_pair(env_dir, imp_dir, superseding)
+    rc = run_load(env_dir, imp_dir, loader_conn)  # B supersedes A
+    assert rc == 0
+    capsys.readouterr()
+
+    before = _one(
+        loader_conn,
+        """SELECT d.id, d.loaded_at,
+                  (SELECT array_agg(s.updated_at ORDER BY s.file_hash)
+                   FROM raw.source_documents s)
+           FROM parsed.dockets d""",
+    )
+
+    rc = run_load(env_dir, imp_dir, loader_conn)  # full-dir re-load: A + B
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "skipped_stale_superseded=1" in out
+    assert "skipped_same_version=1" in out
+    assert "superseded=0" in out and "loaded=0" in out and "total=2" in out
+
+    after = _one(
+        loader_conn,
+        """SELECT d.id, d.loaded_at,
+                  (SELECT array_agg(s.updated_at ORDER BY s.file_hash)
+                   FROM raw.source_documents s)
+           FROM parsed.dockets d""",
+    )
+    assert after == before  # zero writes: ids and timestamps unchanged
+    assert _raw_status(loader_conn, _SHA_A) == STATUS_PARSE_SUPERSEDED
+
+
+def test_stale_envelope_alone_is_skipped(loader_conn, tmp_path, capsys):
+    # Stale-skip subset: the losing envelope by itself is skipped, zero writes.
+    original, superseding = _supersession_pair()
+    _load_single(loader_conn, tmp_path, original, "a")
+    _load_single(loader_conn, tmp_path, superseding, "b")
+    capsys.readouterr()
+
+    _load_single(loader_conn, tmp_path, original, "a2")
+    out = capsys.readouterr().out
+    assert "skipped_stale_superseded=1" in out and "total=1" in out
+    row = _one(
+        loader_conn,
+        """SELECT s.file_hash FROM parsed.dockets d
+           JOIN raw.source_documents s ON s.id = d.source_document_id""",
+    )
+    assert row[0] == _SHA_B  # the winner's graph is untouched
+
+
+def test_supersession_blocked_by_fact_rows_names_prune_remedy(
+    loader_conn, tmp_path, capsys, caplog
+):
+    # AC-14 + AC-6: fact rows referencing the old graph block supersession with
+    # the clear prune-naming rejection (not a raw FK violation), the old graph
+    # survives, and one failed supersession never kills the run.
+    original, superseding = _supersession_pair()
+    _load_single(loader_conn, tmp_path, original, "a")
+
+    docket_id, charge_id = _one(
+        loader_conn,
+        """SELECT d.id, c.id FROM parsed.dockets d
+           JOIN parsed.charges c ON c.docket_id = d.id LIMIT 1""",
+    )
+    with loader_conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO fact.fact_build_runs
+                 (status, parser_version, envelope_parser_version,
+                  taxonomy_version, started_at)
+               VALUES ('completed', 2, 5, 'test', now()) RETURNING id"""
+        )
+        run_id = cur.fetchone()[0]
+        cur.execute(
+            """INSERT INTO fact.charge_outcomes
+                 (build_run_id, parsed_charge_id, parsed_docket_id,
+                  outcome_category_code, attribution_method, charge_match_method,
+                  outcome_match_method, mvp_eligible, public_eligible,
+                  judge_specific_eligible, review_needed, taxonomy_version)
+               VALUES (%(run)s, %(charge)s, %(docket)s, 'conviction', 'direct',
+                       'exact', 'exact', true, true, true, false, 'test')""",
+            {"run": run_id, "charge": charge_id, "docket": docket_id},
+        )
+    loader_conn.commit()
+
+    # The superseding envelope plus an unrelated fresh docket in one run:
+    # the block is per-docket, the run continues.
+    other = make_envelope(
+        "6" + _FAKE_HASH[1:],
+        record=make_record(docket_number="CP-51-CR-0000002-2020"),
+    )
+    env_dir = tmp_path / "env_mixed"
+    imp_dir = tmp_path / "imp_mixed"
+    env_dir.mkdir()
+    imp_dir.mkdir()
+    write_pair(env_dir, imp_dir, superseding)
+    write_pair(env_dir, imp_dir, other)
+    capsys.readouterr()
+
+    with caplog.at_level("WARNING", logger="pipeline.load"):
+        rc = run_load(env_dir, imp_dir, loader_conn)
+
+    out = capsys.readouterr().out
+    assert rc == 1  # fail-loud: the blocked supersession is unhealthy
+    assert "failed_exception=1" in out and "loaded=1" in out and "total=2" in out
+    # The structural reason code travels as a log `extra`, not message text.
+    assert any(
+        getattr(record, "reason", None) == "supersession_blocked_by_fact_rows"
+        for record in caplog.records
+    )
+    assert "prune-fact-runs" in caplog.text  # the remedy is named
+    assert not _DOCKET_RE.search(caplog.text)
+
+    # Old graph fully intact; the superseding document wrote nothing.
+    row = _one(
+        loader_conn,
+        """SELECT s.file_hash FROM parsed.dockets d
+           JOIN raw.source_documents s ON s.id = d.source_document_id
+           WHERE d.docket_number = 'CP-51-CR-0000001-2020'""",
+    )
+    assert row[0] == _SHA_A
+    assert _raw_status(loader_conn, _SHA_A) == "imported"  # not marked superseded
+    assert _raw_status(loader_conn, _SHA_B) is None
+
+
+def test_failed_parse_with_new_hash_never_supersedes(loader_conn, tmp_path, capsys):
+    # A bad re-fetch (failed parse, new hash) must not delete the good parse.
+    original, _ = _supersession_pair()
+    _load_single(loader_conn, tmp_path, original, "a")
+    capsys.readouterr()
+
+    failed = make_envelope(
+        _SHA_B,
+        status="failed",
+        error={"code": "NO_TEXT_EXTRACTED"},
+    )
+    failed["record"] = None
+    _load_single(loader_conn, tmp_path, failed, "b")
+    out = capsys.readouterr().out
+    assert "failed_envelope_loaded=1" in out
+
+    row = _one(
+        loader_conn,
+        """SELECT s.file_hash FROM parsed.dockets d
+           JOIN raw.source_documents s ON s.id = d.source_document_id""",
+    )
+    assert row[0] == _SHA_A  # the good parse survives
+    assert _raw_status(loader_conn, _SHA_A) == "imported"

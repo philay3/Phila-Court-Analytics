@@ -20,12 +20,15 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from threading import Event
 
-from pipeline.collector import engine, search_engine
+from pipeline import db
+from pipeline.collector import engine, refresh_engine, search_engine
 from pipeline.collector.engine import (
     PER_REQUEST_DELAY_MAX_SECONDS,
     PER_REQUEST_DELAY_MIN_SECONDS,
     CollectParams,
 )
+from pipeline.collector.refresh_engine import RefreshParams
+from pipeline.collector.refresh_targets import count_by_court, derive_refresh_targets
 from pipeline.collector.search_engine import SearchParams
 from pipeline.collector.window import LedgerMigrationError, migrate_shared_ledger
 from pipeline.paths import inside_git_worktree
@@ -250,6 +253,122 @@ def run_collect_search(
         f"collect(search): {report['stop_reason']} — "
         f"{report['coverage_statement']}; {per_court}; "
         f"skipped_rows={report['totals']['skipped_rows']}; "
+        f"duration={report['duration_hms']}; outputs under {report['output_dir']}"
+    )
+    return 0
+
+
+def run_collect_refresh(
+    *,
+    database_url: str,
+    court: str,
+    refresh_dir: Path,
+    max_minutes: int,
+    report_dir: Path,
+    headless: bool,
+    batch_size: int,
+    batch_cooldown_seconds: int,
+    max_fetches: int | None,
+) -> int:
+    """Validate inputs, derive targets, run one refresh, print a summary.
+
+    Returns an exit code. The DB connection is opened ONLY to derive the
+    target list and is closed before the browser session starts — a multi-hour
+    fetch loop never holds a database connection. Like the other modes, tests
+    exercise the pure :func:`refresh_engine.run` loop directly and never reach
+    Playwright (or a real database — the derivation query has its own
+    Postgres-backed suite against the CI test service).
+    """
+    if max_minutes < 1 or batch_size < 1:
+        logger.error(
+            "invalid parameters",
+            extra={"max_minutes": max_minutes, "batch_size": batch_size},
+        )
+        return 2
+    if max_fetches is not None and max_fetches < 1:
+        logger.error("max-fetches must be >= 1", extra={"max_fetches": max_fetches})
+        return 2
+
+    # Same enforced floor on the operational batch cooldown as the other modes.
+    if batch_cooldown_seconds < engine.BATCH_COOLDOWN_FLOOR_SECONDS:
+        logger.error(
+            "batch-cooldown-seconds is below the enforced floor",
+            extra={
+                "batch_cooldown_seconds": batch_cooldown_seconds,
+                "floor_seconds": engine.BATCH_COOLDOWN_FLOOR_SECONDS,
+            },
+        )
+        return 2
+
+    # Refresh writes PDFs only under the refresh dir and reports only under
+    # the report dir; both must sit outside every repository. Checked inline
+    # (not via validate_output_dirs) so the error names the actual flag.
+    for label, path in (("refresh-dir", refresh_dir), ("report-dir", report_dir)):
+        if inside_git_worktree(path):
+            logger.error(
+                "refusing to write inside a git working tree",
+                extra={"dir": label},
+            )
+            return 2
+
+    # Derive the target list; the connection closes before the fetch loop.
+    with db.connect(database_url) as conn:
+        targets = derive_refresh_targets(conn, court)
+    by_court = count_by_court(targets)
+    logger.info(
+        "refresh targets derived",
+        extra={
+            "court": court,
+            "targets": len(targets),
+            "targets_mc": by_court["MC"],
+            "targets_cp": by_court["CP"],
+        },
+    )
+
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    params = RefreshParams(
+        court=court,
+        max_minutes=max_minutes,
+        refresh_dir=refresh_dir,
+        report_dir=report_dir,
+        headless=headless,
+        batch_size=batch_size,
+        batch_cooldown_seconds=batch_cooldown_seconds,
+        max_fetches=max_fetches,
+    )
+
+    abort_event = Event()
+    previous_handler = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, lambda *_a: abort_event.set())
+
+    # Imported here (not at module top) so the module stays Playwright-free to
+    # import; the optional group is only required at actual run time. Refresh
+    # reuses the ENUMERATION transport: its per-docket DocketNumber search is
+    # court-agnostic, so CP and MC targets fetch identically.
+    from pipeline.collector.transport import PlaywrightTransport
+
+    try:
+        with PlaywrightTransport(headless=headless) as transport:
+            report = refresh_engine.run(
+                params,
+                targets,
+                transport,
+                sleep=time.sleep,
+                monotonic=time.monotonic,
+                now=lambda: datetime.now(UTC),
+                jitter=_jitter,
+                abort_event=abort_event,
+            )
+    finally:
+        signal.signal(signal.SIGINT, previous_handler)
+
+    counts = report["counts"]
+    print(
+        f"collect(refresh): {report['stop_reason']} — "
+        f"{report['coverage_statement']}; "
+        f"blocked={counts['blocked']} failed={counts['failed']} "
+        f"no_results_anomalies={counts['no_results_anomalies']}; "
         f"duration={report['duration_hms']}; outputs under {report['output_dir']}"
     )
     return 0

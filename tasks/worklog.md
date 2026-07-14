@@ -5064,3 +5064,189 @@ the record field there.
   Combined collection is `--court both` — do not run two per-court sessions.
   `~/court-data/coverage-smoke-col2/` still holds an old-format smoke ledger
   (untouched, unused by production runs).
+
+## Task COL-4a — Docket Supersession in the Loader + prune-fact-runs (2026-07-13)
+
+- **What was built:** the loader supersession arm — same `(docket_number,
+  court_type_derived)` under a NEW source hash transactionally replaces the old
+  parsed graph (delete + reinsert, one per-docket transaction), keeps the old
+  `raw.source_documents` row as provenance with `status='parse_superseded'`
+  (plan-approved status-value mechanism; NO migration), and closes out the old
+  document's non-terminal review items (`open`/`in_review` →
+  terminal `superseded`; `resolved`/`dismissed` untouched — triage state never
+  transfers). Regression guard (flags, never blocks): charge-count shrink or
+  disposition loss emits a hash-prefix warning + ONE `supersession_regression`
+  review item (severity high, reason `review_needed`, anchored to the NEW source
+  document, subcases in structural `candidate_context`). Plus the R3-adjudicated
+  `pipeline prune-fact-runs` command: whole-run deletion of fact build runs
+  (run row + facts via the gate-verified build_run_id CASCADE), explicit ids or
+  `--all-completed`, dry-run by default with `--confirm` to execute, completed-
+  only, one transaction per invocation, idempotent on absent ids, CI-refusing.
+- **Files touched:** `services/pipeline/src/pipeline/load.py` (supersession +
+  stale-skip arms, guard, AC-14 pre-check, two new report categories);
+  `services/pipeline/src/pipeline/fact_review_vocab.py` (plan-approved
+  `supersession_regression` item type + `superseded` status);
+  `services/pipeline/src/pipeline/prune_fact_runs.py` (new);
+  `services/pipeline/src/pipeline/cli.py` (prune-fact-runs wiring);
+  `services/pipeline/tests/test_load.py`, `tests/test_prune_fact_runs.py` (new),
+  `tests/test_fact_review_vocab.py` (closed-set pins extended for the two
+  approved vocabulary additions — necessary companion touch, called out in the
+  completion report); `tasks/worklog.md`.
+- **Deviations from the approved plan (both surfaced + approved mid-task):**
+  (1) THE PING-PONG FINDING: envelope artifacts accumulate one file per source
+  hash, so after a supersession a full-dir re-load sees BOTH the losing and the
+  winning envelope; without a guard they would supersede each other back and
+  forth on every re-load (the loser's hash lookup misses — its parsed row is
+  gone — so it falls into the new-hash/supersession path). Fix (approved): the
+  stale-skip arm — an incoming envelope whose OWN raw row is already
+  `parse_superseded` is skipped with zero writes (`skipped_stale_superseded`,
+  healthy, ninth report category). COL-4b's refresh runbook DEPENDS on this:
+  full-dir re-load is now proven safe (tier-1 test + the no-op invariant).
+  (2) `_insert_parsed_graph` now returns the new docket id (the guard's review
+  item needs it); uuid→str conversion at the review-item builder boundary.
+- **R1 outcome (proven by test):** review.queue_items parsed FKs are SET NULL,
+  anchor is the raw doc (RESTRICT, kept) — no crash at supersession; close-out
+  semantics as above. Dedup keys incorporate `source_document_id`, so the next
+  fact build regenerates the new document's items FRESH (open) under new keys;
+  old items keep their history under the superseded doc.
+- **R3 adjudication executed:** RESTRICT FKs stay; supersession pre-checks
+  `fact.charge_outcomes` and rejects per-docket with reason
+  `supersession_blocked_by_fact_rows`, warning names `pipeline prune-fact-runs`
+  (AC-14). LATENT + BY DESIGN: the pre-existing `replaced_newer_version` arm
+  does the same delete UNGUARDED and fails loudly on the raw FK violation if
+  facts reference the graph — NOT separately fixed (adjudicated); prune-first
+  ordering is the remedy for it too (code comment at the arm).
+- **Acceptance runs (real corpus, verbatim in the completion report):** full
+  canonical re-load of all three envelope dirs = no-op
+  (`skipped_same_version=1603/3166/1871`, `failed_envelope_loaded=3` known
+  failed-parse envelopes, everything else 0, exit 0 each; DB counts bit-identical
+  to pre-task recon: 6,640 dockets / 19,156 charges / 13,624 review items /
+  61,283 fact outcomes / 0 superseded docs). NO re-fetched specimen exists
+  (envelope scan: 6,640 distinct dockets, 0 with multiple hashes), so per the
+  approved AC-9 fallback the supersession proof is the tier-1 synthetic suite
+  and the REAL-DATA supersession proof moves to COL-4b's first refresh run.
+- **For COL-4b:** refresh ordering is prune → refresh → load → rebuild →
+  aggregate → publish; `prune-fact-runs --all-completed --confirm` is the
+  pre-refresh step (worklog each prune per the adjudication); the load step is
+  now safe over the full envelopes dir (stale-skip); expect `superseded` +
+  `skipped_stale_superseded` categories in refresh load reports; supersession
+  keys on `(docket_number, court_type_derived)` and NEVER fires for failed-parse
+  envelopes (they return in the failed arm before it).
+- **Transcription incident (report reconciliation, post-completion):** the
+  completion report's third acceptance-run block was RETYPED instead of pasted
+  and corrupted in transcription (`skipped_stale_superseded` 3-for-0; categories
+  summed 1877 ≠ total=1874). The loader's actual output was correct — its
+  printed total is `sum()` over the same counts dict as the categories, so a
+  non-reconciling line is unproducible by the code and always a transcription
+  artifact. Adjudicated: dir re-run (idempotent), fresh line pasted verbatim
+  (`skipped_same_version=1871 failed_envelope_loaded=3 total=1874`, all else 0,
+  exit 0), DB counts unchanged (6,640 / 13,624 / 0 superseded). The CLAUDE.md
+  verbatim rule is HARDENED in this same commit: acceptance-run lines must be
+  copy-pasted from tool output, never retyped, and runs that write a report
+  file under ~/court-data/ are referenced by filename alongside the pasted
+  line.
+
+## Task COL-4b — Pending-Docket Refresh Mode (2026-07-13)
+
+- **What was built:** refresh collection mode (`pipeline collect --mode refresh`)
+  — a third collector mode that re-fetches exactly the loaded corpus's
+  non-terminal dockets. `collector/refresh_targets.py` derives the target list
+  from the DB (charge-level predicate: any docket with a held charge,
+  `parsed.charges.disposition_raw IS NULL`, joined to its current
+  `raw.source_documents.file_hash`; deliberately NOT the NON_TERMINAL_CASE
+  warning, which misses partially disposed dockets). `collector/refresh_engine.py`
+  is the pure injected-dependency loop: fetches via the court-agnostic
+  enumeration transport (CP and MC identically), reuses every counsel-locked
+  constant (240-min ceiling, 300s post-block cooldown, jitter band, batch
+  floor, RunGuard streaks, fail-closed classify), skips targets already in the
+  cycle's refresh dir (`already_fetched`, streak-neutral), sha256-classifies
+  every hit unchanged/changed/new against the loaded hash (PDF written in all
+  hit cases), counts a positively-identified no-results on a loaded docket as
+  a `failed` anomaly (`no_results_anomalies`) and NEVER writes window- or
+  miss-ledger entries. Report carries target counts (count-only), all buckets,
+  and two audit identities (attempted == attempt-log entries; fetched ==
+  unchanged+changed+new). CLI: `--mode refresh`, new `--refresh-dir` (required),
+  `--court` REQUIRED EXPLICITLY in refresh mode (argv-presence check — the
+  parse-level MC default is unchanged for enumerate/search), DATABASE_URL read
+  at the run boundary for refresh only; the DB connection closes before the
+  browser session starts. Docs: `agent-docs/intake/refresh-runbook.md` (the
+  prune → refresh → intake/load → build-facts → aggregate → publish cycle,
+  pinned decision 7 confirmed: generate+validate+publish required
+  same-session), a two-line [0b] exemption pointer in
+  `agent-docs/intake/col-intake-protocol.md` (Chops-approved), and
+  `agent-docs/collector-commands.md` (Chops-requested command/flag reference).
+- **Files touched:** `services/pipeline/src/pipeline/collector/refresh_targets.py`
+  (new), `collector/refresh_engine.py` (new), `collector/run.py`
+  (run_collect_refresh), `cli.py` (mode/flags/validation/dispatch);
+  `services/pipeline/tests/test_collector_refresh_targets.py` (new,
+  Postgres-backed via PIPELINE_TEST_DATABASE_URL guards),
+  `test_collector_refresh_engine.py` (new), `test_collector_refresh_cli.py`
+  (new, incl. AC-11 pins that enumerate/search never touch refresh machinery
+  or the DB layer); `agent-docs/intake/refresh-runbook.md` (new),
+  `agent-docs/intake/col-intake-protocol.md` ([0b] pointer),
+  `agent-docs/collector-commands.md` (new); `tasks/worklog.md`. No existing
+  test file edited (AC-11). No loader/enumeration/window-ledger changes.
+- **Deviations from the approved plan:** none in code. Sequencing directed by
+  Chops in-task: (1) newly collected CP dockets were intaken FIRST via the
+  standard protocol so refresh derivation would include them; (2) the refresh
+  FETCH is deferred — Chops runs it personally; the refresh cycle restarts
+  from runbook step 0 at that time; (3) because the fetch was deferred after
+  the prune, an interim build-facts + generate + validate + publish ran on the
+  grown corpus so the fact layer does not sit empty. **AC-7 (first refresh
+  end-to-end, incl. the deferred COL-4a real-data supersession proof) and
+  AC-8 (post-cycle restatement) carry to the future fetch.**
+- **CP intake (standard protocol; snapshot `COL-4b-20260713T232717Z`, manifest
+  beside it):** staged_at_freeze=5571, excluded_already_loaded=5080,
+  included=491 (all CP; includes the 3 known parse_failed re-flows —
+  hash-verified identical to the quarantine trio). Pipeline lines (verbatim):
+  `imported=488 duplicate=3 invalid=0 failed=0`;
+  `success=491 partial=0 needs_ocr_or_review=0 failed=0`;
+  `parsed=488 failed=3 skipped=0`;
+  goldens `tier2: match=0 diverged=0 updated=0 new=488 golden_missing=0
+  failed=3` (report `tier2-report-20260713T233528_780560Z.json`; failures are
+  the known parse_failed trio, matching the 28.2 precedent report exactly).
+  **GOLDEN WRITE NOTE (required per protocol): `run-fixtures --init-goldens`
+  wrote 488 absent tier-2 goldens for the new CP dockets; zero existing
+  goldens touched; zero drift.** Load (exit 0, verbatim):
+  `loaded=488 skipped_same_version=0 replaced_newer_version=0
+  refused_older_version=0 superseded=0 skipped_stale_superseded=0
+  failed_envelope_loaded=3 failed_exception=0 missing_import_record=0
+  total=491`. Corpus: 6,640 → 7,128 dockets (+488 CP; 3,709 MC / 3,419 CP),
+  charges 19,156 → 20,935, held charges 3,588 → 4,303. Zero duplicate docket
+  numbers. No build-facts after this load (Chops-directed; covered by the
+  interim rebuild below).
+- **Refresh step-0 recon (post-intake):** refresh targets 1,118
+  (686 MC / 432 CP) — supersedes the plan-time 1,012; point-in-time record
+  only (window collection continues; derivation reruns fresh at fetch time).
+  parse_failed=3 (out of refresh scope by design), parse_superseded=0.
+- **PRUNE NOTE (step 1, worklogged per the COL-4a adjudication):**
+  `prune-fact-runs --all-completed` dry run (verbatim):
+  `would_prune=9 not_found=0 outcomes_deleted=0 sentences_deleted=0
+  outcomes_selected=61283 sentences_selected=40223`; then `--confirm`
+  (verbatim): `pruned=9 not_found=0 outcomes_deleted=61283
+  sentences_deleted=40223 outcomes_selected=61283 sentences_selected=40223`.
+  Published aggregate rows for run 286b0058… verified intact post-prune
+  (247/196/1179/1129 rows). The pre-prune 61,283 was the SUM of nine retained
+  run partitions, not one run's facts.
+- **Interim rebuild + publish (Chops-directed after the fetch deferral):**
+  build-facts run `b873298d-4faa-4d6c-8192-807aa91101b0` completed —
+  facts_written=16,632, held_skipped=4,303, charges_processed=20,935
+  (reconciles: 16,632+4,303==20,935, independently re-verified against
+  parsed.charges); sentence_facts_written=8,230 == components_on_disposed;
+  review items generated_total=14,094, newly_inserted_total=470 (dedup held —
+  new items only for new dockets). generate-aggregates run
+  `c82d8be2-48cf-4280-9b11-33a7d268008f` from build_run b873298d… (default):
+  facts_loaded=16632 facts_included=3426; 261 outcome / 206 sentencing / 1354
+  judge-outcome / 1276 judge-sentencing aggregates; data_range
+  2025-01-01..2026-07-10. validate-aggregates: verdict=validated, violations=0
+  on all four tables. publish-aggregates: run c82d8be2… published, prior
+  286b0058… invalidated (superseded); exactly one active published run
+  verified post-swap, serving 261 outcome-aggregate rows.
+- **For the deferred refresh cycle (whenever Chops runs the fetch):** restart
+  at runbook step 0 — fresh recon AND fresh target derivation (counts above
+  will be stale), prune again per runbook, then Chops fetches into a fresh
+  dated `--refresh-dir`; resume at step 3 (import). The 3 parse_failed sheets
+  keep re-flowing through any intake that includes them (idempotent,
+  expected). The first refresh's load step carries the deferred COL-4a
+  real-data supersession proof; if zero sheets changed, state it and carry
+  forward per AC-7.

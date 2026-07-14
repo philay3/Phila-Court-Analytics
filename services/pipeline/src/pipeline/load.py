@@ -21,6 +21,27 @@ Idempotency (decision 3), identity = source file hash, version =
     clears the parsed children), re-upsert the raw row, reinsert the graph.
   - OLDER version -> refuse (per-docket warning); never downgrade.
 
+Supersession (Task COL-4a): a NEW source hash whose ``(docket_number,
+court_type_derived)`` matches an already-loaded docket replaces that docket's
+parsed graph — delete old graph + insert new graph in the same per-docket
+transaction, unconditionally on the new hash (parser versions gate only the
+same-hash arms above). The old ``raw.source_documents`` row is KEPT as
+provenance with ``status = 'parse_superseded'``; its non-terminal review items
+close out as ``superseded`` (triage state never transfers to the new parse). A
+regression guard flags (never blocks) a superseding parse that shrank charges
+or lost a disposition: warning + one ``supersession_regression`` review item
+anchored to the NEW source document. Supersession is blocked fail-loud when
+``fact.*`` rows still reference the old graph (RESTRICT FKs): the per-docket
+rejection names ``pipeline prune-fact-runs`` as the remedy.
+
+Stale-skip (COL-4a, plan-approved): envelope artifacts accumulate one file per
+source hash, so after a supersession a full-dir re-load still sees the LOSING
+envelope. An incoming envelope whose OWN raw row is already marked
+``parse_superseded`` is a stale artifact of a fetch that lost — skipped with
+zero writes (``skipped_stale_superseded``, healthy). Without this arm the old
+and new envelopes would supersede each other back and forth on every full-dir
+re-load; with it, a full canonical re-load after any supersession is a no-op.
+
 Failed envelopes (Q1 ruling, supersedes the original decision 4): a ``failed``
 parse produced no record, so NO ``parsed.*`` rows are written — fabricating
 NOT-NULL record values (``defendant_hash`` especially) would be dishonest data.
@@ -50,6 +71,15 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
 from pipeline.envelope import PARSE_STATUS_FAILED
+from pipeline.fact_review_vocab import (
+    REVIEW_NEEDED,
+    SEVERITY_HIGH,
+    STATUS_IN_REVIEW,
+    STATUS_OPEN,
+    STATUS_SUPERSEDED,
+    SUPERSESSION_REGRESSION,
+)
+from pipeline.normalization.review_items import build_review_item
 
 logger = logging.getLogger("pipeline.load")
 
@@ -65,12 +95,21 @@ ACCEPTED_ENVELOPE_VERSIONS: frozenset[int] = frozenset({5})
 # PARSE outcome at load time and is owned here (documented in the README note).
 STATUS_PARSE_FAILED = "parse_failed"
 
-# The seven run-report categories (Required Fix 3). Every envelope lands in
-# exactly one; the totals reconcile to the envelope count.
+# The raw.source_documents.status value for a document whose parsed graph was
+# replaced by a docket supersession (COL-4a, pinned decision 2). The row itself
+# is KEPT as provenance; only its status records the superseded parse. Same
+# ownership pattern as STATUS_PARSE_FAILED above.
+STATUS_PARSE_SUPERSEDED = "parse_superseded"
+
+# The nine run-report categories (Required Fix 3; COL-4a adds `superseded` and
+# `skipped_stale_superseded`). Every envelope lands in exactly one; the totals
+# reconcile to the envelope count.
 LOADED = "loaded"
 SKIPPED_SAME_VERSION = "skipped_same_version"
 REPLACED_NEWER_VERSION = "replaced_newer_version"
 REFUSED_OLDER_VERSION = "refused_older_version"
+SUPERSEDED = "superseded"
+SKIPPED_STALE_SUPERSEDED = "skipped_stale_superseded"
 FAILED_ENVELOPE_LOADED = "failed_envelope_loaded"
 FAILED_EXCEPTION = "failed_exception"
 MISSING_IMPORT_RECORD = "missing_import_record"
@@ -80,6 +119,8 @@ _CATEGORY_ORDER = (
     SKIPPED_SAME_VERSION,
     REPLACED_NEWER_VERSION,
     REFUSED_OLDER_VERSION,
+    SUPERSEDED,
+    SKIPPED_STALE_SUPERSEDED,
     FAILED_ENVELOPE_LOADED,
     FAILED_EXCEPTION,
     MISSING_IMPORT_RECORD,
@@ -92,6 +133,7 @@ _UNHEALTHY_CATEGORIES = (FAILED_EXCEPTION, MISSING_IMPORT_RECORD)
 # Fixed, hygiene-safe structural reason codes for per-docket rejections.
 _REASON_UNRECOGNIZED_VERSION = "unrecognized_envelope_version"
 _REASON_CONTENT_MISMATCH = "equal_version_content_mismatch"
+_REASON_SUPERSESSION_BLOCKED = "supersession_blocked_by_fact_rows"
 
 
 class _LoaderReject(Exception):
@@ -185,8 +227,12 @@ def _upsert_source_document(
 
 def _insert_parsed_graph(
     conn: psycopg.Connection, source_document_id: str, envelope: dict
-) -> None:
-    """Insert the full parsed graph for one parsed envelope (decision 5/6)."""
+) -> str:
+    """Insert the full parsed graph for one parsed envelope (decision 5/6).
+
+    Returns the new ``parsed.dockets`` id (the supersession guard's review item
+    stores it as ``parsed_docket_id``).
+    """
     record = envelope["record"]
     case = record["case"]
     docket_number = record["docket_number"]
@@ -334,6 +380,8 @@ def _insert_parsed_graph(
                 },
             )
 
+    return docket_id
+
 
 def _lookup_existing_docket(
     conn: psycopg.Connection, source_sha256: str
@@ -357,6 +405,266 @@ def _lookup_existing_docket(
     if row is None:
         return None
     return row[0], (row[1], row[2])
+
+
+def _lookup_docket_by_identity(
+    conn: psycopg.Connection, docket_number: str, court_type_derived: str | None
+) -> tuple[str, str] | None:
+    """The already-loaded docket for ``(docket_number, court)``, or None.
+
+    The supersession identity key (COL-4a pinned decision 4). Returns
+    ``(docket_id, source_document_id)`` of the OLD graph. NULL-safe on
+    ``court_type_derived`` (a non-CP/MC prefix derives None on both sides).
+    R2-verified: the loaded corpus has at most one parsed row per docket number.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT d.id, d.source_document_id
+            FROM parsed.dockets d
+            WHERE d.docket_number = %(docket_number)s
+              AND d.court_type_derived IS NOT DISTINCT FROM %(court_type_derived)s
+            """,
+            {
+                "docket_number": docket_number,
+                "court_type_derived": court_type_derived,
+            },
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    return row[0], row[1]
+
+
+def _incoming_parse_superseded(conn: psycopg.Connection, source_sha256: str) -> bool:
+    """True iff the incoming hash's own raw row is marked ``parse_superseded``.
+
+    The stale-skip predicate (plan-approved): supersession marks the losing
+    document's status, and the loser's envelope can never win again. Reached
+    only when the hash has no parsed row (the same-hash arms catch it first).
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT status FROM raw.source_documents WHERE file_hash = %(hash)s",
+            {"hash": source_sha256},
+        )
+        row = cur.fetchone()
+    return row is not None and row[0] == STATUS_PARSE_SUPERSEDED
+
+
+def _fact_rows_reference_docket(conn: psycopg.Connection, docket_id: str) -> bool:
+    """True iff any fact row still references the docket's parsed graph.
+
+    The AC-14 pre-check: fact.* -> parsed.* FKs are RESTRICT by pinned design
+    (fail-loud; run history is append-only), so a supersession delete would
+    raise. Checking ``fact.charge_outcomes`` alone is sufficient — every
+    ``fact.charge_sentences`` row has a NOT NULL parent outcome on the same
+    docket's charge. Any residual FK race still fails loudly via per-docket
+    isolation.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT EXISTS (
+              SELECT 1 FROM fact.charge_outcomes
+              WHERE parsed_docket_id = %(docket_id)s
+            )
+            """,
+            {"docket_id": docket_id},
+        )
+        row = cur.fetchone()
+        assert row is not None
+        return bool(row[0])
+
+
+def _detect_regression(
+    conn: psycopg.Connection, old_docket_id: str, envelope: dict
+) -> dict | None:
+    """Structural regression context for the guard, or None when clean.
+
+    Pinned decision 3: the new parse regressed when it has FEWER charges than
+    the old, or a previously disposed charge (non-null ``disposition_raw``) is
+    now absent or undisposed at the same sequence. Read BEFORE the old graph is
+    deleted. Everything returned is structural (counts, sequences, sub-case
+    slugs) — never docket text.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT sequence, disposition_raw IS NOT NULL AS disposed
+            FROM parsed.charges WHERE docket_id = %(id)s
+            """,
+            {"id": old_docket_id},
+        )
+        old_rows = cur.fetchall()
+    old_disposed = {row[0] for row in old_rows if row[1]}
+
+    new_charges = envelope["record"]["charges"]
+    new_disposed = {
+        charge["sequence"]
+        for charge in new_charges
+        if charge["disposition_raw"] is not None
+    }
+
+    subcases = []
+    if len(new_charges) < len(old_rows):
+        subcases.append("charge_shrink")
+    lost = sorted(old_disposed - new_disposed)
+    if lost:
+        subcases.append("disposition_loss")
+    if not subcases:
+        return None
+    return {
+        "old_charge_count": len(old_rows),
+        "new_charge_count": len(new_charges),
+        "lost_disposition_sequences": lost,
+        "subcases": subcases,
+    }
+
+
+def _close_out_review_items(conn: psycopg.Connection, source_document_id: str) -> int:
+    """Close every non-terminal review item anchored to a superseded document.
+
+    R1 mechanism (plan-approved): ``open`` and ``in_review`` items transition to
+    the terminal ``superseded`` status; ``resolved``/``dismissed`` are already
+    terminal and stay untouched. Triage state never transfers to the superseding
+    document's items — the next fact build regenerates those fresh under new
+    dedup keys (which incorporate the NEW source_document_id). Returns the count
+    of items closed out.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE review.queue_items
+            SET status = %(superseded)s
+            WHERE source_document_id = %(source_document_id)s
+              AND status IN (%(open)s, %(in_review)s)
+            """,
+            {
+                "superseded": STATUS_SUPERSEDED,
+                "source_document_id": source_document_id,
+                "open": STATUS_OPEN,
+                "in_review": STATUS_IN_REVIEW,
+            },
+        )
+        return cur.rowcount
+
+
+def _insert_regression_review_item(
+    conn: psycopg.Connection,
+    *,
+    new_source_document_id: str,
+    new_docket_id: str,
+    regression: dict,
+) -> None:
+    """Insert the guard's ``supersession_regression`` review item (AC-2).
+
+    One docket-scoped item per superseding document (both sub-cases share it,
+    distinguished by ``candidate_context`` — the 23.5 precedent), anchored to
+    the NEW source document so its dedup key is stable for THIS supersession
+    and a later third fetch re-flags independently. ``ON CONFLICT DO NOTHING``
+    keeps the write idempotent (the 23.4 insert semantics).
+    """
+    # psycopg returns uuid.UUID ids; the dedup-key builder requires strings.
+    item = build_review_item(
+        source_document_id=str(new_source_document_id),
+        item_type=SUPERSESSION_REGRESSION,
+        severity=SEVERITY_HIGH,
+        reason_code=REVIEW_NEEDED,
+        parsed_docket_id=str(new_docket_id),
+        candidate_context=regression,
+    )
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO review.queue_items
+              (item_type, severity, source_document_id, parsed_docket_id,
+               parsed_charge_id, parsed_sentence_id, entity_type, raw_value,
+               candidate_context, reason_code, status, dedup_key)
+            VALUES
+              (%(item_type)s, %(severity)s, %(source_document_id)s,
+               %(parsed_docket_id)s, %(parsed_charge_id)s, %(parsed_sentence_id)s,
+               %(entity_type)s, %(raw_value)s, %(candidate_context)s,
+               %(reason_code)s, %(status)s, %(dedup_key)s)
+            ON CONFLICT (dedup_key) DO NOTHING
+            """,
+            {**item, "candidate_context": Json(item["candidate_context"])},
+        )
+
+
+def _supersede(
+    conn: psycopg.Connection,
+    envelope: dict,
+    import_record: dict,
+    old_docket_id: str,
+    old_source_document_id: str,
+) -> str:
+    """Replace the old parsed graph with the new envelope's (COL-4a).
+
+    Runs inside the caller's per-docket transaction: guard read, review-item
+    close-out, old-graph delete (CASCADE clears children and docket_links; the
+    linker re-resolves at the next build — R4), old raw row marked
+    ``parse_superseded`` (KEPT — pinned decision 2), new raw row upserted, new
+    graph inserted. Replacement is unconditional on the new hash (pinned
+    decision 3); the guard flags, never blocks.
+    """
+    source_sha256 = envelope["source_sha256"]
+    if _fact_rows_reference_docket(conn, old_docket_id):
+        # Fail-loud by design (R3 adjudication): the RESTRICT FKs stay, and the
+        # remedy is the conscious whole-run prune, never a silent auto-prune.
+        logger.warning(
+            "supersession blocked: fact rows still reference the existing "
+            "parsed graph; prune fact build runs first "
+            "(`pipeline prune-fact-runs`), then re-run the load",
+            extra={"file": source_sha256[:16]},
+        )
+        raise _LoaderReject(_REASON_SUPERSESSION_BLOCKED)
+
+    regression = _detect_regression(conn, old_docket_id, envelope)
+    closed_out = _close_out_review_items(conn, old_source_document_id)
+
+    with conn.cursor() as cur:
+        # CASCADE clears the parsed children (and docket_links, rebuilt at the
+        # next build-facts); the raw row is deliberately kept as provenance.
+        cur.execute(
+            "DELETE FROM parsed.dockets WHERE id = %(id)s", {"id": old_docket_id}
+        )
+        cur.execute(
+            "UPDATE raw.source_documents SET status = %(status)s WHERE id = %(id)s",
+            {"status": STATUS_PARSE_SUPERSEDED, "id": old_source_document_id},
+        )
+
+    new_source_document_id = _upsert_source_document(
+        conn,
+        source_sha256=source_sha256,
+        import_record=import_record,
+        status=import_record["status"],
+        error_code=import_record["error_code"],
+    )
+    new_docket_id = _insert_parsed_graph(conn, new_source_document_id, envelope)
+
+    if regression is not None:
+        logger.warning(
+            "supersession regression: replacement proceeded; review item filed",
+            extra={
+                "file": source_sha256[:16],
+                "subcases": ",".join(regression["subcases"]),
+                "old_charge_count": regression["old_charge_count"],
+                "new_charge_count": regression["new_charge_count"],
+            },
+        )
+        _insert_regression_review_item(
+            conn,
+            new_source_document_id=new_source_document_id,
+            new_docket_id=new_docket_id,
+            regression=regression,
+        )
+
+    logger.info(
+        "superseded parsed graph",
+        extra={"file": source_sha256[:16], "review_items_closed": closed_out},
+    )
+    return SUPERSEDED
 
 
 def _norm_date(value: object) -> str | None:
@@ -611,6 +919,27 @@ def _load_one(
     existing = _lookup_existing_docket(conn, source_sha256)
 
     if existing is None:
+        # Stale-skip (COL-4a): a hash whose OWN raw row is already marked
+        # parse_superseded lost a supersession; its envelope artifact is stale
+        # and must never supersede the winner back (full-dir re-load safety).
+        if _incoming_parse_superseded(conn, source_sha256):
+            logger.info(
+                "skipping stale envelope of a superseded parse; no rows written",
+                extra={"file": source_sha256[:16]},
+            )
+            return SKIPPED_STALE_SUPERSEDED
+
+        # New source hash. Same (docket_number, court) already loaded from a
+        # DIFFERENT document -> supersession (COL-4a); otherwise a fresh load.
+        docket_number = record["docket_number"]
+        superseded = _lookup_docket_by_identity(
+            conn, docket_number, _derive_court_type(docket_number)
+        )
+        if superseded is not None:
+            old_docket_id, old_source_document_id = superseded
+            return _supersede(
+                conn, envelope, import_record, old_docket_id, old_source_document_id
+            )
         source_document_id = _upsert_source_document(
             conn,
             source_sha256=source_sha256,
@@ -630,6 +959,10 @@ def _load_one(
     if incoming > stored:
         with conn.cursor() as cur:
             # CASCADE clears the parsed children; RESTRICT to raw is untouched.
+            # KNOWN-LATENT (COL-4a adjudication): if fact.* rows still reference
+            # this graph, the RESTRICT FKs make this DELETE fail loudly — by
+            # design, not separately guarded here. The remedy is the same
+            # prune-first ordering as supersession (`pipeline prune-fact-runs`).
             cur.execute(
                 "DELETE FROM parsed.dockets WHERE id = %(id)s", {"id": docket_id}
             )
@@ -657,7 +990,7 @@ def run_load(
     """Load every ``*.json`` envelope under ``envelopes_dir`` into the DB.
 
     One transaction per docket, per-docket exception isolation, idempotent by
-    source hash + version. Prints a counts-only run report whose seven categories
+    source hash + version. Prints a counts-only run report whose nine categories
     reconcile to the envelope count. Returns 0 when the run is clean, nonzero when
     any envelope hit an unhealthy category (per-docket failure or missing import
     record) — fail-loud. Console/logs carry counts, statuses, fixed reason codes,

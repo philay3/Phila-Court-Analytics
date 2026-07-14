@@ -81,6 +81,9 @@ nothing. (Whether a later re-pull of a docket is _more complete_ than the loaded
 copy is a separate freshness-refresh policy question — deferred, not solved
 here.)
 
+**Refresh cycles (COL-4b):** the [0b] exclusion does **not** apply to refresh
+targets — see the [Refresh Cycle Runbook](refresh-runbook.md); loader supersession (COL-4a) is the sanctioned path there.
+
 The run report states both the **snapshot count** and the **post-exclusion
 (included) count**.
 

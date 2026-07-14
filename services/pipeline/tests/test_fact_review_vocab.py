@@ -32,7 +32,7 @@ def test_every_member_is_a_non_empty_lowercase_token():
             assert member == member.lower()
 
 
-def test_review_item_types_are_exactly_the_fourteen_members():
+def test_review_item_types_are_exactly_the_fifteen_members():
     assert v.REVIEW_ITEM_TYPES == {
         "unmapped_charge",
         "ambiguous_charge",
@@ -50,8 +50,10 @@ def test_review_item_types_are_exactly_the_fourteen_members():
         "additive_sentencing_category",
         # Task 23.5 plan-approved addition (unresolvable CP<->MC cross-court reference).
         "unresolvable_cross_court_reference",
+        # Task COL-4a plan-approved addition (supersession regression guard).
+        "supersession_regression",
     }
-    assert len(v.REVIEW_ITEM_TYPES) == 14
+    assert len(v.REVIEW_ITEM_TYPES) == 15
 
 
 def test_review_severities_are_exactly_high_medium_low():
@@ -60,8 +62,15 @@ def test_review_severities_are_exactly_high_medium_low():
 
 
 def test_review_item_statuses_and_default():
-    assert v.REVIEW_ITEM_STATUSES == {"open", "in_review", "resolved", "dismissed"}
-    assert len(v.REVIEW_ITEM_STATUSES) == 4
+    # `superseded` is the Task COL-4a plan-approved terminal close-out status.
+    assert v.REVIEW_ITEM_STATUSES == {
+        "open",
+        "in_review",
+        "resolved",
+        "dismissed",
+        "superseded",
+    }
+    assert len(v.REVIEW_ITEM_STATUSES) == 5
     assert v.REVIEW_ITEM_STATUS_DEFAULT == "open"
     assert v.REVIEW_ITEM_STATUS_DEFAULT in v.REVIEW_ITEM_STATUSES
 
