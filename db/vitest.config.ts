@@ -26,11 +26,11 @@ export default defineConfig({
     // Test-database guard (task 29.2): refuses a non-test DATABASE_URL before
     // any suite runs — see vitest.global-setup.ts.
     globalSetup: './vitest.global-setup.ts',
-    // DB-backed suites share one database: the reference suite asserts ref.*
-    // equals exactly the demo seeds while the roster suites insert additional
-    // ref.* rows, so parallel workers race (task 29.2, D-A ruling). Run test
-    // files sequentially; the suite is small enough that wall-clock cost is
-    // negligible.
+    // DB-backed suites share one database and create scratch databases on the
+    // same server; running test files sequentially is a DELIBERATE race fix
+    // (task 29.2, D-A ruling) — never casually revert it. (H-30.0 moved the
+    // reference suite's exact-equality assertions into their own scratch
+    // database; sequential files remain the standing decision.)
     fileParallelism: false,
   },
 });

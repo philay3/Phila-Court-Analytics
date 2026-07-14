@@ -5633,3 +5633,59 @@ the AC-4 fresh-count guard. Checkpoints C1 (post-rebuild-1 comparison), C2
 (scan gate), C3 (final report) go to planning chat before proceeding.
 Expected visible change to published distributions: NONE (structural-
 exclusion framing per AC 9; the pollution was latent at the fact layer).
+
+## Task H-30.0 — Phase-30 Hygiene: db-suite order independence + ESLint .venv ignore (2026-07-14)
+
+**What was built.** Two pre-existing hygiene fixes, first commit on phase-30.
+(1) `db/seeds/reference.test.ts` — the exact-equality suite now runs in its
+own scratch database (`pca_ref_test_<12-hex>`, sweep-seed-rows precedent):
+created off DATABASE_URL's server in `beforeAll` (120s timeout), migrated to
+latest via Migrator/FileMigrationProvider, force-dropped in robust `afterAll`
+(60s). Every assertion unchanged. `createDb()` import dropped; imports
+(`pg`, `kysely/migration`, `node:crypto`) are existing @pca/db dependencies.
+(2) `eslint.config.mjs` — `'**/.venv/'` added to the flat-config global
+ignores. Also `db/vitest.config.ts` — comment-only rewording at
+`fileParallelism: false` (setting untouched) so the rationale stays truthful
+post-isolation and carries the never-casually-revert language (approved in
+plan review).
+
+**Root cause (recon, adjudicated reframing).** The named "file-order
+dependence" is cross-invocation shared-state coupling: roster suites write
+additive-only rows into the shared test DB's `ref.*` tables; the reference
+suite asserted full-table exactness against that shared DB, so it failed
+whenever a roster file preceded it in one run (vitest's cache-driven default
+order decides who runs first) — and, stronger, failed in ANY order once
+roster rows persisted from a previous invocation. Recon reproduced: as-found
+isolation 3/6 failed; pristine-DB green suite then isolation 3/6 failed;
+pristine-DB shuffle (charge-roster before reference) 2/6 failed with the
+failure signature tracking exactly which roster file ran first. CI was green
+by file-size coincidence (no cache → larger-first → reference before both
+rosters). Local repo-root lint was red (15,511 problems, 36 finding-bearing
+files, all under `services/pipeline/.venv`, 0 outside) — CI green only
+because CI has no venv.
+
+**Post-fix (all on the deliberately dirty pca_test, adjudicated order):**
+default order 59/59 green; shuffle-seeded run with charge-roster printed
+before reference 59/59 green; reference isolation LAST 6/6 green; zero
+leaked scratch databases. Repo-root lint exit 0 in 4.88s real (was exit 1,
+28.47s).
+
+**Durable guardrail established (standing rule for all future db-suite
+work):** no db-suite file may assert exactness against the shared test
+database — exact-equality assertions get a scratch database
+(sweep/reference pattern) — and every suite must tolerate a non-pristine
+shared test DB. The shared test DB is expected to be polluted; passing on it
+is the required posture, not an accident. The rule is also stated in the
+reference.test.ts header comment.
+
+**Files touched:** `db/seeds/reference.test.ts`, `db/vitest.config.ts`
+(comment only), `eslint.config.mjs`, `tasks/worklog.md`.
+
+**Deviations from plan:** none.
+
+**For the next task:** vitest default file order is cache-driven
+(`db/node_modules/.vite/vitest/…/results.json` — failed-first, then
+slower-first; size-desc without cache) and must never be relied on. The
+recon-stage pca_test resets were recon-only; no reset is needed to run the
+db suite anymore, in any order. fileParallelism: false in db/vitest.config.ts
+remains a deliberate race fix — never casually revert.
