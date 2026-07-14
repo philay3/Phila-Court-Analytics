@@ -192,6 +192,17 @@ fixtures:
     layout_unverified: false
     synthetic: true
 
+  - filename: held_for_court_disposed_mc.txt
+    court_type: Municipal Court
+    scenario: disposed MC bind-over (Task 29.3) — held-form disposition under a
+      Final Disposition event (no date line, cross-court reference) plus a
+      terminal sibling charge that still disposes normally
+    expected_charge_count: 2
+    expected_warnings:
+      - MISSING_DISPOSITION_DATE
+    layout_unverified: false
+    synthetic: true
+
   - filename: held_multiword_event_cp.txt
     court_type: Common Pleas
     scenario: held / non-terminal (CP), multi-word event name (date token index != 2)

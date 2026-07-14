@@ -5,9 +5,11 @@ every ``parsed.dockets`` row with at least one held charge
 (``parsed.charges.disposition_raw IS NULL``). This is the charge-level
 predicate, deliberately NOT the ``NON_TERMINAL_CASE`` warning: the warning
 fires only when NO charge is disposed (envelope.py), so it misses a partially
-disposed docket — exactly the kind a refresh must not freeze. The charge-level
-predicate is definitionally aligned with the fact layer's ``held_skipped``
-semantics (a held charge is precisely a charge that can still produce a fact).
+disposed docket — exactly the kind a refresh must not freeze. The null-keyed
+predicate is aligned with the fact layer's ``undisposed_skipped`` population;
+held-FORM MC charges (Task 29.3 ``HELD_FOR_COURT_DISPOSITIONS``) are disposed
+at MC and deliberately NOT refresh targets — their continuation arrives via CP
+collection, not MC refresh.
 
 Each target carries the sha256 of its CURRENT loaded sheet
 (``raw.source_documents.file_hash`` via the docket's ``source_document_id``),

@@ -198,6 +198,14 @@ def _seed(conn: psycopg.Connection) -> None:
                 date(2025, 6, 1),
                 JUDGE_NAME,
             ),  # review_needed via warning
+            (
+                8,
+                ROSTER_STATUTE,
+                ROSTER_OFFENSE,
+                "Held for Court",
+                None,
+                None,
+            ),  # 29.3 held-form bind-over -> no fact, no review item
         ]
         charge_ids: dict[int, str] = {}
         for seq, statute, offense, disp, ddate, judge in charges:
@@ -327,15 +335,20 @@ def test_build_lifecycle_and_scenarios(build_conn):
     assert run["parser_version"] == 2 and run["envelope_parser_version"] == 5
     assert run["taxonomy_version"]
     counts = run["counts"]
-    assert counts["charges_processed"] == 7
-    assert counts["facts_written"] == 6  # seq 5 is held
-    assert counts["held_skipped"] == 1
+    assert counts["charges_processed"] == 8
+    assert counts["facts_written"] == 6  # seq 5 undisposed, seq 8 held-form
+    assert counts["undisposed_skipped"] == 1  # seq 5 (null disposition)
+    assert counts["held_for_court_skipped"] == 1  # seq 8 (29.3 bind-over form)
     assert (
-        counts["facts_written"] + counts["held_skipped"] == counts["charges_processed"]
+        counts["facts_written"]
+        + counts["undisposed_skipped"]
+        + counts["held_for_court_skipped"]
+        == counts["charges_processed"]
     )
 
     facts = _facts_by_sequence(conn)
-    # seq 5 (held) produced no fact.
+    # seq 5 (undisposed) and seq 8 (held-form) produced no fact; their terminal
+    # siblings on the same docket all did (the AC-3 fact-layer proof).
     assert set(facts) == {1, 2, 3, 4, 6, 7}
 
     # seq 1 — fully eligible.
@@ -481,6 +494,55 @@ def test_held_charge_sentence_is_stop(build_conn):
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute("SELECT count(*) AS n FROM fact.fact_build_runs")
         assert cur.fetchone()["n"] == 0
+        cur.execute("SELECT count(*) AS n FROM fact.charge_outcomes")
+        assert cur.fetchone()["n"] == 0
+        cur.execute("SELECT count(*) AS n FROM fact.charge_sentences")
+        assert cur.fetchone()["n"] == 0
+
+
+def test_held_form_charge_sentence_is_stop(build_conn):
+    conn, url = build_conn
+    _seed(conn)
+    # Attach a sentence component to the held-FORM charge (seq 8). Its charge is
+    # "disposed" to the sentence layer (non-null disposition_raw) but produces
+    # no outcome fact under the 29.3 carve-out, so the sentence has no parent
+    # fact -> SentenceIntegrityError inside the build tx -> failed run, zero
+    # facts persisted. (The live corpus carries zero such sentences — recon —
+    # so this guard is a structural lock, not an expected path.) The component
+    # is duration-CLEAN (parsed days) so the pre-write duration-drift STOP does
+    # not fire first — the no-parent-fact stop is the one under test.
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT id FROM parsed.charges WHERE sequence = 8 AND docket_id IN "
+            "(SELECT id FROM parsed.dockets)"
+        )
+        held_form_charge_id = cur.fetchone()["id"]
+        cur.execute(
+            """
+            INSERT INTO parsed.sentences
+              (charge_id, component_order, sentence_type, min_days, max_days,
+               min_assumed, sentence_date, raw_text)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                held_form_charge_id,
+                1,
+                "Probation",
+                365,
+                None,
+                False,
+                date(2025, 6, 1),
+                "Probation, Min of 12.00 Months",
+            ),
+        )
+    conn.commit()
+
+    # In-transaction STOP: the run row survives as failed; no facts persist.
+    assert build_facts(conn, url) == 1
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT status FROM fact.fact_build_runs")
+        rows = cur.fetchall()
+        assert len(rows) == 1 and rows[0]["status"] == RUN_FAILED
         cur.execute("SELECT count(*) AS n FROM fact.charge_outcomes")
         assert cur.fetchone()["n"] == 0
         cur.execute("SELECT count(*) AS n FROM fact.charge_sentences")

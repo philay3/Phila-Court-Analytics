@@ -26,6 +26,7 @@ from pipeline.aggregates.generate import (
 )
 from pipeline.aggregates.publish import run_publish_aggregates
 from pipeline.aggregates.validate import run_validate_aggregates
+from pipeline.close_held_review_items import run_close_held_review_items
 from pipeline.collector.engine import (
     BATCH_COOLDOWN_DEFAULT_SECONDS,
     BATCH_SIZE_DEFAULT,
@@ -63,6 +64,12 @@ SUBCOMMANDS = (
         "prune-fact-runs",
         "Delete fact build runs WHOLE (run row + facts via CASCADE) so parsed "
         "reloads/supersessions can proceed past the fail-loud fact FKs.",
+    ),
+    (
+        "close-held-review-items",
+        "Close (as superseded) the open held-for-court-sourced review items "
+        "whose generation the Task 29.3 mapper carve-out stopped; key-scoped, "
+        "idempotent, dry-run without --confirm.",
     ),
     (
         "generate-aggregates",
@@ -104,6 +111,7 @@ IMPLEMENTED_COMMANDS = frozenset(
         "load",
         "build-facts",
         "prune-fact-runs",
+        "close-held-review-items",
         "generate-aggregates",
         "validate-aggregates",
         "publish-aggregates",
@@ -335,6 +343,16 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Actually delete. Without it the command is a DRY RUN that "
                     "reports the selection and writes nothing."
+                ),
+            )
+        if name == "close-held-review-items":
+            subparser.add_argument(
+                "--confirm",
+                action="store_true",
+                help=(
+                    "Actually close (open -> superseded). Without it the command "
+                    "is a DRY RUN that reports the selection counts and writes "
+                    "nothing."
                 ),
             )
         if name == "generate-aggregates":
@@ -994,6 +1012,28 @@ def main(argv: list[str] | None = None) -> int:
                 all_completed=args.all_completed,
                 confirm=args.confirm,
             )
+    if args.command == "close-held-review-items":
+        if running_in_ci():
+            logger.error(
+                "close-held-review-items mutates review-queue triage state in the "
+                "database and must never run in a CI environment; refusing (CI "
+                "runs only the synthetic closure tests against its own Postgres "
+                "service)",
+                extra={"command": args.command},
+            )
+            return 2
+        # DATABASE_URL read at the run boundary (never at import, never logged).
+        # No salt: the closure reads structural anchors and statuses only.
+        database_url = os.environ.get("DATABASE_URL", "")
+        if not database_url.strip():
+            logger.error(
+                "DATABASE_URL is required to close held review items; set it in "
+                "the environment (its value is never printed or written)",
+                extra={"command": args.command},
+            )
+            return 2
+        with db.connect(database_url) as conn:
+            return run_close_held_review_items(conn, confirm=args.confirm)
     if args.command == "generate-aggregates":
         if running_in_ci():
             logger.error(

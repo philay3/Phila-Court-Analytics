@@ -2,7 +2,9 @@
 
 Covers every outcome category the approved exact-match table yields, the
 unmapped -> ``unknown`` + review path, the held-charge carve-out (a held charge
-yields no fact and no review item), the no-fuzzy-match rule, the AC-5 truncated-
+yields no fact and no review item — both the null arm and the Task 29.3
+``HELD_FOR_COURT_DISPOSITIONS`` byte-exact bind-over forms), the no-fuzzy-match
+rule, the AC-5 truncated-
 form hygiene assertion, taxonomy-version stamping, the construction-time code /
 public checks, dedup-key stability + parsed-UUID exclusion, and the real-taxonomy
 loader. All fixtures are synthetic or standardized CPCMS disposition phrases; no
@@ -17,6 +19,7 @@ from pipeline import fact_review_vocab as fv
 from pipeline.normalization.outcome_mapper import (
     DISPOSITION_OUTCOME_MAP,
     ENTITY_DISPOSITION,
+    HELD_FOR_COURT_DISPOSITIONS,
     OUTCOME_UNKNOWN,
     OutcomeMapper,
     OutcomeMappingResult,
@@ -222,6 +225,58 @@ def test_held_predicate_true_only_when_all_terminal_fields_absent() -> None:
 def test_terminal_charge_is_not_held(charge: dict[str, object]) -> None:
     assert charge_has_terminal_disposition(charge) is True
     assert is_held_charge(charge) is False
+
+
+# --- held-for-court carve-out (Task 29.3, Mechanism A) --------------------------
+# This parametrized lock is the pinned no-builder-guard substitute: all six
+# byte-exact bind-over forms take the held arm — no fact, no review item.
+# ("Held for Court - Hearsay" joined at the C2 intake-scan adjudication.)
+
+
+@pytest.mark.parametrize("raw", sorted(HELD_FOR_COURT_DISPOSITIONS))
+def test_every_held_form_maps_to_none_with_no_review(
+    mapper: OutcomeMapper, raw: str
+) -> None:
+    result = mapper.map(raw)
+    assert result is None
+    assert (
+        build_outcome_review_item(result, source_document_id="doc-1", charge_sequence=1)
+        is None
+    )
+
+
+def test_held_forms_are_exactly_the_six_pinned_variants() -> None:
+    assert HELD_FOR_COURT_DISPOSITIONS == frozenset(
+        {
+            "Held for Court",
+            "IGJ - Held for Court",
+            "HP - Held for Court",
+            "Held for Court IC",
+            "GJ - Held for Court",
+            "Held for Court - Hearsay",
+        }
+    )
+
+
+def test_held_forms_absent_from_the_exact_match_table() -> None:
+    # "Held for Court" was REMOVED from the map (it is not an outcome) and the
+    # two sets must stay disjoint — a form in both would shadow the carve-out.
+    assert "Held for Court" not in DISPOSITION_OUTCOME_MAP
+    assert not HELD_FOR_COURT_DISPOSITIONS & set(DISPOSITION_OUTCOME_MAP)
+
+
+def test_unlisted_held_variant_falls_through_to_unknown_fail_safe(
+    mapper: OutcomeMapper,
+) -> None:
+    # DESIGNED fail-safe: an unseen future bind-over variant is byte-exact-absent
+    # from the carve-out set, so it routes unmapped -> `unknown` (never public)
+    # + one review item — it cannot reach public aggregates silently.
+    result = mapper.map("BOC - Held for Court")
+    assert result is not None
+    assert result.mapped is False
+    assert result.outcome_code == OUTCOME_UNKNOWN
+    assert result.public_eligible is False
+    assert result.review_needed is True
 
 
 # --- no fuzzy matching: exact-match only (AC 2) --------------------------------
