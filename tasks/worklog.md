@@ -5392,3 +5392,66 @@ Sprint-2 demo seeds, but the roster test files seed roster rows into the
 same database in parallel vitest workers — on a fresh migrated DB this
 machine reproduces the failure while 2-core CI runners win the race and stay
 green. It fails against any long-lived DB (`pca_test`, live) regardless.
+
+## Task 29.2 — Test-Database Guard (2026-07-14)
+
+**What was built.** Structural test-dbname guard closing the 28.2 incident
+class: both vitest global-setups now assert a test-database name BEFORE any
+connection or write. New pure module `db/src/test-db-guard.ts`
+(`isTestDbName`, `dbNameFromUrl`, `assertTestDatabaseUrl`), exported via the
+new `@pca/db/test-db-guard` subpath (forbidden-scan precedent — off the main
+runtime surface; conditional-exports triple in `db/package.json`, emit added
+to `db/tsconfig.build.json`). Pattern per plan-review ruling: dbname contains
+`test` (case-insensitive, the `PIPELINE_TEST_DATABASE_URL` convention) OR is
+exactly `pca_ci`; fail-closed on a missing/unparseable dbname. Refusal
+messages name the dbname ONLY — never the URL (credential hygiene, public CI
+logs). Wired into `apps/api/vitest.global-setup.ts` ahead of the direct-call
+seeding (the vector 29.1 left open) and into a NEW `db/vitest.global-setup.ts`
+covering the seed/roster/sweep suites. A throwing globalSetup aborts the whole
+run, so per-test writes are blocked at entry. Per-path coverage of every DB
+test entry path recorded in `agent-docs/test-db-guard.md` (E2E → 29.1
+data-shaped seed-guard; pipeline pytest → pre-existing guard; shared/web/
+taxonomy/ui → no DB access).
+
+**Deliberate-failure tests (AC 3).** `db/src/test-db-guard.test.ts` (pure):
+live `pca` rejected; `pca_test`/`pca_pipeline_test`/`pca_ci`/
+`pca_sweep_test_<hex>` pass; fail-closed cases; message-hygiene assertions
+(no credentials/host/URL). `apps/api/vitest.global-setup.test.ts`: invokes
+the REAL global-setup with a live-shaped dbname on a closed port — rejected
+with the guard message (proving pre-connection blocking); `pca_ci` clears the
+guard and proceeds to a connection error (CI-name pass proven locally).
+
+**reference.test.ts race fix (D-A: FOLD IN).** `fileParallelism: false` in
+`db/vitest.config.ts`. Mechanism: `seeds/reference.test.ts` asserts `ref.*`
+equals exactly the demo seeds while the roster suites insert additional
+`ref.*` rows into the SAME database; parallelism was the trigger because
+vitest runs test files in separate concurrent workers sharing one database,
+so roster inserts could land between the reference suite's seeding and its
+exact-equality assertions. Reproduced pre-fix on this machine (fresh migrated
+`pca_test`, `pnpm --filter @pca/db test`: 2 failed); post-fix same conditions:
+all green. Residual pre-existing property, flagged for planning chat: the
+suite remains file-ORDER-dependent on a fresh DB (vitest orders by size on a
+cold cache, by prior duration warm; both currently run reference before the
+roster suites).
+
+**D-B (decision, not deferral):** no root-`.env` auto-load change, now or
+later — the structural guard closes the incident class; a live-pointing root
+`.env` now fails loudly at test entry.
+
+**Files touched.** `db/src/test-db-guard.ts`, `db/src/test-db-guard.test.ts`,
+`db/vitest.global-setup.ts`, `db/vitest.config.ts`, `db/package.json`,
+`db/tsconfig.build.json`, `db/tsconfig.json` (include the new global-setup),
+`apps/api/vitest.global-setup.ts`, `apps/api/vitest.global-setup.test.ts`,
+`agent-docs/test-db-guard.md`, this worklog.
+
+**Deviations from plan:** none in mechanism. Two trivially-necessary config
+touches beyond the plan's file list, called out per CLAUDE.md:
+`db/tsconfig.build.json` (emit the subpath module — part of the §6.6
+exports-triple mechanics) and `db/tsconfig.json` (typecheck the new
+global-setup, matching how `vitest.config.ts` is already listed).
+
+**For the next task:** local test runs need a shell-exported test-DB URL
+(root `.env` points at live `pca` and now fails loudly); `pca_test` on the
+Docker Postgres (port 5433) is the working local target. CI is unaffected
+(`pca_ci` passes by allowlist; E2E seeds through the 29.1-guarded
+`pnpm db:seed`). Phase-close CI run confirms both 29.1 and 29.2 per D-C.

@@ -8,5 +8,5 @@
     "outDir": "dist",
     "rootDir": "."
   },
-  "include": ["src/index.ts"]
+  "include": ["src/index.ts", "src/test-db-guard.ts"]
 }

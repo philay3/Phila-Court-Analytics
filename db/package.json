@@ -13,6 +13,11 @@
       "types": "./dist/src/index.d.ts",
       "pca-source": "./src/index.ts",
       "default": "./dist/src/index.js"
+    },
+    "./test-db-guard": {
+      "types": "./dist/src/test-db-guard.d.ts",
+      "pca-source": "./src/test-db-guard.ts",
+      "default": "./dist/src/test-db-guard.js"
     }
   },
   "files": [
