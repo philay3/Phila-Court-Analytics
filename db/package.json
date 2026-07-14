@@ -24,7 +24,8 @@
     "migrate:up": "tsx --conditions pca-source --env-file-if-exists=../.env src/migrate.ts up",
     "migrate:down": "tsx --conditions pca-source --env-file-if-exists=../.env src/migrate.ts down",
     "migrate:status": "tsx --conditions pca-source --env-file-if-exists=../.env src/migrate.ts status",
-    "seed": "pnpm --filter @pca/taxonomy run generate && tsx --conditions pca-source --env-file-if-exists=../.env seeds/run.ts",
+    "seed": "pnpm --filter @pca/taxonomy run generate && tsx --conditions pca-source --env-file-if-exists=../.env scripts/seed-guard.ts && tsx --conditions pca-source --env-file-if-exists=../.env seeds/run.ts",
+    "sweep:seeds": "tsx --conditions pca-source scripts/sweep-seed-rows-cli.ts",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"

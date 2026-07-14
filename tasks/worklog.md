@@ -5250,3 +5250,145 @@ the record field there.
   expected). The first refresh's load step carries the deferred COL-4a
   real-data supersession proof; if zero sheets changed, state it and carry
   forward per AC-7.
+
+## Operational intake — April 2025 window collection (2026-07-14)
+
+Standard COL Intake Protocol run over the collector drop zone after window
+collection reached 2025-05-01 (MC) / late April (CP). No code changes; all
+artifacts under `~/court-data/`. Counts only below; all pipeline lines pasted
+verbatim from tool output.
+
+- **Step-0 recon (pre-intake baseline):** parsed.dockets=7,128
+  (3,419 CP / 3,709 MC), parsed.charges=20,935, held=4,303,
+  duplicate docket numbers=0; fact run `b873298d…` (16,632 outcomes);
+  published aggregate run `c82d8be2…`.
+- **[0] Freeze + [0b] exclusion (snapshot
+  `apr2025-window-intake-20260714T032507Z`, manifest beside it):**
+  `staged_at_freeze=6202`, `mtime_guard_dropped=0`,
+  `excluded_already_loaded=5569`, `included=633` (618 CP / 15 MC; includes
+  the 3 known parse_failed re-flows).
+- **Import (verbatim):** `imported=630 duplicate=3 invalid=0 failed=0`
+  (duplicates = the byte-identical parse_failed trio, as in prior intakes).
+- **Extract (verbatim):** `success=633 partial=0 needs_ocr_or_review=0 failed=0`
+  (dir `extracted-intake-apr2025-20260714/`).
+- **Parse (verbatim):** `parsed=630 failed=3 skipped=0`
+  (dir `envelopes-intake-apr2025-20260714/`; failures are the known trio).
+- **GOLDEN WRITE NOTE (required per protocol):** `run-fixtures --init-goldens`
+  wrote 630 absent tier-2 goldens for the new dockets; zero existing goldens
+  touched; zero drift. Report `tier2-report-20260714T033225_272264Z.json`
+  totals: `match=0 diverged=0 updated=0 new=630 golden_missing=0 failed=3`.
+- **Load (exit 0, verbatim):** `loaded=630 skipped_same_version=0
+  replaced_newer_version=0 refused_older_version=0 superseded=0
+  skipped_stale_superseded=0 failed_envelope_loaded=3 failed_exception=0
+  missing_import_record=0 total=633`. Reconciles with import/parse
+  (630 + 3 == 633).
+- **Corpus:** 7,128 → 7,758 dockets (+615 CP → 4,034; +15 MC → 3,724),
+  charges 20,935 → 22,865, held 4,303 → 4,896. Zero duplicate docket numbers.
+- **INCIDENT (operator, self-caused, remediated): build-facts ran twice.**
+  The second invocation was issued only to re-display summary lines; each
+  invocation writes a fresh run, so two identical partitions existed
+  (`6204741e…` then `7e26b002…`, both completed, 17,969 outcomes / 9,240
+  sentence facts each — deterministic over the same corpus). Review-item
+  dedup held across the pair: first run `newly_inserted=712`, second run
+  `generated_total=14806` / `newly_inserted_total=0`. Remediation: the
+  redundant FIRST run was pruned with the sanctioned tool. Dry run
+  (verbatim): `would_prune=1 not_found=0 outcomes_deleted=0
+  sentences_deleted=0 outcomes_selected=17969 sentences_selected=9240`;
+  confirm (verbatim): `pruned=1 not_found=0 outcomes_deleted=17969
+  sentences_deleted=9240 outcomes_selected=17969 sentences_selected=9240`.
+  Post-prune: 2 runs remain (`b873298d…` + `7e26b002…`), 34,601 outcomes
+  total. Lesson recorded: never re-run a state-writing pipeline command to
+  re-show its output; read the run row's `counts` jsonb instead.
+- **Fact build (kept run `7e26b002-cb66-4712-bae2-361c7bc1466c`), counts from
+  the run row:** `facts_written=17969 held_skipped=4896
+  charges_processed=22865 reconciles=true` (17,969 + 4,896 == 22,865 ==
+  parsed.charges, independently verified). Console (verbatim):
+  `sentence_facts_written=9240 components_on_disposed=9240` and
+  `reconcile sentence_facts==components_on_disposed: True`.
+- **Aggregates:** generate-aggregates run
+  `6ecf1fed-0b73-4cb8-bf50-2d8d213f1fa7` from build run `7e26b002…`
+  (default=latest); console tail (verbatim): `data_range:
+  2025-01-01..2026-07-13`. validate-aggregates (verbatim):
+  `verdict=validated`; `charge_outcome_aggregates: rows_checked=274
+  violations=0`; `charge_sentencing_aggregates: rows_checked=213
+  violations=0`; `judge_outcome_aggregates: rows_checked=1510 violations=0`;
+  `judge_sentencing_aggregates: rows_checked=1424 violations=0`.
+  publish-aggregates (verbatim): `publish-aggregates run=6ecf1fed-0b73-4c
+  published` / `prior published run c82d8be2-48cf-42 invalidated
+  (superseded)`. Exactly one active published run verified post-swap.
+- **Post-publish spot check:** public charge-results endpoint serves
+  `aggregateRunId=6ecf1fed-0b73-4cb8-bf50-2d8d213f1fa7`,
+  `lastRefreshed=2026-07-14T03:38:13.293Z`, dateRange end `2026-07-13`
+  (sample: retail-theft outcomes sampleSize=145).
+- **For the next cycle:** the 3 parse_failed sheets re-flowed idempotently
+  again (expected; remedy remains parser work). The deferred COL-4b refresh
+  cycle (AC-7/AC-8) is unaffected; held-charge count for fresh refresh
+  derivation is now 4,896 at this build.
+
+## Task 29.1 — Seed Sweep (2026-07-14)
+
+**What was built.** Registry-driven sweep tooling for the live database:
+`db/scripts/sweep-seed-rows.ts` (core: interlocks + deletes + report, one
+transaction) and `db/scripts/sweep-seed-rows-cli.ts` (CLI: CI refusal before
+any connection, mandatory explicit `--database <name>` matched against
+`current_database()`, dry-run default with `--confirm` to execute). Targets
+are imported from the `db/seeds/` registry — `JUDGE_SEEDS` slugs and both
+run UUID constants (`SEED_PUBLISHED_RUN_ID`, `SEED_UNPUBLISHED_RUN_ID`) —
+never name patterns. Per plan review D1 the unpublished decoy run is swept
+along with the invalidated seeded published run. Demo charges and their
+aliases are retained (no statement touches them); fake-judge aliases are
+deleted explicitly so the count is reported rather than hidden in the FK
+cascade. Dry run executes the same deletes and rolls back via a sentinel, so
+would-delete counts are exact. Interlocks (any violation = abort + full
+rollback): zero fact.* rows referencing fake judges; no judge-aggregate rows
+outside the registry runs referencing fake judges; the seeded published run
+must be invalidated; no registry run may be the active published run (F1).
+
+**SD-3 resolution (plan review D2): refuse-via-guard.**
+`db/scripts/seed-guard.ts` now runs before `seeds/run.ts` in the `db:seed`
+package script and refuses (exit 2) when the target database contains real
+corpus data (`raw.source_documents` or `fact.fact_build_runs` nonempty);
+unmigrated targets get a run-migrations-first refusal (F2). The seed scripts
+in `db/seeds/` are byte-identical — only invocation wiring changed. Without
+the guard, `db:seed` against the post-sweep live DB would re-insert the
+three fake judges (reference transaction commits first) and then fail on the
+active-published unique index.
+
+**Rollback-target surrender (Sprint 7 SD 2, stated per AC 3):** deleting the
+invalidated seeded aggregate run `5eedda7a-0000-4000-8000-000000000001`
+deliberately surrenders it as a rollback target. Once 29.3 republishes, real
+runs are each other's rollback targets under the existing published-run
+model.
+
+**Files touched:** `db/scripts/sweep-seed-rows.ts`,
+`db/scripts/sweep-seed-rows-cli.ts`, `db/scripts/seed-guard.ts`,
+`db/tests/sweep-seed-rows.test.ts`, `db/package.json` (seed guard wiring +
+`sweep:seeds` script), `db/tsconfig.json` (add `scripts/` to include),
+`agent-docs/seed-sweep-runbook.md`, this worklog.
+
+**Tests.** `db/tests/sweep-seed-rows.test.ts`: CLI CI refusal proven by
+spawning the real CLI with `CI=1` and a bogus `DATABASE_URL` (refusal
+precedes any connection); `--database` mismatch and missing-arg refusals;
+guard verdicts for unmigrated / clean / real-corpus databases; F1 refusal
+while the seeded run is still active-published; dry-run exactness;
+confirmed-sweep deletion + retention (demo charges/aliases by before/after
+snapshot, full judge roster, simulated active run); second-run no-op. The
+behavior tests build a scratch database (`pca_sweep_test_<hex>` prefix per
+F3c, force-dropped in afterAll) on the connected server, migrated
+programmatically and seeded via the imported seed functions; they skip
+LOUDLY when `DATABASE_URL` points at the live `pca` database (F3a).
+
+**Deviations from plan:** none in scope. Two test-shape adjustments during
+implementation: the simulated publish swap must invalidate the seeded run
+BEFORE inserting the new published run (partial unique index allows one
+active row), and demo-alias retention is asserted by before/after snapshot
+because the 22.2 roster task adds `DEMO_ALIAS_ADDITIONS` to demo charges.
+
+**For the next task (29.2, pinned recon input confirmed at plan review):**
+db-package and API vitest configs auto-load the root `.env` — the 28.2
+incident class. Separately, a PRE-EXISTING latent flake surfaced (not fixed,
+out of scope): `db/seeds/reference.test.ts` asserts ref.* equals exactly the
+Sprint-2 demo seeds, but the roster test files seed roster rows into the
+same database in parallel vitest workers — on a fresh migrated DB this
+machine reproduces the failure while 2-core CI runners win the race and stay
+green. It fails against any long-lived DB (`pca_test`, live) regardless.
