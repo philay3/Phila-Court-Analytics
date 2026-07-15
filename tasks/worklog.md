@@ -6293,3 +6293,90 @@ mention (line 653) — out of the repo; fix whenever the sprint plans are
 published post-launch. The trio's remaining relative links point at real
 source paths and were target-verified; content rewrites (including any
 prose staleness in the v1 docs) remain 31.2+.
+
+## Task 31.2 — Submission Package (2026-07-15)
+
+**What was built.** `README.md` rewritten to the adjudicated outline: what
+the product is and is not (guarded-phrase framing only); the launch MODEL
+with no deployed claim (ruling 3a — the live-URL/status line is a named 31.3
+gate item); a what-ships honesty section stating precisely what a fresh
+local boot yields (ruling 3b); paragraph-level architecture; a
+getting-started sequence proven by the dry run; workspace layout; testing;
+a documentation map into the consolidated docs/ tree; limitations and
+future-work links; privacy and responsible use.
+`docs/known-limitations.md` (new): consolidation-ONLY launch-facing summary
+drawn from the parser proof-of-concept report, the normalization/attribution
+report, and the served methodology/data-coverage copy — every section names
+its sources; construction statements only (no corpus counts, no run IDs
+anywhere in the three docs); bluntness preserved (no NER-grade name
+detection, OCR unimplemented, quarantined unsupported-format class,
+exclusion-not-correction). `docs/future-work.md` (new): ten items, each with
+its named landing/trigger — the six plan items plus the four Phase 30 queue
+additions; the stale-run housekeeping item is described mechanically with no
+run IDs; sprint-plan publication carries the consolidated-tree path-reference
+note (the known stale `agent-docs` string in the untracked sprint-5 plan).
+
+**§6.5 attachment shape (ruling 3b) confirmed at write time.** The aggregate
+seed registry attaches every fabricated distribution to demo charge slugs
+and to `judge-testina-placeholder` / `judge-samuel-seeddata` only;
+`judge-fakename-example` deliberately carries zero aggregate rows; no real
+roster judge appears. No violation to adjudicate.
+
+**Screenshots (AC 5): SKIPPED per the Context ruling** — recorded here, not
+implemented.
+
+**Fresh-clone dry run (pins 6–7, rulings 1–2).** Pre-check found ports
+3000/3001 occupied → STOP per required fix 1; the human freed them; re-check
+clean before proceeding. Clone of committed phase-31 HEAD into a scratchpad
+directory named `pca-freshclone` outside the repo (distinct Compose
+project/volume namespace by directory basename — docker-compose.yml has no
+`name:` key), with the rewritten README + both new docs overlaid (ruling 2).
+Isolation overrides used and disclosed: `POSTGRES_PORT=5434` plus matching
+`DATABASE_URL` port in the clone's `.env` — both documented knobs; a fresh
+user on a clean machine needs neither. Documented path executed: `pnpm
+install` → `cp .env.example .env` → `pnpm db:up` (clone container healthy on
+5434) → `pnpm db:migrate:latest` (8 migrations) → `pnpm db:seed` (guard
+allowed the empty DB; demo charges, fake seed judges, real rosters, and the
+synthetic runs seeded — matching the README's fresh-boot description).
+**Defect surfaced (doc-fix only; midpoint checkpoint not triggered):**
+`pnpm dev` alone 500s on the web app on a fresh clone — `@pca/shared`
+resolves to `dist/`, which does not exist until a build (the API boots fine;
+its dev script runs from source via the `pca-source` condition). Fix:
+`pnpm build:packages` added to the README boot sequence before `pnpm dev`,
+and the Generated-artifacts paragraph corrected (root `test` runs generate
+first; root `typecheck` starts with `build:packages`). Per ruling 2 the
+corrected README was re-synced into the clone and the affected steps re-run
+against the corrected text: `build:packages` → `pnpm dev` → API `/health`
+ok, web `/` and `/methodology` 200, charge search serving roster + demo
+charges, judge search serving the fake seed judge, charge result page 200.
+Env audit: every env var each deployable reads is either in a committed
+`.env.example` or optional-with-default (API `PORT` 3001 / `HOST` 127.0.0.1
+/ `LOG_LEVEL` info in `apps/api/src/env.ts`; the web app ran with no `.env`
+at all); `docs/local-setup.md` and `.env.example` needed NO changes.
+Teardown per ruling 1: dev servers stopped and ports verified freed;
+`docker compose down` in the clone (never `-v`); `docker volume ls` captured
+showing both volumes as distinct entries; then
+`docker volume rm pca-freshclone_postgres-data` by explicit name; the live
+container and `pca_postgres-data` verified untouched. No dry-run step
+touched the live database.
+
+**Copy gate.** One-off `scanPublicCopy` invocation (31.1/31.2a mechanism:
+built `@pca/shared` dist over whitespace-collapsed doc text) across
+`README.md`, `docs/known-limitations.md`, `docs/future-work.md`: CLEAN, 0
+violations (verbatim output in the completion report). No permanent doc
+walker was added.
+
+**Files touched:** `README.md` (rewrite), `docs/known-limitations.md` (new),
+`docs/future-work.md` (new), `tasks/worklog.md`. `docs/local-setup.md` and
+`.env.example` were in the allowed list but are untouched — the dry run
+proved no defect in either.
+
+**Deviations from plan:** none beyond the anticipated in-scope README fixes
+above; the port-collision STOP and resume ran exactly per required fix 1.
+
+**For the next task:** 31.3 owns the README's live-URL/status line (the
+Launch model section states the model and makes no deployed claim). The
+documented boot sequence now includes `pnpm build:packages`; any 31.3 change
+to local boot must keep README/dry-run parity. Untracked posture unchanged:
+`git ls-files --others --exclude-standard` over the repo = exactly the four
+sprint-4..7 plan files under `docs/planning/`.
