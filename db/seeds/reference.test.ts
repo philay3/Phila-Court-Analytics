@@ -1,22 +1,46 @@
-import type { Kysely } from 'kysely';
+import { randomBytes } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { Kysely, PostgresDialect, sql } from 'kysely';
+import { FileMigrationProvider, Migrator } from 'kysely/migration';
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { createDb } from '../src/connection.js';
 import type { Database } from '../src/types.js';
 import { CHARGE_SEEDS, JUDGE_SEEDS } from './reference-data.js';
 import { seedReference, type SeedResult } from './reference.js';
 
-// Requires the local database: `pnpm db:up`, migrations applied
-// (`pnpm db:migrate:latest`), and DATABASE_URL (root .env is auto-loaded via
-// vitest.config.ts). Skipped when DATABASE_URL is unset so the suite stays
-// runnable without a database.
-const hasDb = Boolean(process.env.DATABASE_URL);
+const dbPackageDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// Exact-equality suite (H-30.0): the assertions below compare entire ref.*
+// tables against the demo seeds, which is only valid with sole tenancy — the
+// roster suites legitimately add rows to the shared test database, and rows
+// persist across invocations (seeds are additive-only). So this suite runs in
+// a SCRATCH database created on the connected server (sweep-seed-rows
+// precedent; identifiable prefix so a leaked database from a crashed run is
+// recognizable), migrated to latest and force-dropped in afterAll. Standing
+// rule: no db-suite file may assert exactness against the shared test
+// database — exactness assertions get a scratch database; everything else
+// must tolerate a non-pristine shared test DB.
+//
+// Skipped when DATABASE_URL is unset so the suite stays runnable without a
+// database.
+const databaseUrl = process.env.DATABASE_URL;
+const hasDb = Boolean(databaseUrl);
 if (!hasDb) {
   console.warn(
     'DATABASE_URL not set — skipping seed idempotency tests. ' +
-      'Start Postgres (pnpm db:up), apply migrations (pnpm db:migrate:latest), ' +
-      'and create the root .env (cp .env.example .env).',
+      'Start Postgres (pnpm db:up) and point DATABASE_URL at a test database ' +
+      '(e.g. pca_test); this suite migrates its own scratch database.',
   );
+}
+
+function makeKysely(connectionString: string): Kysely<Database> {
+  return new Kysely<Database>({
+    dialect: new PostgresDialect({ pool: new pg.Pool({ connectionString }) }),
+  });
 }
 
 const ANALYTICS_TABLES = [
@@ -59,6 +83,8 @@ async function countAnalyticsRows(db: Kysely<Database>): Promise<Record<string, 
 }
 
 describe.skipIf(!hasDb)('reference seeds', () => {
+  const scratchName = `pca_ref_test_${randomBytes(6).toString('hex')}`;
+  let admin: Kysely<Database>;
   let db: Kysely<Database>;
   let secondRunResults: SeedResult[];
   let afterFirstRun: Awaited<ReturnType<typeof snapshotRef>>;
@@ -67,18 +93,50 @@ describe.skipIf(!hasDb)('reference seeds', () => {
   let analyticsAfter: Record<string, number>;
 
   beforeAll(async () => {
-    db = createDb();
+    admin = makeKysely(databaseUrl!);
+    await sql`create database ${sql.id(scratchName)}`.execute(admin);
+    const url = new URL(databaseUrl!);
+    url.pathname = `/${scratchName}`;
+    db = makeKysely(url.toString());
+
+    const migrator = new Migrator({
+      db,
+      provider: new FileMigrationProvider({
+        fs,
+        path,
+        migrationFolder: path.join(dbPackageDir, 'migrations'),
+      }),
+    });
+    const { error } = await migrator.migrateToLatest();
+    if (error) {
+      throw error;
+    }
+
     analyticsBefore = await countAnalyticsRows(db);
     await seedReference(db);
     afterFirstRun = await snapshotRef(db);
     secondRunResults = await seedReference(db);
     afterSecondRun = await snapshotRef(db);
     analyticsAfter = await countAnalyticsRows(db);
-  });
+  }, 120_000);
 
   afterAll(async () => {
-    await db?.destroy();
-  });
+    // Robust teardown (sweep parity): destroy the scratch connection first,
+    // then force-drop the scratch database even if a test failed midway.
+    if (db) {
+      await db.destroy().catch((error: unknown) => {
+        console.error(`scratch pool teardown failed: ${String(error)}`);
+      });
+    }
+    if (admin) {
+      await sql`drop database if exists ${sql.id(scratchName)} with (force)`
+        .execute(admin)
+        .catch((error: unknown) => {
+          console.error(`scratch database drop failed: ${String(error)}`);
+        });
+      await admin.destroy();
+    }
+  }, 60_000);
 
   it('seeds exactly the expected charges', () => {
     expect(

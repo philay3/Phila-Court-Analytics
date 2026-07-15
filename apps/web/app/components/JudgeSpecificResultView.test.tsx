@@ -155,7 +155,8 @@ describe('JudgeSpecificResultView', () => {
       baselineSentencing.getByText(formatSampleSize(BASELINE_SENTENCING_N)),
     ).toBeInTheDocument();
 
-    // Responsible-use notice + methodology/definitions links.
+    // Coverage note, responsible-use notice + methodology/definitions links.
+    expect(screen.getByText(RESULT_DISPLAY_COPY.coverageNote)).toBeInTheDocument();
     expect(screen.getByText(RESULT_DISPLAY_COPY.responsibleUseHistorical)).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: CHARGE_RESULT_COPY.methodologyLinkText }),

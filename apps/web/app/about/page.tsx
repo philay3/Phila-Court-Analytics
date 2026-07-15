@@ -45,11 +45,11 @@ export default function AboutPage() {
         <h2 className="text-xl font-semibold text-ink">Where the data comes from</h2>
         <p className="text-muted">
           The underlying information comes from public court docket sheets published by the
-          Pennsylvania Unified Judicial System. Docket information is parsed, normalized, reviewed,
-          and aggregated before anything appears on this site. Only aggregate statistics are
-          published here: no individual case records, docket numbers, or defendant information are
-          available through this site. For details on scope, date ranges, and known limitations, see
-          the Data Coverage page.
+          Pennsylvania Unified Judicial System. Docket information is parsed, normalized, and
+          aggregated before anything appears on this site; records that cannot be read reliably are
+          excluded automatically. Only aggregate statistics are published here: no individual case
+          records, docket numbers, or defendant information are available through this site. For
+          details on scope, date ranges, and known limitations, see the Data Coverage page.
         </p>
       </section>
 

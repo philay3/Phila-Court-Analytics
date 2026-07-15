@@ -16,9 +16,13 @@ export const DATA_COVERAGE_KNOWN_LIMITATIONS: string[] = [
   // appear here: served date ranges and counts come from the published run.
   'Coverage begins on January 1, 2025 and is anchored to disposition and ' +
     'sentencing event dates, not filing dates.',
-  'Collection is ongoing. Coverage currently extends further for Municipal ' +
-    'Court cases than for Common Pleas cases, and results grow as newly ' +
-    'collected records are aggregated.',
+  'Coverage includes misdemeanor and felony charges, along with summary-graded ' +
+    'charges when they are part of a criminal case; standalone summary ' +
+    'citations are not collected. Charges from cases still awaiting a final ' +
+    'outcome do not appear until one is recorded.',
+  'Collection is ongoing. The covered records are a growing subset of ' +
+    'Philadelphia criminal cases, and results grow as newly collected records ' +
+    'are aggregated.',
   'Figures are charge-level historical aggregates. They summarize groups of ' +
     'past cases and never describe an individual case.',
   'Some charges have small samples; those figures are labeled as thin data ' +

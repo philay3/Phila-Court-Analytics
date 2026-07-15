@@ -5633,3 +5633,522 @@ the AC-4 fresh-count guard. Checkpoints C1 (post-rebuild-1 comparison), C2
 (scan gate), C3 (final report) go to planning chat before proceeding.
 Expected visible change to published distributions: NONE (structural-
 exclusion framing per AC 9; the pollution was latent at the fact layer).
+
+## Task H-30.0 — Phase-30 Hygiene: db-suite order independence + ESLint .venv ignore (2026-07-14)
+
+**What was built.** Two pre-existing hygiene fixes, first commit on phase-30.
+(1) `db/seeds/reference.test.ts` — the exact-equality suite now runs in its
+own scratch database (`pca_ref_test_<12-hex>`, sweep-seed-rows precedent):
+created off DATABASE_URL's server in `beforeAll` (120s timeout), migrated to
+latest via Migrator/FileMigrationProvider, force-dropped in robust `afterAll`
+(60s). Every assertion unchanged. `createDb()` import dropped; imports
+(`pg`, `kysely/migration`, `node:crypto`) are existing @pca/db dependencies.
+(2) `eslint.config.mjs` — `'**/.venv/'` added to the flat-config global
+ignores. Also `db/vitest.config.ts` — comment-only rewording at
+`fileParallelism: false` (setting untouched) so the rationale stays truthful
+post-isolation and carries the never-casually-revert language (approved in
+plan review).
+
+**Root cause (recon, adjudicated reframing).** The named "file-order
+dependence" is cross-invocation shared-state coupling: roster suites write
+additive-only rows into the shared test DB's `ref.*` tables; the reference
+suite asserted full-table exactness against that shared DB, so it failed
+whenever a roster file preceded it in one run (vitest's cache-driven default
+order decides who runs first) — and, stronger, failed in ANY order once
+roster rows persisted from a previous invocation. Recon reproduced: as-found
+isolation 3/6 failed; pristine-DB green suite then isolation 3/6 failed;
+pristine-DB shuffle (charge-roster before reference) 2/6 failed with the
+failure signature tracking exactly which roster file ran first. CI was green
+by file-size coincidence (no cache → larger-first → reference before both
+rosters). Local repo-root lint was red (15,511 problems, 36 finding-bearing
+files, all under `services/pipeline/.venv`, 0 outside) — CI green only
+because CI has no venv.
+
+**Post-fix (all on the deliberately dirty pca_test, adjudicated order):**
+default order 59/59 green; shuffle-seeded run with charge-roster printed
+before reference 59/59 green; reference isolation LAST 6/6 green; zero
+leaked scratch databases. Repo-root lint exit 0 in 4.88s real (was exit 1,
+28.47s).
+
+**Durable guardrail established (standing rule for all future db-suite
+work):** no db-suite file may assert exactness against the shared test
+database — exact-equality assertions get a scratch database
+(sweep/reference pattern) — and every suite must tolerate a non-pristine
+shared test DB. The shared test DB is expected to be polluted; passing on it
+is the required posture, not an accident. The rule is also stated in the
+reference.test.ts header comment.
+
+**Files touched:** `db/seeds/reference.test.ts`, `db/vitest.config.ts`
+(comment only), `eslint.config.mjs`, `tasks/worklog.md`.
+
+**Deviations from plan:** none.
+
+**For the next task:** vitest default file order is cache-driven
+(`db/node_modules/.vite/vitest/…/results.json` — failed-first, then
+slower-first; size-desc without cache) and must never be relied on. The
+recon-stage pca_test resets were recon-only; no reset is needed to run the
+db suite anymore, in any order. fileParallelism: false in db/vitest.config.ts
+remains a deliberate race fix — never casually revert.
+
+## Task 30.1 — Real-Data Verification Walkthrough + Defect Fixes (2026-07-14)
+
+**What was done.** Systematic real-data verification walkthrough of every
+public page against published run `d47dcd20-2059-46ad-92a9-6dfd3846dc23` on
+production builds (build:packages → API build + `start` under plain node →
+web `next build` + `next start`), live DB read-only throughout. Serving ports
+3100 (web) / 3101 (API) — 3000/3001 were held by dev servers; deviation
+adjudicated at checkpoint, pinned mechanism otherwise intact. Walkthrough
+tooling: a TEMPORARY untracked Playwright config + specs under
+`e2e/walkthrough*` reusing the committed machinery (axe WCAG 2.2 AA tag set,
+`scanPublicCopy`, `scanForForbidden`, combobox driving, section testids,
+horizontal-overflow checks) with soft-collected assertions for inventory;
+deleted before commit (staging-completeness output proves absence). No term
+list or scanning mechanism was created.
+
+**What was checked** (every cell desktop 1280px AND mobile 390×844; per-cell
+results recorded; slugs are live-run examples, never acceptance values):
+homepage search on real rosters with open-listbox states gate-scanned;
+high-sample `pwid-controlled-substance`; widest tail `simple-assault` (six
+terminal outcome categories; 29.3 structural-exclusion framing intact — no
+visible change expected and none observed); thin `voluntary-manslaughter`
+(callout + badges, both distributions); thin + longest display name
+`aggravated-assault-fear-sbi-designated` (85-char name wraps cleanly);
+sentencing-unavailable `criminal-conspiracy-903c` (non-thin, callout
+isolated, `§ 903(c)` renders); solid judge pair `pwid-controlled-substance` ×
+`gibbs-monica` (real single-category 100% distribution) plus multi-row solid
+pair × `shaffer-zachary-c`; thin pair `aggravated-assault-deadly-weapon` ×
+`gibbs-monica` (four slots, real tails incl. ARD + sentencing Other);
+judge-unavailable pair × `brumbach-marissa-j`; `/definitions` with anchor
+existence proven for all 11 category codes served across the four most
+tail-rich pages; `/methodology`; `/data-coverage` (live run id, window, and
+counts served dynamically); `/about`; approved addendum `harassment` (sole
+zero-aggregate charge — honest unavailable arm). AC 2 battery per figure:
+counts + percentages + sample sizes + date ranges + last-refreshed,
+table/bar equivalence (bars aria-hidden, table authoritative), per-row
+Definition links. 320px spot set (adjudicated): home with each autocomplete
+open (longest charge and judge names fully visible), the two long-name
+result pages, plus supplemental zero-overflow probes on the four content
+pages and `harassment`. Keyboard/screen-reader spot pass (AC 3):
+keyboard-only combobox commit → submit → result; judge-filter commit →
+navigation; tab-order sanity on charge/judge/content pages — focus ring
+visible on every stop, no traps, logical order; heading outlines (one h1, no
+skips) and table header scopes everywhere. Final automated state: 39/39
+green; zero axe / copy-safety / privacy violations on every visited state.
+
+**What was found / fixed.** ZERO UI/copy/formatting defects — no fix code,
+no E2E assertion edits (checkpoint-confirmed empty fix list; the post-fix
+re-verification requirement was vacuously satisfied). Three
+walkthrough-harness artifact classes were fixed in the temp specs and are
+recorded for future harness reuse: (1) link-count assertions must scope to
+`main` (the header nav carries its own methodology link); (2) keyboard
+typing must wait for hydration — server-rendered content is visible before
+client handlers attach (framework-inherent; named post-launch queue item,
+not a defect); (3) focus-trap detection must compare element identity, not
+text signatures (distinct per-row "Definition" links share one).
+
+**What was escalated** (stop-and-report per SD-6; checkpoint-adjudicated as
+plausible-by-construction — independent denominators / per-component
+sentence facts; verification queued as separate read-only diagnostic 30.1-D,
+NOT investigated in-task): F1 — sentencing sample size exceeds outcome
+sample size for the same scope, recurring: `pwid-controlled-substance` 685
+vs 473; `voluntary-manslaughter` 5 vs 4; `pwid-controlled-substance` ×
+`gibbs-monica` 178 vs 124; `aggravated-assault-deadly-weapon` ×
+`gibbs-monica` 3 vs 1; the same charge's baseline 74 vs 59. Rendering is
+correct and every figure carries its own honest sample size; the open
+question is aggregates-layer.
+
+**Verification.** E2E suite green on `pca_test` (primary path; scratch
+fallback not needed): `15 passed (12.9s)`. Four gates + typecheck run
+post-staging per the clean-environment gate (outputs in the completion
+report). Live DB untouched: walkthrough traffic read-only; test suites
+pointed at `pca_test` via shell-exported DATABASE_URL; the 29.2 guard was
+never bypassed, weakened, or pointed at the live DB.
+
+**Files touched:** `tasks/worklog.md` only (temp harness deleted before
+commit).
+
+**Deviations from plan:** serving ports 3100/3101 instead of 3000/3001
+(checkpoint-adjudicated); two lingering `tsx watch` API dev watchers stopped
+with explicit authorization before the E2E gate.
+
+**For the next task:** 30.1-D (F1 diagnostic, read-only) is queued after
+close. Post-launch queue: pre-hydration typing gap on combobox inputs. 30.3
+inherits no copy changes from this task.
+
+## Task 30.1-D — F1 Diagnostic: Sentencing-vs-Outcome Sample Semantics (2026-07-14)
+
+**Verdict (subject to planning-chat adjudication, never self-adjudicated):
+BY-CONSTRUCTION CONFIRMED, mechanism quantified.** Read-only diagnostic;
+SELECT-only via `docker compose exec -T postgres psql -U pca -d pca`
+(compose service is `postgres`, adjudicated in plan review). No code, copy,
+schema, or data changes; no pipeline invocation. Detail artifact with every
+query and raw output: `~/court-data/reports/30.1-D-f1-sentencing-vs-outcome.txt`.
+
+**TRIANGULATION DEVIATION (adjudication item).** The 29.3 run report the
+plan-review ruling pinned as the primary build-run record does not exist:
+no 29.3-named file under `~/court-data/reports/` (directory last modified
+2026-07-13, before the 29.3 publish) and neither run UUID appears anywhere
+under `~/court-data/`. Substitute primary record used: this worklog's 29.3
+operational record (rebuild-2 build run `cc71204b…`, publish `d47dcd20…`
+from it, default=latest). The substitute agrees exactly with (b)
+`generate.py::_resolve_build_run` (default = latest completed,
+`ORDER BY completed_at DESC LIMIT 1`; live DB: `cc71204b…` completed
+2026-07-14 21:43:50, publish 21:45:36, sole active published run
+`d47dcd20…`) and (c) exact-match recomputation across all five anchors and
+corpus-wide (all counts and per-category splits reconcile to the row). The
+build run's `counts` jsonb also matches this worklog's 29.3 figures
+verbatim (12,792 outcome / 10,578 sentence facts).
+
+**Unit semantics from source (AC 1).** Outcome sample size counts
+`public_eligible` outcome facts, one per disposed charge
+(`aggregates/generate.py::build_charge_outcome_aggregates`,
+`facts/outcome_facts.py` 23.2). Sentencing sample size counts
+`public_eligible` sentence facts, one row per parsed sentence component,
+1:1 never collapsed (`build_charge_sentencing_aggregates`,
+`facts/sentence_facts.py` 23.3; unique `(build_run_id, parsed_sentence_id)`;
+live check: 10,578 facts = 10,578 distinct parsed components). Judge scopes
+group `judge_specific_eligible` facts per pair with independent per-pair
+sentencing denominators (SD 5). Eligibility is read, never recomputed (SD 1).
+
+**Multi-category components (AC 2).** From source: an additive
+(pattern-added) restitution / community-service mapping materializes as ONE
+sentence fact carrying the BASE category only; `multi_category` forces
+`review_needed=True`, which makes the fact public-INeligible
+(`sentence_facts.py::evaluate_sentence_eligibility` — the silent-loss
+guard). Live build run: 64 multi-category components (42 restitution + 22
+community-service, 0 both; SQL replica of the locked 22.5 regexes), exactly
+matching the build run's recorded `multi_category_components: 64`; all 64
+are review-excluded — 0 public_eligible. Implication: pattern-added
+additional mappings do NOT inflate public sentencing sample sizes; they
+remove their component from public aggregates entirely. Bare-`N hours`
+ambiguous components: 33, matching `ambiguous_sentencing_component: 33`.
+
+**Invariants (AC 3, AC 4 + plan-review required fixes 1–2), all zero
+violations on build run `cc71204b…`:** eligible sentence facts with parent
+missing / parent not public_eligible / parent in a DIFFERENT build run:
+0 / 0 / 0 (judge variant likewise 0 / 0 / 0). Denormalized scope
+consistency: child `normalized_charge_id` / `normalized_judge_id` vs parent
+mismatches 0 across all 10,578 facts. Per-scope invariant: distinct parents
+of eligible sentence facts ≤ outcome sample size in all 73 charge scopes
+and all 1,007 pair scopes — 0 violations.
+
+**Anchor decomposition (AC 5), all five exact:** published sample sizes =
+recomputed fact counts = walkthrough anchors; per-category counts identical
+row-for-row; category sums = sample sizes; 0 orphans. Components-per-parent:
+`pwid-controlled-substance` 685 sentence facts over 454 sentenced parents
+(hist 1×244, 2×192, 3×16, 4×1, 5×1) vs 473 outcomes; `voluntary-manslaughter`
+5 over 4 (1×3, 2×1) vs 4; `pwid` × `gibbs-monica` 178 over 118 (1×65, 2×46,
+3×7) vs 124; `aggravated-assault-deadly-weapon` × `gibbs-monica` 3 over 1
+(3×1) vs 1; `aggravated-assault-deadly-weapon` 74 over 47 (1×22, 2×23, 3×2)
+vs 59. Cross-run: the sole active published run is `d47dcd20…`; anchor rows
+under other run ids belong to invalidated or unpublished (`in_progress`)
+runs, invisible to the API predicate — by design, not cross-run leakage.
+
+**Corpus shape (AC 6).** Charges: 33 of 73 sentencing scopes inverted
+(6 equal, 34 smaller; max diff +212 = `pwid-controlled-substance`, median
+inverted diff +5, max ratio 2.00, median 1.23). Pairs: 303 of 1,007
+inverted (473 equal, 231 smaller; max diff +54, median +1, max ratio 4.00,
+median 1.51). Full inverted-charge enumeration by slug in the detail
+artifact. Corpus-wide eligible totals: 5,359 sentence facts vs 5,339
+outcome facts.
+
+**SD-15 recheck (AC 7).** All 10,578 facts: sentence_date earlier than
+disposition_date 35 / equal 10,543 / later 0 / null 0; 2025-01-01
+window-straddles 29 (sentence before window, disposition inside), reverse 0;
+earlier-delta 1–757 days — matches the build run's recorded
+`sd15_divergence: 35`, `sd15_straddle_mvp: 29`, deltas 1/757 exactly.
+Public-eligible subset: 2 earlier, 0 straddles (straddling components are
+mvp-ineligible by construction).
+
+**Methodology hand-off (AC 8, no copy edits).** Served copy traced to the
+REAL constants: `/methodology` = `apps/api/src/content/methodology.ts`
+(`METHODOLOGY_CONTENT`, static per deploy; web page renders the API
+response); `/definitions` = `apps/api/src/taxonomy.ts::PUBLIC_DEFINITIONS`
+from `packages/taxonomy/seeds/*.json` definitions. Independent sentencing
+denominators: EXPLAINED (sentencing section, incl. SD-15 date independence).
+Component-counted samples: NOT explained ("charge dispositions or
+sentencing events" — nothing says one sentencing event contributes one row
+per component). Sentencing n exceeding outcome n: NOT explained — worse,
+the copy asserts sentencing samples are "typically smaller than the outcome
+sample size," contradicted at current corpus scale (33/73 charges,
+303/1,007 pairs inverted, flagship charge 685 vs 473). Definitions copy
+carries no sample-size semantics. → Named 30.3 rewrite items: fix
+"typically smaller," explain per-component counting, state that sentencing
+n can exceed outcome n.
+
+**Verdict basis (AC 9).** Sentencing n = eligible sentence components over
+sentenced eligible parents; every decomposition exact; zero unreconciled
+residue. The inversion is exactly the by-construction mechanism the plans
+describe (23.2/23.3, SD 5, 26.2): multi-component sentences under a subset
+of sentenced parents. ANOMALY arm not triggered; verdict and the
+triangulation substitution both go to planning chat for adjudication.
+
+**Files touched:** `tasks/worklog.md` only. Detail artifact under
+`~/court-data/reports/` (never committed).
+
+**Deviations from plan:** the missing 29.3 run report (above) — worklog
+substituted as primary record, flagged for adjudication rather than treated
+as satisfied. Compose service name `postgres` (approved in plan review).
+
+**For the next task:** 30.3 inherits the three copy rewrite items above.
+The 29.3 publish/rebuild console outputs exist only in planning chat and
+this worklog — if a durable run-report file is wanted, it must be
+reconstructed from planning chat (never from memory) or accepted as
+worklog-only. Two stale `in_progress` aggregate runs (`51d27853…`,
+`2d4707ca…`, pre-publish history) sit unpublished in
+`analytics.aggregate_runs`; harmless to the API predicate.
+
+## Task 30.2 — Queued Contract Closures (2026-07-14)
+
+**What was done.** Two documented closures, ZERO code changes (both
+dispositions ruled at plan review; evidence replaces the diff).
+
+**Part A — message-constant migration: CLOSED-BY-EVIDENCE (already
+satisfied at 10.2, never marked closed).** Recon per the sprint-plan
+stop-and-report preamble found the §5 queue item's premise stale:
+`CHARGE_RESULT_UNAVAILABLE_MESSAGE` already lives in `@pca/shared` at
+`packages/shared/src/public/charge-result.ts` alongside the other pinned
+literals (`CHARGE_NOT_FOUND_MESSAGE`, `CHARGE_SENTENCING_UNAVAILABLE_MESSAGE`),
+with doc-comment provenance "migrated from the 8.1 service in task 10.2."
+Single definition: the literal occurs exactly once repo-wide, and is
+additionally schema-pinned as a `Type.Literal` in the charge-unavailable
+arm contract. All consumers import from `@pca/shared` — api
+(`services/charge-result.ts`, `services/judge-result.ts`, route/service
+tests, `public-copy-safety.test.ts`), web (`ChargeUnavailableView.tsx`,
+`JudgeChargeUnavailableView.tsx`, component/state tests — never re-typed),
+e2e (`unavailable-and-not-found.spec.ts`), shared-internal
+(`error-messages.ts` references it in `PUBLIC_ERROR_MESSAGES`;
+`test-support/fixtures.ts`). Scanner coverage at the @pca/shared home is
+the 10.2 mechanism in `apps/api/src/public-copy-safety.test.ts`: the
+constant is imported into `PINNED_PUBLIC_MESSAGES` and scanned at
+definition, scanned again via the `PUBLIC_ERROR_MESSAGES` map, and scanned
+live in rendered payloads via the probe-registry route scans (verbatim
+suite output in the completion report). The in-package shuffle alternative
+was rejected at plan review as manufactured motion.
+
+**Part B — duration-display resolution: expected finding CONFIRMED, no
+duration data on any public surface; the 360-day-year display question is
+FORMALLY RETIRED for the MVP.** Method: source read + SELECT-only live-DB
+checks via the sanctioned mechanism. Evidence: (1) live `analytics.*`
+column inventory (verbatim psql in the completion report) — no duration
+column in any of the five tables (`aggregate_runs` + four aggregate
+tables; columns are category/count/percentage/sample-size/date-range/
+thin-data/taxonomy bookkeeping only); (2) the single analytics migration
+(`20260708223601`) defines that closed column set and no later migration
+alters analytics tables; (3) `min_days`/`max_days`/`min_assumed` exist
+only in `parsed.*` and `facts.*` (non-public layers); (4) grep for
+duration identifiers across `packages/shared/src`, `apps/api/src`,
+`apps/web/app` — zero hits; distribution entries carry only
+categoryCode/displayName/count/percentage, all public schemas
+`additionalProperties: false`, serialized against the union response
+schemas. Clarity note: NONE, ruled at plan review — a units note for data
+that never renders would mislead rather than clarify.
+
+**Verification.** Copy-safety suite green with the constant scanned at its
+@pca/shared home; E2E green on `pca_test` (shell-exported DATABASE_URL;
+29.2 guard never bypassed); four gates + typecheck post-staging per the
+clean-environment gate. Live DB read-only throughout (SELECT-only
+inventory). Outputs verbatim in the completion report.
+
+**Files touched:** `tasks/worklog.md` only.
+
+**Deviations from plan:** none (the zero-diff shape IS the approved plan).
+
+**For the next task (30.3 hand-off, ruled at plan review):** the 30.3 full
+read should confirm no served copy promises sentence-length or duration
+information in synonym terms the identifier grep would not catch
+("sentence length", "how long", etc.) — expected clean. 30.3 also still
+owns the three queued sentencing-sample rewording items from 30.1-D.
+
+## Task 30.3 — Launch Copy + Date-Disclosure Pass (2026-07-15)
+
+**What was done.** Full launch-framing read of ALL public copy as served
+(17 surfaces, constants + serving trace + live-serve curl spot-checks under
+the 30.1 agent-boot conditions); checkpoint-approved rewrites landed as
+shared constants under existing scanner coverage; coverage block landed on
+two surfaces per the checkpoint product decision. Phase 30 closes with this
+task.
+
+**Per-surface verdicts (AC 1).** Methodology `sentencing`: REWRITTEN
+(confirmed items 1-3: "typically smaller" corpus-contingent claim removed;
+per-component counting explained; sentencing n can exceed outcome n stated
+with mechanism; SD-15 sentences preserved byte-identical). Methodology
+`sampleSize`: REWRITTEN (sample-size units now name charge dispositions for
+outcome figures and individual sentence components for sentencing figures).
+Methodology `thinData`: RETAINED, flagged instance (see rationale below).
+Methodology other seven sections: clean. Methodology page chrome: clean.
+Data-coverage limitation "Coverage currently extends further for Municipal
+Court...": REWRITTEN to construction form ("The covered records are a
+growing subset of Philadelphia criminal cases..."), keeping the
+/collection is ongoing/i pin. Data-coverage limitation "Most judge-specific
+figures are thin at this stage": RETAINED, flagged instance. Data-coverage
+other limitations, schema-pinned constants, page chrome: clean. Definitions
+text (16 public categories): clean, NO edits, taxonomy version-bump
+question never triggered. Definitions chrome: clean. Homepage: clean.
+About page: REWRITTEN ("parsed, normalized, reviewed, and aggregated"
+claimed a review step that does not exist in this version — ages
+false-authoritative; now "parsed, normalized, and aggregated ... records
+that cannot be read reliably are excluded automatically"). Layout/footer/
+nav: clean, site-wide noindex intact. Result-display copy, formatter
+labels, charge/judge result chrome, three unavailable arms, two not-found
+messages, nine public error messages + fetch-failure message, search copy:
+all clean; unavailable arms curl-verified serving pinned literals verbatim.
+
+**Retention rationales (AC 3).** Both retained corpus-contingent instances
+are the judge-thinness disclosures (methodology `thinData`; data-coverage
+limitation 4): mandated honesty, explicitly time-scoped ("at this stage"),
+currently true (published run: 1,050 of 1,170 judge-charge pairs thin,
+89.7%), and they age FALSE-PESSIMISTIC (as coverage deepens the warning
+overstates caution), which the checkpoint ruled tolerable. The SD-15 "the
+two usually coincide" phrasing sits inside the protected SD-15 disclosure
+(verify presence, don't rework) and was re-verified at scale by 30.1-D
+(10,543/10,578 equal); retained untouched.
+
+**Corpus-contingent sweep (AC 3).** Sweep of all served constants for the
+class (typically/usually/most/currently/at this stage/often/generally/
+tends/rarely/majority/norm): five instances found; two rewritten (type
+specimen "typically smaller" + MC-vs-CP direction claim), two retained
+with the rationale above, one inside the protected SD-15 text. Zero
+unadjudicated instances remain.
+
+**Duration-synonym check (AC 4): CLEAN.** Zero hits for "sentence length" /
+"how long" / "duration" / "length of" / "term of" / months / years across
+all served constants. Sentencing is described by category only.
+
+**Unmapped-tail verdict (AC 4): HONEST AS SERVED.** Methodology limitations
+states unclear outcome/judge-attribution records are excluded automatically
+rather than resolved by hand; `unknown` categories are `public: false` and
+never served; an unknown stored code raises INTERNAL_ERROR, never a
+fabricated name. No rewrite needed.
+
+**Coverage block (AC 5).** Absent as served (recon-confirmed; no
+misdemeanor/felony/summary/pending language existed anywhere). Checkpoint
+product decision: land BOTH a result-page note and a data-coverage bullet.
+Result-page note landed as `RESULT_DISPLAY_COPY.coverageNote`, rendered in
+the summary section of both result views directly adjacent to the
+responsible-use notice (inside `section-summary`, NO new section testid, so
+the pinned e2e section-order assertions needed no edits). Data-coverage
+bullet landed as knownLimitations entry 2. The task-sketch "filed 2025+"
+framing was ruled superseded at plan review (factually false; event-date
+construction is served). The sketched "summary citations excluded" claim
+was CONTRADICTED by the grade-S evidence check and reworded to honest form
+per the checkpoint (summary-graded charges included when part of a criminal
+case; standalone summary citations not collected).
+
+**Grade-S evidence check (AC 5), SELECT-only via
+`docker compose exec -T postgres psql -U pca -d pca`, verbatim.**
+`ref.normalized_charges.grade` is NULL for all 78 loaded charges (served
+`grade` field absent from payloads); grade lives in `parsed.charges`.
+
+```
+ grade | count
+-------+-------
+ F     |  1974
+ F1    |  3233
+ F2    |  2326
+ F3    |  4086
+ H1    |    49
+ H2    |     6
+ M     |  1070
+ M1    |  4313
+ M2    |  4227
+ M3    |   482
+ S     |   696
+       |  7823
+(12 rows)
+```
+
+Latest completed build run, grade-S outcome facts (count |
+public_eligible): `S | 424 | 144`; grade-S sentence facts via parent
+outcome join: `S | 232 | 133`. Served slugs carrying grade-S
+public-eligible outcome facts:
+
+```
+                 slug                  | public_eligible_outcome_facts
+---------------------------------------+-------------------------------
+ harassment-physical-contact           |                            48
+ disorderly-conduct-fighting           |                            28
+ retail-theft                          |                            26
+ criminal-mischief-damage-property     |                            22
+ disorderly-conduct-hazardous          |                            14
+ defiant-trespass-posted               |                             2
+ criminal-conspiracy                   |                             2
+ criminal-attempt                      |                             1
+ defiant-trespass-actual-communication |                             1
+(9 rows)
+```
+
+Supporting checks recorded at the checkpoint: judge-thinness currently true
+(1,050 of 1,170 pairs thin); MC 5,208 vs CP 4,724 dockets (direction claim
+true but marginal and closing — rewritten per ruling).
+
+**Framing inheritances (AC 6).** Zero "demo"/"seeded"/"pollution" in served
+copy (residue exists only in code comments referencing the removed Sprint-2
+disclosure). SD-15 disclosure verified present in the live payload before
+and after the edit and preserved byte-identical through the sentencing
+rewrite. Judge-thinness honesty intact (retained, above).
+
+**Scanner coverage + stop condition (AC 7).** Every proposed string was
+pre-scanned before the checkpoint and again before landing (scanPublicCopy,
+the methodology route's stricter regexes and internal-detail substrings,
+the data-coverage route's term regexes and forbidden substrings, HARD-pin
+compatibility). STOP CONDITION EXERCISED: the checkpoint-adjudicated
+data-coverage coverage bullet contained "docket"/"dockets", which fails the
+data-coverage route's forbidden-substring sweep; landing halted and the
+failure returned to planning chat; Candidate A rewording (docket-free,
+same claims) was adjudicated and landed. No new scanner mechanisms or term
+lists. All landed strings are em-dash-free per planning-chat instruction
+(punctuation swaps only, word-identical).
+
+**Re-serve verification (checkpoint required fix 1).** After landing:
+web production build rebuilt; API (tsx, port 3100) + web (`next start`,
+port 3101, API_BASE_URL to 3100) booted read-only against the live DB;
+re-curled all five changed surfaces. New strings serve on /methodology
+(component counting + can-exceed), /data-coverage (new bullet + growing-
+subset rewrite, zero MC-vs-CP occurrences), /about (excluded-automatically
+sentence, zero "reviewed, and aggregated" occurrences), charge result and
+judge result (coverageNote renders on both). HARD positive pins all present
+in payloads: /January 1, 2025/, /not the filing date/i, /not a prediction/i,
+/collection is ongoing/i, SD-15 "sentencing dates fall earlier"; "typically
+smaller" zero occurrences. Servers torn down before any test suite ran.
+Note: `next dev` (Turbopack) 404'd the nested judge route for unrelated
+reasons; the production `next start` path (the CI-proven shape) serves it
+correctly (200) and was used for verification.
+
+**§5 responsible-use review item (plan AC 4): CLOSED.** The responsible-use
+notice (four statements from RESULT_DISPLAY_COPY, rendered by
+ResponsibleUseNotice on both result views and the About page) was read
+against the controlled-launch framing and is honest and copy-safe as
+served; this pass formalizes the 28.2 work for launch. The Sprint 9 queue
+item is satisfied by this task.
+
+**Verification.** E2E green on `pca_test` (shell-exported DATABASE_URL;
+29.2 guard never bypassed; deterministic reseed before the run): 15 passed.
+Four gates + typecheck run post-staging with caches cleared per the
+clean-environment gate; outputs verbatim in the completion report, plus
+staging completeness over task paths.
+
+**Files touched:** `apps/api/src/content/methodology.ts`,
+`apps/api/src/content/data-coverage.ts`, `apps/web/app/about/page.tsx`,
+`apps/web/app/components/result-display-copy.ts`,
+`apps/web/app/components/ChargeOnlyResultView.tsx`,
+`apps/web/app/components/JudgeSpecificResultView.tsx`,
+`apps/web/app/components/ChargeOnlyResultView.test.tsx`,
+`apps/web/app/components/JudgeSpecificResultView.test.tsx`,
+`tasks/worklog.md`. No e2e edits (the coverage note lives inside
+`section-summary`; the checkpoint's conditional e2e edits were not
+triggered).
+
+**Deviations from plan:** the adjudicated coverage-bullet wording failed
+pre-scan on the "docket" substring — stop condition exercised, reworded
+wording (Candidate A) adjudicated in planning chat before landing. Em-dash
+removal instruction applied to all landed strings as word-identical
+punctuation swaps. No other deviations.
+
+**For the next task:** Phase 30 closes here; the full PR loop runs at this
+commit (push, PR, CI green, rebase-and-merge or merge commit, never
+squash; CI also provides the deferred confirmation for the phase's
+E2E/production-build claims). 31.1 (demo script) can now cite the coverage
+note as a served surface. Post-launch queue unchanged: pre-hydration typing
+gap on combobox inputs; two stale `in_progress` aggregate runs remain
+unpublished and harmless.
