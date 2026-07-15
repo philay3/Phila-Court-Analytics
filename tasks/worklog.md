@@ -5959,3 +5959,196 @@ read should confirm no served copy promises sentence-length or duration
 information in synonym terms the identifier grep would not catch
 ("sentence length", "how long", etc.) — expected clean. 30.3 also still
 owns the three queued sentencing-sample rewording items from 30.1-D.
+
+## Task 30.3 — Launch Copy + Date-Disclosure Pass (2026-07-15)
+
+**What was done.** Full launch-framing read of ALL public copy as served
+(17 surfaces, constants + serving trace + live-serve curl spot-checks under
+the 30.1 agent-boot conditions); checkpoint-approved rewrites landed as
+shared constants under existing scanner coverage; coverage block landed on
+two surfaces per the checkpoint product decision. Phase 30 closes with this
+task.
+
+**Per-surface verdicts (AC 1).** Methodology `sentencing`: REWRITTEN
+(confirmed items 1-3: "typically smaller" corpus-contingent claim removed;
+per-component counting explained; sentencing n can exceed outcome n stated
+with mechanism; SD-15 sentences preserved byte-identical). Methodology
+`sampleSize`: REWRITTEN (sample-size units now name charge dispositions for
+outcome figures and individual sentence components for sentencing figures).
+Methodology `thinData`: RETAINED, flagged instance (see rationale below).
+Methodology other seven sections: clean. Methodology page chrome: clean.
+Data-coverage limitation "Coverage currently extends further for Municipal
+Court...": REWRITTEN to construction form ("The covered records are a
+growing subset of Philadelphia criminal cases..."), keeping the
+/collection is ongoing/i pin. Data-coverage limitation "Most judge-specific
+figures are thin at this stage": RETAINED, flagged instance. Data-coverage
+other limitations, schema-pinned constants, page chrome: clean. Definitions
+text (16 public categories): clean, NO edits, taxonomy version-bump
+question never triggered. Definitions chrome: clean. Homepage: clean.
+About page: REWRITTEN ("parsed, normalized, reviewed, and aggregated"
+claimed a review step that does not exist in this version — ages
+false-authoritative; now "parsed, normalized, and aggregated ... records
+that cannot be read reliably are excluded automatically"). Layout/footer/
+nav: clean, site-wide noindex intact. Result-display copy, formatter
+labels, charge/judge result chrome, three unavailable arms, two not-found
+messages, nine public error messages + fetch-failure message, search copy:
+all clean; unavailable arms curl-verified serving pinned literals verbatim.
+
+**Retention rationales (AC 3).** Both retained corpus-contingent instances
+are the judge-thinness disclosures (methodology `thinData`; data-coverage
+limitation 4): mandated honesty, explicitly time-scoped ("at this stage"),
+currently true (published run: 1,050 of 1,170 judge-charge pairs thin,
+89.7%), and they age FALSE-PESSIMISTIC (as coverage deepens the warning
+overstates caution), which the checkpoint ruled tolerable. The SD-15 "the
+two usually coincide" phrasing sits inside the protected SD-15 disclosure
+(verify presence, don't rework) and was re-verified at scale by 30.1-D
+(10,543/10,578 equal); retained untouched.
+
+**Corpus-contingent sweep (AC 3).** Sweep of all served constants for the
+class (typically/usually/most/currently/at this stage/often/generally/
+tends/rarely/majority/norm): five instances found; two rewritten (type
+specimen "typically smaller" + MC-vs-CP direction claim), two retained
+with the rationale above, one inside the protected SD-15 text. Zero
+unadjudicated instances remain.
+
+**Duration-synonym check (AC 4): CLEAN.** Zero hits for "sentence length" /
+"how long" / "duration" / "length of" / "term of" / months / years across
+all served constants. Sentencing is described by category only.
+
+**Unmapped-tail verdict (AC 4): HONEST AS SERVED.** Methodology limitations
+states unclear outcome/judge-attribution records are excluded automatically
+rather than resolved by hand; `unknown` categories are `public: false` and
+never served; an unknown stored code raises INTERNAL_ERROR, never a
+fabricated name. No rewrite needed.
+
+**Coverage block (AC 5).** Absent as served (recon-confirmed; no
+misdemeanor/felony/summary/pending language existed anywhere). Checkpoint
+product decision: land BOTH a result-page note and a data-coverage bullet.
+Result-page note landed as `RESULT_DISPLAY_COPY.coverageNote`, rendered in
+the summary section of both result views directly adjacent to the
+responsible-use notice (inside `section-summary`, NO new section testid, so
+the pinned e2e section-order assertions needed no edits). Data-coverage
+bullet landed as knownLimitations entry 2. The task-sketch "filed 2025+"
+framing was ruled superseded at plan review (factually false; event-date
+construction is served). The sketched "summary citations excluded" claim
+was CONTRADICTED by the grade-S evidence check and reworded to honest form
+per the checkpoint (summary-graded charges included when part of a criminal
+case; standalone summary citations not collected).
+
+**Grade-S evidence check (AC 5), SELECT-only via
+`docker compose exec -T postgres psql -U pca -d pca`, verbatim.**
+`ref.normalized_charges.grade` is NULL for all 78 loaded charges (served
+`grade` field absent from payloads); grade lives in `parsed.charges`.
+
+```
+ grade | count
+-------+-------
+ F     |  1974
+ F1    |  3233
+ F2    |  2326
+ F3    |  4086
+ H1    |    49
+ H2    |     6
+ M     |  1070
+ M1    |  4313
+ M2    |  4227
+ M3    |   482
+ S     |   696
+       |  7823
+(12 rows)
+```
+
+Latest completed build run, grade-S outcome facts (count |
+public_eligible): `S | 424 | 144`; grade-S sentence facts via parent
+outcome join: `S | 232 | 133`. Served slugs carrying grade-S
+public-eligible outcome facts:
+
+```
+                 slug                  | public_eligible_outcome_facts
+---------------------------------------+-------------------------------
+ harassment-physical-contact           |                            48
+ disorderly-conduct-fighting           |                            28
+ retail-theft                          |                            26
+ criminal-mischief-damage-property     |                            22
+ disorderly-conduct-hazardous          |                            14
+ defiant-trespass-posted               |                             2
+ criminal-conspiracy                   |                             2
+ criminal-attempt                      |                             1
+ defiant-trespass-actual-communication |                             1
+(9 rows)
+```
+
+Supporting checks recorded at the checkpoint: judge-thinness currently true
+(1,050 of 1,170 pairs thin); MC 5,208 vs CP 4,724 dockets (direction claim
+true but marginal and closing — rewritten per ruling).
+
+**Framing inheritances (AC 6).** Zero "demo"/"seeded"/"pollution" in served
+copy (residue exists only in code comments referencing the removed Sprint-2
+disclosure). SD-15 disclosure verified present in the live payload before
+and after the edit and preserved byte-identical through the sentencing
+rewrite. Judge-thinness honesty intact (retained, above).
+
+**Scanner coverage + stop condition (AC 7).** Every proposed string was
+pre-scanned before the checkpoint and again before landing (scanPublicCopy,
+the methodology route's stricter regexes and internal-detail substrings,
+the data-coverage route's term regexes and forbidden substrings, HARD-pin
+compatibility). STOP CONDITION EXERCISED: the checkpoint-adjudicated
+data-coverage coverage bullet contained "docket"/"dockets", which fails the
+data-coverage route's forbidden-substring sweep; landing halted and the
+failure returned to planning chat; Candidate A rewording (docket-free,
+same claims) was adjudicated and landed. No new scanner mechanisms or term
+lists. All landed strings are em-dash-free per planning-chat instruction
+(punctuation swaps only, word-identical).
+
+**Re-serve verification (checkpoint required fix 1).** After landing:
+web production build rebuilt; API (tsx, port 3100) + web (`next start`,
+port 3101, API_BASE_URL to 3100) booted read-only against the live DB;
+re-curled all five changed surfaces. New strings serve on /methodology
+(component counting + can-exceed), /data-coverage (new bullet + growing-
+subset rewrite, zero MC-vs-CP occurrences), /about (excluded-automatically
+sentence, zero "reviewed, and aggregated" occurrences), charge result and
+judge result (coverageNote renders on both). HARD positive pins all present
+in payloads: /January 1, 2025/, /not the filing date/i, /not a prediction/i,
+/collection is ongoing/i, SD-15 "sentencing dates fall earlier"; "typically
+smaller" zero occurrences. Servers torn down before any test suite ran.
+Note: `next dev` (Turbopack) 404'd the nested judge route for unrelated
+reasons; the production `next start` path (the CI-proven shape) serves it
+correctly (200) and was used for verification.
+
+**§5 responsible-use review item (plan AC 4): CLOSED.** The responsible-use
+notice (four statements from RESULT_DISPLAY_COPY, rendered by
+ResponsibleUseNotice on both result views and the About page) was read
+against the controlled-launch framing and is honest and copy-safe as
+served; this pass formalizes the 28.2 work for launch. The Sprint 9 queue
+item is satisfied by this task.
+
+**Verification.** E2E green on `pca_test` (shell-exported DATABASE_URL;
+29.2 guard never bypassed; deterministic reseed before the run): 15 passed.
+Four gates + typecheck run post-staging with caches cleared per the
+clean-environment gate; outputs verbatim in the completion report, plus
+staging completeness over task paths.
+
+**Files touched:** `apps/api/src/content/methodology.ts`,
+`apps/api/src/content/data-coverage.ts`, `apps/web/app/about/page.tsx`,
+`apps/web/app/components/result-display-copy.ts`,
+`apps/web/app/components/ChargeOnlyResultView.tsx`,
+`apps/web/app/components/JudgeSpecificResultView.tsx`,
+`apps/web/app/components/ChargeOnlyResultView.test.tsx`,
+`apps/web/app/components/JudgeSpecificResultView.test.tsx`,
+`tasks/worklog.md`. No e2e edits (the coverage note lives inside
+`section-summary`; the checkpoint's conditional e2e edits were not
+triggered).
+
+**Deviations from plan:** the adjudicated coverage-bullet wording failed
+pre-scan on the "docket" substring — stop condition exercised, reworded
+wording (Candidate A) adjudicated in planning chat before landing. Em-dash
+removal instruction applied to all landed strings as word-identical
+punctuation swaps. No other deviations.
+
+**For the next task:** Phase 30 closes here; the full PR loop runs at this
+commit (push, PR, CI green, rebase-and-merge or merge commit, never
+squash; CI also provides the deferred confirmation for the phase's
+E2E/production-build claims). 31.1 (demo script) can now cite the coverage
+note as a served surface. Post-launch queue unchanged: pre-hydration typing
+gap on combobox inputs; two stale `in_progress` aggregate runs remain
+unpublished and harmless.

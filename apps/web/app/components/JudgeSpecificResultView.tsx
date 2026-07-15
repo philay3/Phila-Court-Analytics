@@ -36,6 +36,7 @@ import { DistributionSection } from './DistributionSection';
 import { SentencingUnavailableNotice } from './SentencingUnavailableNotice';
 import { CHARGE_RESULT_COPY } from './charge-result-copy';
 import { JUDGE_RESULT_COPY } from './judge-result-copy';
+import { RESULT_DISPLAY_COPY } from './result-display-copy';
 
 interface JudgeSpecificResultViewProps {
   data: JudgeSpecificResultSuccess;
@@ -70,6 +71,7 @@ export function JudgeSpecificResultView({ data }: JudgeSpecificResultViewProps) 
         <p className="text-sm text-muted">
           {CHARGE_RESULT_COPY.lastRefreshedLabel}: {formatLastRefreshed(data.lastRefreshed)}
         </p>
+        <p className="text-sm text-muted">{RESULT_DISPLAY_COPY.coverageNote}</p>
       </section>
 
       <div data-testid="section-responsible-use">

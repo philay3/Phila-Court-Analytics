@@ -25,6 +25,7 @@ import { DistributionSection } from './DistributionSection';
 import { SentencingUnavailableNotice } from './SentencingUnavailableNotice';
 import { JudgeFilterEntry } from './JudgeFilterEntry';
 import { CHARGE_RESULT_COPY } from './charge-result-copy';
+import { RESULT_DISPLAY_COPY } from './result-display-copy';
 
 interface ChargeOnlyResultViewProps {
   data: ChargeOnlyResultSuccess;
@@ -48,6 +49,7 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
         <p className="text-sm text-muted">
           {CHARGE_RESULT_COPY.lastRefreshedLabel}: {formatLastRefreshed(data.lastRefreshed)}
         </p>
+        <p className="text-sm text-muted">{RESULT_DISPLAY_COPY.coverageNote}</p>
       </section>
 
       <div data-testid="section-responsible-use">

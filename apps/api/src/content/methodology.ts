@@ -49,10 +49,11 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
     sampleSize: {
       heading: 'Sample size',
       body:
-        'Every figure is shown with its sample size: the number of charge ' +
-        'dispositions or sentencing events it summarizes. Figures built from more ' +
-        'data are more stable, so the sample size appears on every figure to show ' +
-        'how much data stands behind it.',
+        'Every figure is shown with its sample size: the number of records it ' +
+        'summarizes (charge dispositions for outcome figures, and individual ' +
+        'sentence components for sentencing figures). Figures built from more data ' +
+        'are more stable, so the sample size appears on every figure to show how ' +
+        'much data stands behind it.',
     },
     thinData: {
       heading: 'Thin data',
@@ -79,12 +80,17 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
       // covered-period eligibility for sentencing figures.
       body:
         'Sentencing distributions summarize the sentence types recorded for charges ' +
-        'that reached sentencing. They carry their own sentencing sample size, ' +
-        'separate from and typically smaller than the outcome sample size, and may ' +
-        'be unavailable for some charges. Sentencing dates are recorded ' +
-        'independently of disposition dates: the two usually coincide, but a small ' +
-        'share of sentencing dates fall earlier, and whether a sentencing event is ' +
-        'inside the covered period is decided by the sentencing date itself.',
+        'that reached sentencing. A single sentencing event can include several ' +
+        'components (for example probation plus a fine), and each component is ' +
+        'counted as its own entry, so the sentencing sample size counts sentence ' +
+        'components rather than sentenced charges. It is measured separately from ' +
+        'the outcome sample size and can be smaller or larger: not every disposed ' +
+        'charge reaches sentencing, while each charge that does can contribute more ' +
+        'than one component. Sentencing figures may be unavailable for some charges. ' +
+        'Sentencing dates are recorded independently of disposition dates: the two ' +
+        'usually coincide, but a small share of sentencing dates fall earlier, and ' +
+        'whether a sentencing event is inside the covered period is decided by the ' +
+        'sentencing date itself.',
     },
     limitations: {
       heading: 'Known limitations',

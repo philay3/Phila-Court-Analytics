@@ -41,6 +41,13 @@ export const RESULT_DISPLAY_COPY = {
   thinDataCalloutBody:
     'These figures come from a small number of records. With so little data behind them, the percentages can shift noticeably as more records are added, so read them as a rough summary rather than a settled pattern.',
 
+  // Coverage note (task 30.3): rendered in the summary section of both result
+  // views, adjacent to the responsible-use notice. States the coverage
+  // construction (event-date anchoring, final outcomes only, ongoing
+  // collection); never a current corpus shape.
+  coverageNote:
+    "These figures summarize criminal cases from Philadelphia's Municipal Court and Court of Common Pleas with disposition or sentencing events on or after January 1, 2025. Only charges with a recorded final outcome are included, and collection is ongoing: the figures reflect records collected so far, not every Philadelphia criminal case.",
+
   // ResponsibleUseNotice — the four required statements, in order.
   responsibleUseHistorical: 'These figures are historical aggregates.',
   responsibleUseNotLegalAdvice: 'They are not legal advice.',

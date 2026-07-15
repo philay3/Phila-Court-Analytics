@@ -103,7 +103,8 @@ describe('ChargeOnlyResultView', () => {
     expect(within(sentencingTable).getByText('Probation')).toBeInTheDocument();
     expect(screen.getByText(formatSampleSize(SENTENCING_SAMPLE_SIZE))).toBeInTheDocument();
 
-    // Responsible-use notice + both links.
+    // Coverage note, responsible-use notice + both links.
+    expect(screen.getByText(RESULT_DISPLAY_COPY.coverageNote)).toBeInTheDocument();
     expect(screen.getByText(RESULT_DISPLAY_COPY.responsibleUseHistorical)).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: CHARGE_RESULT_COPY.methodologyLinkText }),
