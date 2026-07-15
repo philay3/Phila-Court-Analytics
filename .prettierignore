@@ -3,7 +3,7 @@ dist/
 .next/
 coverage/
 pnpm-lock.yaml
-docs/
+docs/planning/
 tasks/
 CLAUDE.md
 test-results/

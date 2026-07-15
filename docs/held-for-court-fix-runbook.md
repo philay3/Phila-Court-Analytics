@@ -134,7 +134,7 @@ intake until cleared.**
 ## Phase C — intake backlog (per the committed COL Intake Protocol)
 
 Each step cites the protocol section it implements
-(`agent-docs/intake/col-intake-protocol.md`).
+(`docs/intake/col-intake-protocol.md`).
 
 **C1 (Chops) — freeze (protocol "[0] Freeze", mtime-quiesced):** confirm the
 staged set is quiescent (no file mtime newer than the quiesce window), then

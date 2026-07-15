@@ -3174,7 +3174,7 @@ the record field there.
   ```
   tier1: match=34 diverged=0 updated=0 new=0 missing=0
   tier2: match=1603 diverged=0 updated=0 new=0 golden_missing=0 failed=0
-  tier2 report: /Users/phillipanthony/court-data/goldens/reports/tier2-report-20260711T213310_122609Z.json
+  tier2 report: ~/court-data/goldens/reports/tier2-report-20260711T213310_122609Z.json
   EXIT_CODE=0
   ```
 
@@ -6215,3 +6215,81 @@ script's guardrails assume /data-coverage remains the live run-metadata
 surface; if 31.3 changes that page's fields, the script's re-verify
 walkthrough needs a same-task update. A republish before the demo requires
 only the script's own re-verify walkthrough, not a doc rewrite.
+
+## Task 31.2a — Documentation Tree Consolidation (2026-07-15)
+
+**What was done.** Consolidated the two documentation trees into one:
+`docs/` survives; `agent-docs/` is retired. Human-maintained planning
+documents (README, architecture, brief, front-end-spec,
+implementation-backlog, prd, roadmap, sprint-1..3 plans — 10 tracked
+files) moved via `git mv` to the new protected subdirectory
+`docs/planning/`. All 16 tracked agent docs moved via `git mv` to
+`docs/` (11 flat files) with `decisions/` and `intake/` preserved as
+`docs/decisions/` and `docs/intake/`. The flat-at-root shape was chosen
+because it preserves every relative link with zero edits (`../apps/...`
+in a11y-mobile-pass.md, `decisions/...`, `intake/...` sibling links).
+CLAUDE.md's Documentation rules block replaced with the approved text
+(protection narrows from all of `docs/` to `docs/planning/`; agent docs
+go elsewhere under `docs/`), plus its two other path references updated
+(Reference docs section; ADR 0002 pointer). The original rule (commit
+4bd7231, task 2.2) existed for authorship separation — that rationale is
+preserved by the `docs/planning/` boundary.
+
+**v1 trio committed.** `v1col-data.md`, `v1database-schema.md`,
+`v1pipeline-arch.md` moved to `docs/`, prettier-formatted (sanctioned
+exception 1), all 17 machine-absolute `file:///` links converted to
+repo-relative with identical targets (sanctioned exception 2, planning-
+chat ruling 2, done before first `git add` so absolute local paths never
+enter history), copy-scanned via the 31.1 one-off `scanPublicCopy`
+mechanism — CLEAN, 0 violations — and committed.
+
+**Reference updates (each file's only change).** `.prettierignore`
+(`docs/` → `docs/planning/` — format coverage strictly grows),
+`db/scripts/seed-guard.ts` + `db/tests/sweep-seed-rows.test.ts`
+(seed-sweep-runbook path), `docs/held-for-court-fix-runbook.md` (intake
+protocol path), `docs/tooling.md` (describes the .prettierignore
+contents; ruling 3). Self-healed without edits: `.env.example` and
+`db/README.md` referenced `docs/local-setup.md`, stale since task 2.2,
+correct again now. Unchanged by design: `eslint.config.mjs` (`docs/`
+ignore harmless in a markdown-only tree), root `README.md` layout row,
+`docs/planning/architecture.md` repo diagram,
+`tasks/current-task-template.md`.
+
+**Demo script canonical path (supersedes the 31.1 note).** The demo
+script now lives at `docs/demo-script.md`. 31.3 impl AC 5 and 31.4
+item 9 execute it from there.
+
+**Caveat retirement (new posture).** From this task's gates onward,
+`pnpm format:check` green = fully clean; ANY warn line = stop. The
+v1-trio warn-lines caveat is retired. Expected untracked posture:
+`git ls-files --others --exclude-standard docs/` = exactly the four
+sprint-4..7 plan files (physically moved to `docs/planning/`, staying
+untracked per pin 6 / ruling 4; publication is a post-launch queue
+item for 31.2's future-work doc). Any other untracked or warn entry =
+stop.
+
+**Files touched:** 26 tracked files `git mv`'d under `docs/` (no content
+change — R100 renames); `docs/v1col-data.md`, `docs/v1database-schema.md`,
+`docs/v1pipeline-arch.md` (new; formatting + link-form only); `CLAUDE.md`
+(docs rule + two path references); `.prettierignore`;
+`db/scripts/seed-guard.ts`; `db/tests/sweep-seed-rows.test.ts`;
+`docs/held-for-court-fix-runbook.md`; `docs/tooling.md`;
+`tasks/worklog.md`.
+
+**Deviations from plan:** none — executed per the five planning-chat
+rulings (structure as proposed; ALL file:/// links converted, not just
+the two breaking ones; tooling.md update approved; sprint-4..7 plans
+moved untracked; exception list = worklog + current-task + git history).
+Human-directed pre-commit addition: one pre-existing machine-absolute
+path in a historical entry (COL-era verbatim block) was redacted to the
+~/court-data/ shorthand per the public-repo hygiene check; the report
+filename is preserved. This 31.2a entry itself carried no absolute paths.
+
+**For the next task.** 31.2 writes README pointers against this final
+tree: planning set at `docs/planning/`, agent docs flat at `docs/` root,
+ADRs at `docs/decisions/`, intake at `docs/intake/`. The untracked
+`docs/planning/sprint-5-plan.md` contains one literal "agent-docs"
+mention (line 653) — out of the repo; fix whenever the sprint plans are
+published post-launch. The trio's remaining relative links point at real
+source paths and were target-verified; content rewrites (including any
+prose staleness in the v1 docs) remain 31.2+.

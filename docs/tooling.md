@@ -48,7 +48,7 @@ workspace tsconfigs exist.
 
 `.prettierrc` at the root (single quotes, print width 100, otherwise Prettier defaults) applies
 everywhere; `.prettierignore` excludes build output, the lockfile, and planning prose
-(`docs/`, `tasks/`, `CLAUDE.md`). Workspaces add nothing.
+(`docs/planning/`, `tasks/`, `CLAUDE.md`). Workspaces add nothing.
 
 ## Root scripts
 

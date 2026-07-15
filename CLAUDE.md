@@ -50,14 +50,16 @@ You are the implementation agent for this project. Planning and task sequencing 
 
 ## Reference docs
 
-Planning docs live in `docs/`. Consult them for context, but `tasks/current-task.md` defines what you build. If the docs and the task conflict, ask.
+Planning docs live in `docs/planning/`. Consult them for context, but `tasks/current-task.md` defines what you build. If the docs and the task conflict, ask.
 
 ## Documentation rules
 
-- `docs/` is reserved for the human-maintained planning documents (roadmap,
-  PRD, architecture, specs). Never create, edit, or move files in `docs/`.
-- Documentation you generate (setup notes, tooling notes, decision records)
-  goes in `agent-docs/`.
+- `docs/planning/` is reserved for the human-maintained planning documents
+  (roadmap, PRD, architecture, specs, sprint plans). Never create, edit, or
+  move files in `docs/planning/`.
+- Documentation you generate (setup notes, runbooks, reports, decision
+  records) goes elsewhere under `docs/` — ADRs in `docs/decisions/`, intake
+  protocols in `docs/intake/`, everything else at the `docs/` root.
 - Package-level READMEs (e.g. `db/README.md`, `apps/api/README.md`) are fine
   and belong with their package — they are not affected by this rule.
 ## Task completion git protocol (mandatory)
@@ -123,7 +125,7 @@ the committed tree still imported a module the same task had already deleted.
 
 ## Data source & collector status
 
-Collector status: UNPARKED per ADR 0002 (agent-docs/decisions/0002-source-access.md) — collection conditions live there; the baseline-run task will carry the operational spec.
+Collector status: UNPARKED per ADR 0002 (docs/decisions/0002-source-access.md) — collection conditions live there; the baseline-run task will carry the operational spec.
 
 ## Real-data access policy (2026-07-11)
 
