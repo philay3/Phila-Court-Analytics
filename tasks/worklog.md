@@ -6520,3 +6520,87 @@ exactly those two hits at the honesty-bar sentence and STOP on any delta.
 The copy-safety guarded-disclaimer amendment lives in the planning-chat
 post-launch queue. Republish of current-corpus figures reads from
 `/data-coverage`, never from edits to these two frozen reports.
+
+## Operational intake — aug2025 window collection (2026-07-15)
+
+Standard COL Intake Protocol run over the collector drop zone after window
+collection reached 2025-08-13 (both courts). No code changes; all artifacts
+under `~/court-data/`; run report
+`reports/aug2025-intake-run-20260715T201916Z.txt`. Counts only below; all
+pipeline lines pasted verbatim from tool output.
+
+- **Step-0 recon (pre-intake baseline, reconciled against the 29.3 entry):**
+  parsed.dockets=9,932 (4,724 CP / 5,208 MC), parsed.charges=30,285,
+  undisposed=6,538, duplicate docket numbers=0; fact run `cc71204b…`
+  (12,792 outcomes); published aggregate run `d47dcd20…`.
+- **[0] Freeze + [0b] exclusion (snapshot
+  `aug2025-window-intake-20260715T201916Z`, manifest beside it; verbatim):**
+  `staged_at_freeze=11664 mtime_guard_dropped=3 excluded_already_loaded=8376
+  included=3285` (1,108 CP / 2,177 MC).
+- **Import (verbatim):** `imported=3282 duplicate=3 invalid=0 failed=0`
+  (duplicates = the byte-identical parse_failed trio, as in prior intakes).
+- **Extract (verbatim):** `success=3285 partial=0 needs_ocr_or_review=0
+  failed=0` (dir `extracted-intake-aug2025-20260715/`).
+- **Parse (verbatim):** `parsed=3278 failed=7 skipped=0`
+  (dir `envelopes-intake-aug2025-20260715/`).
+- **STOP-AND-REPORT + ruling (planning chat, 2026-07-15):** 4 NEW parse
+  failures beyond the known trio. Ruling: (1) MC ParseError cohort
+  `a2779cd9…` / `f16bd8b4…` / `f9bcc008…` quarantined as SUSPECTED VARIANT,
+  UNCONFIRMED — parked as a named post-launch investigation (first
+  post-launch intake reports recurrence; structural characterization only;
+  parser-support vs documented-permanent-class decided there; re-parse if
+  support lands). (2) `e72bb960…` (CP) quarantined per the documented
+  isolated KeyError class. (3) Restated quarantine count 3 → 7 CONFIRMED.
+- **MC May–Aug 2025 denominator (ruling item 4, report-only, derived from
+  snapshot manifest + intake envelopes):** 2,177 MC dockets in this intake;
+  2,174 parsed clean (all with filed_date in 2025-05-01..2025-08-31); the 3
+  quarantined MC sheets have no parsed record so their filed dates are
+  underivable — window membership inferred from collection provenance.
+- **GOLDEN WRITE NOTE (required per protocol):** `run-fixtures
+  --init-goldens` wrote 3,278 absent tier-2 goldens for the new dockets;
+  zero existing goldens touched; zero drift. Verbatim: tier1 `match=35
+  diverged=0 updated=0 new=0 missing=0`; tier2 `match=0 diverged=0 updated=0
+  new=3278 golden_missing=0 failed=7`. Report
+  `tier2-report-20260715T212447_542393Z.json`. Exit 1 attributed to the
+  documented dirty-on-failed semantics (failed > 0 always non-zero); the 7
+  are the adjudicated quarantine set.
+- **Load (exit 0, verbatim):** `loaded=3278 skipped_same_version=0
+  replaced_newer_version=0 refused_older_version=0 superseded=0
+  skipped_stale_superseded=0 failed_envelope_loaded=7 failed_exception=0
+  missing_import_record=0 total=3285`. Reconciles with parse (3,278 + 7 ==
+  3,285).
+- **Corpus:** 9,932 → 13,210 dockets (+1,104 CP → 5,828; +2,174 MC → 7,382),
+  charges 30,285 → 41,449, undisposed 6,538 → 9,219. Zero duplicate docket
+  numbers; parse_failed documents restated 3 → 7.
+- **Fact build (single invocation, run
+  `50c7b88b-49fb-47…`, verbatim):** `charges_processed=41449
+  facts_written=16511 undisposed_skipped=9219 held_for_court_skipped=15719`,
+  `reconcile facts_written+undisposed_skipped+held_for_court_skipped==
+  charges_processed: True`; `sentence_facts_written=12329
+  components_on_disposed=12329`, `reconcile
+  sentence_facts==components_on_disposed: True`. Review-item dedup held
+  (new insertions only for new dockets).
+- **Aggregates:** generate-aggregates run
+  `dfbecb20-9230-4836-b4f9-654f616fcc88` from build run `50c7b88b…`
+  (default=latest); console tail (verbatim): `data_range:
+  2025-01-01..2026-07-14`. Post-generate `status=in_progress` verified as
+  the documented 26.1 lifecycle (validate flips to completed).
+  validate-aggregates (verbatim): `verdict=validated`;
+  `charge_outcome_aggregates: rows_checked=296 violations=0`;
+  `charge_sentencing_aggregates: rows_checked=237 violations=0`;
+  `judge_outcome_aggregates: rows_checked=2056 violations=0`;
+  `judge_sentencing_aggregates: rows_checked=1831 violations=0`; `run marked
+  completed (validated)`. publish-aggregates (verbatim):
+  `publish-aggregates run=dfbecb20-9230-48 published` / `prior published run
+  d47dcd20-2059-46 invalidated (superseded)`. Exactly one active published
+  run verified post-swap.
+- **Post-publish spot check (local API against live DB, read-only):**
+  charge-results endpoint serves
+  `aggregateRunId=dfbecb20-9230-4836-b4f9-654f616fcc88`,
+  `lastRefreshed=2026-07-15T21:32:47.268Z`, dateRange end `2026-07-14`
+  (sample: theft-by-deception outcomes sampleSize=47).
+- **For the next cycle:** quarantine set is now 7 (known trio + `e72bb960…`
+  KeyError + the 3-sheet MC ParseError cohort). The cohort is a NAMED
+  POST-LAUNCH INVESTIGATION — the first post-launch intake must report
+  recurrence; it is NOT folded into expected quarantine. No parser edits
+  were made in this cycle per the ruling.
