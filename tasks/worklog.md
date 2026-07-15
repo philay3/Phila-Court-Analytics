@@ -6380,3 +6380,75 @@ documented boot sequence now includes `pnpm build:packages`; any 31.3 change
 to local boot must keep README/dry-run parity. Untracked posture unchanged:
 `git ls-files --others --exclude-standard` over the repo = exactly the four
 sprint-4..7 plan files under `docs/planning/`.
+
+## Task 31.3 — Deployment Implementation: Guard, Rate Limiting, ADR, Runbooks (2026-07-15)
+
+**What was built.** The pre-go-live implementation layer per the adjudicated
+31.3 gate. (1) API_BASE_URL production guard:
+`apps/web/app/lib/api-base-url.ts` now THROWS when
+`NODE_ENV === 'production'` and the value is unset/empty; local-dev default
+retained; next.config.ts evaluates it at config load, so misconfiguration
+fails `next build`/`next start` loudly. Four new guard tests in
+`api-base-url.test.ts`. (2) Live rate limiting: `@fastify/rate-limit@11.1.0`
+(the task's one new dependency) registered INSIDE the public-routes
+encapsulation scope (`apps/api/src/routes/public/index.ts`) — /health and
+admin are structurally outside it. Constant-key global bucket per ruling 1
+(recon: no reliable client identity reaches the private API — SSR fetches
+carry none, the Next rewrite proxy adds only x-forwarded-host); per-IP
+enforcement is the Cloudflare edge rule. Exceeded path:
+`errorResponseBuilder` returns `publicError(RATE_LIMITED, <shared message>)`
+and the plugin THROWS it (plugin index.js `throw
+params.errorResponseBuilder(...)`), so the central handler shapes the 429 —
+flat catalog shape with requestId, message from PUBLIC_ERROR_MESSAGES.
+Thresholds env-tunable via loadEnv(): RATE_LIMIT_MAX (default 120) /
+RATE_LIMIT_WINDOW_MS (default 60000), validated positive integers, always
+registered, no disable path (ruling 2). Seven tests in
+`apps/api/src/rate-limit.test.ts`: defaults, env reads, invalid-value
+throws, 429 catalog shape (requestId presence proves central-handler
+routing), two-IPs-one-bucket keying proof, /health 10-request burst all-200,
+env-tuned threshold. (3) `docs/decisions/0004-deployment.md`: all ruled
+decisions with rationale and one-line rejections, plus the six recorded
+hazards including the per-instance in-memory bucket note (required addition
+1). (4) Runbooks at docs/ root (ruling 5): `runbook-go-live.md` (domain,
+DB creation, migrate, nine-table dump/restore with matched `pg_dump -Fc` /
+`pg_restore --single-transaction` pair and explicit FK-ordered TOC per
+required addition 2, private API + web services with CI-proven build
+commands incl. `pnpm generate`, DNS/proxy, edge rate rule ~300/min on
+/api/*, Bot Fight Mode OFF, UptimeRobot probes, three-surface noindex
+verification — every step with a checkpoint), `runbook-verification.md`
+(AGENT read-only half: endpoint sweep, noindex, forbidden-field scratch
+scan per recon 5, one controlled 429 burst then stop; CHOPS half:
+demo-script smoke), `runbook-rollback-republish.md` (Render rollback,
+disposable-mirror data posture, edge point-away, TRUNCATE-then-restore
+republish). Secret hygiene throughout: prod DATABASE_URL only via
+`read -s`, never a file, never echoed.
+
+**Files touched.** apps/web/app/lib/api-base-url.ts + .test.ts;
+apps/api/src/env.ts, app.ts, routes/public/index.ts, rate-limit.test.ts
+(new), package.json (+@fastify/rate-limit); pnpm-lock.yaml;
+packages/shared/src/errors.ts (one line: stale "no middleware exists yet"
+comment retired, ruling 4); .github/workflows/ci.yml (one enumerated edit:
+API_BASE_URL env on the node-job Typecheck step — `next typegen` runs with
+NODE_ENV=production); apps/web/.env.example (production-required note);
+docs/local-setup.md (one enumerated edit, ruling 3b: apps/web/.env copy
+step); docs/decisions/0004-deployment.md (new); docs/runbook-go-live.md,
+docs/runbook-verification.md, docs/runbook-rollback-republish.md (new);
+tasks/worklog.md.
+
+**Deviations from plan.** None. app.ts was touched as anticipated
+("may be untouched" resolved to a five-line register-options change).
+
+**NEW STANDING LOCAL FACT (ruling 3c).** `pnpm typecheck`, web production
+builds, and `pnpm test:e2e` now REQUIRE API_BASE_URL locally (Next defaults
+NODE_ENV=production for every CLI command except `next dev`, and the guard
+evaluates at config load). Set it via `apps/web/.env` (copy the example) or
+a shell export. CI: the node job's Typecheck step carries it explicitly;
+the e2e job already had it at job level.
+
+**For the next task (31.4 / close-out).** Go-live is post-merge Chops work
+from the three runbooks; ACs 3–6 of the plan verify there. Final authority
+for build/E2E behavior claims is CI green at the phase PR (§6.2 exception).
+The in-app limiter bucket is per-instance in-memory — recorded as ADR
+hazard 5; revisit before any scale-out. Run-report file emission remains
+deferred (named at 31.4). README live-URL line belongs to the close-out
+branch, not here.

@@ -75,6 +75,11 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+        # `next typegen` (part of web typecheck) runs with NODE_ENV=production,
+        # so the 31.3 API_BASE_URL production guard evaluates here. Any
+        # non-empty URL satisfies it; nothing is fetched during typegen.
+        env:
+          API_BASE_URL: http://127.0.0.1:3001
 
       - name: Validate taxonomy
         run: pnpm taxonomy:validate

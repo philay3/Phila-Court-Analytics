@@ -21,7 +21,7 @@ import { Type, type Static } from '@sinclair/typebox';
  *   publishable judge-specific aggregate exists.
  * - SENTENCING_RESULT_UNAVAILABLE (404) — outcome data exists but no publishable
  *   sentencing aggregate does.
- * - RATE_LIMITED (429) — catalog entry only; no rate limiting middleware exists yet.
+ * - RATE_LIMITED (429) — emitted by the public API's rate limiter (task 31.3).
  * - INTERNAL_ERROR (500) — unexpected server error; the message must stay generic.
  *
  * PUBLIC_ERROR_CODE_STATUS values are DEFAULTS, not invariants: the `statusCode`

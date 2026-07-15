@@ -25,6 +25,18 @@ until the pipeline needs one (backlog FDN-002.1, "documented" option).
    discrete `POSTGRES_*` variables, keep `DATABASE_URL` in sync with them —
    nothing recomposes it for you.
 
+   Also copy the web app's example file (task 31.3 requirement):
+
+   ```sh
+   cp apps/web/.env.example apps/web/.env
+   ```
+
+   `API_BASE_URL` is optional under `next dev`, but every command that runs
+   Next with `NODE_ENV=production` — `pnpm typecheck` (via `next typegen`),
+   `pnpm --filter @pca/web run build`, and `pnpm test:e2e` — fails loudly
+   unless it is set (in `apps/web/.env` or the shell). The default value in
+   the example file is correct for local use.
+
 2. Start PostgreSQL:
 
    ```sh
