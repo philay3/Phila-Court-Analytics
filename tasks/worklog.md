@@ -5897,3 +5897,65 @@ reconstructed from planning chat (never from memory) or accepted as
 worklog-only. Two stale `in_progress` aggregate runs (`51d27853…`,
 `2d4707ca…`, pre-publish history) sit unpublished in
 `analytics.aggregate_runs`; harmless to the API predicate.
+
+## Task 30.2 — Queued Contract Closures (2026-07-14)
+
+**What was done.** Two documented closures, ZERO code changes (both
+dispositions ruled at plan review; evidence replaces the diff).
+
+**Part A — message-constant migration: CLOSED-BY-EVIDENCE (already
+satisfied at 10.2, never marked closed).** Recon per the sprint-plan
+stop-and-report preamble found the §5 queue item's premise stale:
+`CHARGE_RESULT_UNAVAILABLE_MESSAGE` already lives in `@pca/shared` at
+`packages/shared/src/public/charge-result.ts` alongside the other pinned
+literals (`CHARGE_NOT_FOUND_MESSAGE`, `CHARGE_SENTENCING_UNAVAILABLE_MESSAGE`),
+with doc-comment provenance "migrated from the 8.1 service in task 10.2."
+Single definition: the literal occurs exactly once repo-wide, and is
+additionally schema-pinned as a `Type.Literal` in the charge-unavailable
+arm contract. All consumers import from `@pca/shared` — api
+(`services/charge-result.ts`, `services/judge-result.ts`, route/service
+tests, `public-copy-safety.test.ts`), web (`ChargeUnavailableView.tsx`,
+`JudgeChargeUnavailableView.tsx`, component/state tests — never re-typed),
+e2e (`unavailable-and-not-found.spec.ts`), shared-internal
+(`error-messages.ts` references it in `PUBLIC_ERROR_MESSAGES`;
+`test-support/fixtures.ts`). Scanner coverage at the @pca/shared home is
+the 10.2 mechanism in `apps/api/src/public-copy-safety.test.ts`: the
+constant is imported into `PINNED_PUBLIC_MESSAGES` and scanned at
+definition, scanned again via the `PUBLIC_ERROR_MESSAGES` map, and scanned
+live in rendered payloads via the probe-registry route scans (verbatim
+suite output in the completion report). The in-package shuffle alternative
+was rejected at plan review as manufactured motion.
+
+**Part B — duration-display resolution: expected finding CONFIRMED, no
+duration data on any public surface; the 360-day-year display question is
+FORMALLY RETIRED for the MVP.** Method: source read + SELECT-only live-DB
+checks via the sanctioned mechanism. Evidence: (1) live `analytics.*`
+column inventory (verbatim psql in the completion report) — no duration
+column in any of the five tables (`aggregate_runs` + four aggregate
+tables; columns are category/count/percentage/sample-size/date-range/
+thin-data/taxonomy bookkeeping only); (2) the single analytics migration
+(`20260708223601`) defines that closed column set and no later migration
+alters analytics tables; (3) `min_days`/`max_days`/`min_assumed` exist
+only in `parsed.*` and `facts.*` (non-public layers); (4) grep for
+duration identifiers across `packages/shared/src`, `apps/api/src`,
+`apps/web/app` — zero hits; distribution entries carry only
+categoryCode/displayName/count/percentage, all public schemas
+`additionalProperties: false`, serialized against the union response
+schemas. Clarity note: NONE, ruled at plan review — a units note for data
+that never renders would mislead rather than clarify.
+
+**Verification.** Copy-safety suite green with the constant scanned at its
+@pca/shared home; E2E green on `pca_test` (shell-exported DATABASE_URL;
+29.2 guard never bypassed); four gates + typecheck post-staging per the
+clean-environment gate. Live DB read-only throughout (SELECT-only
+inventory). Outputs verbatim in the completion report.
+
+**Files touched:** `tasks/worklog.md` only.
+
+**Deviations from plan:** none (the zero-diff shape IS the approved plan).
+
+**For the next task (30.3 hand-off, ruled at plan review):** the 30.3 full
+read should confirm no served copy promises sentence-length or duration
+information in synonym terms the identifier grep would not catch
+("sentence length", "how long", etc.) — expected clean. 30.3 also still
+owns the three queued sentencing-sample rewording items from 30.1-D.
