@@ -95,7 +95,11 @@ export function buildApp({ logger = true, db }: BuildAppOptions = {}) {
   });
 
   app.register(healthRoutes);
-  app.register(publicRoutes, { prefix: '/api/v1/public' });
+  app.register(publicRoutes, {
+    prefix: '/api/v1/public',
+    rateLimitMax: env.rateLimitMax,
+    rateLimitWindowMs: env.rateLimitWindowMs,
+  });
   app.register(adminRoutes, { prefix: '/api/v1/admin' });
 
   return app;

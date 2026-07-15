@@ -243,7 +243,7 @@ describe.runIf(canRunBehaviorTests)('sweep-seed-rows behavior (scratch database)
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) {
       expect(verdict.reason).toBe('real-corpus');
-      expect(verdict.message).toContain('agent-docs/seed-sweep-runbook.md');
+      expect(verdict.message).toContain('docs/seed-sweep-runbook.md');
     }
     await scratch.deleteFrom('fact.fact_build_runs').where('id', '=', buildRunId).execute();
   });

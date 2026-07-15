@@ -56,7 +56,7 @@ export async function checkSeedTarget(db: Kysely<Database>): Promise<SeedGuardVe
         message:
           `refusing to seed: the target database contains real corpus data ` +
           `(${table} is nonempty). Seeding a live database would re-insert the ` +
-          'fake seed judges. See agent-docs/seed-sweep-runbook.md.',
+          'fake seed judges. See docs/seed-sweep-runbook.md.',
       };
     }
   }

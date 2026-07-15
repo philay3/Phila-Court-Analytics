@@ -25,4 +25,31 @@ describe('resolveApiBaseUrl', () => {
     vi.stubEnv('API_BASE_URL', '');
     expect(resolveApiBaseUrl()).toBe(LOCAL_DEV_API_BASE_URL);
   });
+
+  describe('production guard (task 31.3)', () => {
+    it('throws in production when API_BASE_URL is unset', () => {
+      vi.stubEnv('NODE_ENV', 'production');
+      expect(() => resolveApiBaseUrl(undefined)).toThrowError(
+        /API_BASE_URL is required in production/,
+      );
+    });
+
+    it('throws in production when API_BASE_URL is empty', () => {
+      vi.stubEnv('NODE_ENV', 'production');
+      expect(() => resolveApiBaseUrl('')).toThrowError(/API_BASE_URL is required in production/);
+    });
+
+    it('returns the configured value in production when set', () => {
+      vi.stubEnv('NODE_ENV', 'production');
+      expect(resolveApiBaseUrl('http://api.internal:3001')).toBe('http://api.internal:3001');
+    });
+
+    it('keeps the local-dev default outside production', () => {
+      vi.stubEnv('NODE_ENV', 'development');
+      expect(resolveApiBaseUrl(undefined)).toBe(LOCAL_DEV_API_BASE_URL);
+
+      vi.stubEnv('NODE_ENV', 'test');
+      expect(resolveApiBaseUrl('')).toBe(LOCAL_DEV_API_BASE_URL);
+    });
+  });
 });

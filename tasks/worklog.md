@@ -3174,7 +3174,7 @@ the record field there.
   ```
   tier1: match=34 diverged=0 updated=0 new=0 missing=0
   tier2: match=1603 diverged=0 updated=0 new=0 golden_missing=0 failed=0
-  tier2 report: /Users/phillipanthony/court-data/goldens/reports/tier2-report-20260711T213310_122609Z.json
+  tier2 report: ~/court-data/goldens/reports/tier2-report-20260711T213310_122609Z.json
   EXIT_CODE=0
   ```
 
@@ -6152,3 +6152,303 @@ E2E/production-build claims). 31.1 (demo script) can now cite the coverage
 note as a served surface. Post-launch queue unchanged: pre-hydration typing
 gap on combobox inputs; two stale `in_progress` aggregate runs remain
 unpublished and harmless.
+
+## Task 31.1 — Demo Script + Demo Data Guardrails (2026-07-15)
+
+**What was done.** Authored `agent-docs/demo-script.md`: the start-to-finish
+demo path per pinned decision 1 (high-sample charge search → charge-only
+result → thin-data example → judge filter → solid judge pair → thin judge
+pair → judge-unavailable fallback → sentencing-unavailable charge →
+remove-filter flow → methodology → data-coverage → mobile view at 390/320),
+every step naming its slug and app path with expected on-screen outcomes in
+copy-safe terms, a staleness-guardrails preamble (snapshot-of-a-published-run
+framing, no pinned numbers anywhere, republish behavior, per-arm re-pick
+criteria), the approved AC-3 re-verify walkthrough (/data-coverage metadata
+check → anchor loads → re-pick criteria; no new tooling), and a
+known-limitations section (judge thinness, MC/CP coverage shape,
+sentencing-unavailable classes, ongoing collection). Held-for-court is
+framed structurally only — non-terminal forms produce no outcome facts by
+construction; no before/after framing anywhere. The sample-size moment
+states the counting construction (outcome samples charge-counted; sentencing
+samples component-counted under eligible parents; may differ in either
+direction) and never asserts which is larger. Opens the phase-31 branch as
+its first commit.
+
+**Path supersession (recorded per planning-chat ruling).** Task 31.1 AC 1's
+literal path `docs/demo-script.md` was superseded to
+`agent-docs/demo-script.md` by planning-chat adjudication at plan approval —
+the CLAUDE.md prohibition on agent-created files in `docs/` stands; nothing
+under `docs/` was created or touched.
+
+**Anchor re-verification (AC 6).** All eight candidate anchors verified
+against the currently published run — ZERO substitutions; the midpoint
+substitution checkpoint was not triggered. Method: production builds booted
+read-only per the 30.1 mechanism (build:packages → API build + `start` under
+plain node, PORT=3101 → web `next build` + `next start -p 3100`,
+API_BASE_URL to 3101; 3100/3101 precedented), each anchor curled on the
+public API and its arm shape confirmed (thin flags, unavailable arms,
+display names, run id on every payload); sole published+non-invalidated run
+confirmed SELECT-only via `docker compose exec -T postgres psql -U pca -d
+pca` (one row). Search terms for every anchor confirmed resolving in the
+charge/judge autocomplete endpoints. Raw outputs verbatim in the completion
+report. Servers torn down and ports verified freed before any suite or gate
+ran; live DB read-only throughout; no .env value echoed.
+
+**Copy safety (AC 5 / pin 8).** One-off scanner invocation confirmed
+feasible and run: `scanPublicCopy` from the built `@pca/shared` dist over
+the whitespace-collapsed doc — CLEAN, 0 violations (output verbatim in the
+completion report). Every quoted on-screen literal in the doc was re-copied
+from source constants and mechanically re-checked against them (25/25
+match). No permanent walker coverage of any doc tree was added.
+
+**Files touched:** `agent-docs/demo-script.md` (new), `tasks/worklog.md`.
+The three pre-existing untracked agent-docs files (v1col-data,
+v1database-schema, v1pipeline-arch) were not touched or staged — their
+disposition is a 31.2 adjudication.
+
+**Deviations from plan:** deliverable path superseded to agent-docs/ by the
+approval ruling (recorded above). None otherwise.
+
+**For the next task:** 31.3 executes this script verbatim against the
+deployed URL (impl AC 5) and 31.4 item 9 runs it as the exit demo. The
+script's guardrails assume /data-coverage remains the live run-metadata
+surface; if 31.3 changes that page's fields, the script's re-verify
+walkthrough needs a same-task update. A republish before the demo requires
+only the script's own re-verify walkthrough, not a doc rewrite.
+
+## Task 31.2a — Documentation Tree Consolidation (2026-07-15)
+
+**What was done.** Consolidated the two documentation trees into one:
+`docs/` survives; `agent-docs/` is retired. Human-maintained planning
+documents (README, architecture, brief, front-end-spec,
+implementation-backlog, prd, roadmap, sprint-1..3 plans — 10 tracked
+files) moved via `git mv` to the new protected subdirectory
+`docs/planning/`. All 16 tracked agent docs moved via `git mv` to
+`docs/` (11 flat files) with `decisions/` and `intake/` preserved as
+`docs/decisions/` and `docs/intake/`. The flat-at-root shape was chosen
+because it preserves every relative link with zero edits (`../apps/...`
+in a11y-mobile-pass.md, `decisions/...`, `intake/...` sibling links).
+CLAUDE.md's Documentation rules block replaced with the approved text
+(protection narrows from all of `docs/` to `docs/planning/`; agent docs
+go elsewhere under `docs/`), plus its two other path references updated
+(Reference docs section; ADR 0002 pointer). The original rule (commit
+4bd7231, task 2.2) existed for authorship separation — that rationale is
+preserved by the `docs/planning/` boundary.
+
+**v1 trio committed.** `v1col-data.md`, `v1database-schema.md`,
+`v1pipeline-arch.md` moved to `docs/`, prettier-formatted (sanctioned
+exception 1), all 17 machine-absolute `file:///` links converted to
+repo-relative with identical targets (sanctioned exception 2, planning-
+chat ruling 2, done before first `git add` so absolute local paths never
+enter history), copy-scanned via the 31.1 one-off `scanPublicCopy`
+mechanism — CLEAN, 0 violations — and committed.
+
+**Reference updates (each file's only change).** `.prettierignore`
+(`docs/` → `docs/planning/` — format coverage strictly grows),
+`db/scripts/seed-guard.ts` + `db/tests/sweep-seed-rows.test.ts`
+(seed-sweep-runbook path), `docs/held-for-court-fix-runbook.md` (intake
+protocol path), `docs/tooling.md` (describes the .prettierignore
+contents; ruling 3). Self-healed without edits: `.env.example` and
+`db/README.md` referenced `docs/local-setup.md`, stale since task 2.2,
+correct again now. Unchanged by design: `eslint.config.mjs` (`docs/`
+ignore harmless in a markdown-only tree), root `README.md` layout row,
+`docs/planning/architecture.md` repo diagram,
+`tasks/current-task-template.md`.
+
+**Demo script canonical path (supersedes the 31.1 note).** The demo
+script now lives at `docs/demo-script.md`. 31.3 impl AC 5 and 31.4
+item 9 execute it from there.
+
+**Caveat retirement (new posture).** From this task's gates onward,
+`pnpm format:check` green = fully clean; ANY warn line = stop. The
+v1-trio warn-lines caveat is retired. Expected untracked posture:
+`git ls-files --others --exclude-standard docs/` = exactly the four
+sprint-4..7 plan files (physically moved to `docs/planning/`, staying
+untracked per pin 6 / ruling 4; publication is a post-launch queue
+item for 31.2's future-work doc). Any other untracked or warn entry =
+stop.
+
+**Files touched:** 26 tracked files `git mv`'d under `docs/` (no content
+change — R100 renames); `docs/v1col-data.md`, `docs/v1database-schema.md`,
+`docs/v1pipeline-arch.md` (new; formatting + link-form only); `CLAUDE.md`
+(docs rule + two path references); `.prettierignore`;
+`db/scripts/seed-guard.ts`; `db/tests/sweep-seed-rows.test.ts`;
+`docs/held-for-court-fix-runbook.md`; `docs/tooling.md`;
+`tasks/worklog.md`.
+
+**Deviations from plan:** none — executed per the five planning-chat
+rulings (structure as proposed; ALL file:/// links converted, not just
+the two breaking ones; tooling.md update approved; sprint-4..7 plans
+moved untracked; exception list = worklog + current-task + git history).
+Human-directed pre-commit addition: one pre-existing machine-absolute
+path in a historical entry (COL-era verbatim block) was redacted to the
+~/court-data/ shorthand per the public-repo hygiene check; the report
+filename is preserved. This 31.2a entry itself carried no absolute paths.
+
+**For the next task.** 31.2 writes README pointers against this final
+tree: planning set at `docs/planning/`, agent docs flat at `docs/` root,
+ADRs at `docs/decisions/`, intake at `docs/intake/`. The untracked
+`docs/planning/sprint-5-plan.md` contains one literal "agent-docs"
+mention (line 653) — out of the repo; fix whenever the sprint plans are
+published post-launch. The trio's remaining relative links point at real
+source paths and were target-verified; content rewrites (including any
+prose staleness in the v1 docs) remain 31.2+.
+
+## Task 31.2 — Submission Package (2026-07-15)
+
+**What was built.** `README.md` rewritten to the adjudicated outline: what
+the product is and is not (guarded-phrase framing only); the launch MODEL
+with no deployed claim (ruling 3a — the live-URL/status line is a named 31.3
+gate item); a what-ships honesty section stating precisely what a fresh
+local boot yields (ruling 3b); paragraph-level architecture; a
+getting-started sequence proven by the dry run; workspace layout; testing;
+a documentation map into the consolidated docs/ tree; limitations and
+future-work links; privacy and responsible use.
+`docs/known-limitations.md` (new): consolidation-ONLY launch-facing summary
+drawn from the parser proof-of-concept report, the normalization/attribution
+report, and the served methodology/data-coverage copy — every section names
+its sources; construction statements only (no corpus counts, no run IDs
+anywhere in the three docs); bluntness preserved (no NER-grade name
+detection, OCR unimplemented, quarantined unsupported-format class,
+exclusion-not-correction). `docs/future-work.md` (new): ten items, each with
+its named landing/trigger — the six plan items plus the four Phase 30 queue
+additions; the stale-run housekeeping item is described mechanically with no
+run IDs; sprint-plan publication carries the consolidated-tree path-reference
+note (the known stale `agent-docs` string in the untracked sprint-5 plan).
+
+**§6.5 attachment shape (ruling 3b) confirmed at write time.** The aggregate
+seed registry attaches every fabricated distribution to demo charge slugs
+and to `judge-testina-placeholder` / `judge-samuel-seeddata` only;
+`judge-fakename-example` deliberately carries zero aggregate rows; no real
+roster judge appears. No violation to adjudicate.
+
+**Screenshots (AC 5): SKIPPED per the Context ruling** — recorded here, not
+implemented.
+
+**Fresh-clone dry run (pins 6–7, rulings 1–2).** Pre-check found ports
+3000/3001 occupied → STOP per required fix 1; the human freed them; re-check
+clean before proceeding. Clone of committed phase-31 HEAD into a scratchpad
+directory named `pca-freshclone` outside the repo (distinct Compose
+project/volume namespace by directory basename — docker-compose.yml has no
+`name:` key), with the rewritten README + both new docs overlaid (ruling 2).
+Isolation overrides used and disclosed: `POSTGRES_PORT=5434` plus matching
+`DATABASE_URL` port in the clone's `.env` — both documented knobs; a fresh
+user on a clean machine needs neither. Documented path executed: `pnpm
+install` → `cp .env.example .env` → `pnpm db:up` (clone container healthy on
+5434) → `pnpm db:migrate:latest` (8 migrations) → `pnpm db:seed` (guard
+allowed the empty DB; demo charges, fake seed judges, real rosters, and the
+synthetic runs seeded — matching the README's fresh-boot description).
+**Defect surfaced (doc-fix only; midpoint checkpoint not triggered):**
+`pnpm dev` alone 500s on the web app on a fresh clone — `@pca/shared`
+resolves to `dist/`, which does not exist until a build (the API boots fine;
+its dev script runs from source via the `pca-source` condition). Fix:
+`pnpm build:packages` added to the README boot sequence before `pnpm dev`,
+and the Generated-artifacts paragraph corrected (root `test` runs generate
+first; root `typecheck` starts with `build:packages`). Per ruling 2 the
+corrected README was re-synced into the clone and the affected steps re-run
+against the corrected text: `build:packages` → `pnpm dev` → API `/health`
+ok, web `/` and `/methodology` 200, charge search serving roster + demo
+charges, judge search serving the fake seed judge, charge result page 200.
+Env audit: every env var each deployable reads is either in a committed
+`.env.example` or optional-with-default (API `PORT` 3001 / `HOST` 127.0.0.1
+/ `LOG_LEVEL` info in `apps/api/src/env.ts`; the web app ran with no `.env`
+at all); `docs/local-setup.md` and `.env.example` needed NO changes.
+Teardown per ruling 1: dev servers stopped and ports verified freed;
+`docker compose down` in the clone (never `-v`); `docker volume ls` captured
+showing both volumes as distinct entries; then
+`docker volume rm pca-freshclone_postgres-data` by explicit name; the live
+container and `pca_postgres-data` verified untouched. No dry-run step
+touched the live database.
+
+**Copy gate.** One-off `scanPublicCopy` invocation (31.1/31.2a mechanism:
+built `@pca/shared` dist over whitespace-collapsed doc text) across
+`README.md`, `docs/known-limitations.md`, `docs/future-work.md`: CLEAN, 0
+violations (verbatim output in the completion report). No permanent doc
+walker was added.
+
+**Files touched:** `README.md` (rewrite), `docs/known-limitations.md` (new),
+`docs/future-work.md` (new), `tasks/worklog.md`. `docs/local-setup.md` and
+`.env.example` were in the allowed list but are untouched — the dry run
+proved no defect in either.
+
+**Deviations from plan:** none beyond the anticipated in-scope README fixes
+above; the port-collision STOP and resume ran exactly per required fix 1.
+
+**For the next task:** 31.3 owns the README's live-URL/status line (the
+Launch model section states the model and makes no deployed claim). The
+documented boot sequence now includes `pnpm build:packages`; any 31.3 change
+to local boot must keep README/dry-run parity. Untracked posture unchanged:
+`git ls-files --others --exclude-standard` over the repo = exactly the four
+sprint-4..7 plan files under `docs/planning/`.
+
+## Task 31.3 — Deployment Implementation: Guard, Rate Limiting, ADR, Runbooks (2026-07-15)
+
+**What was built.** The pre-go-live implementation layer per the adjudicated
+31.3 gate. (1) API_BASE_URL production guard:
+`apps/web/app/lib/api-base-url.ts` now THROWS when
+`NODE_ENV === 'production'` and the value is unset/empty; local-dev default
+retained; next.config.ts evaluates it at config load, so misconfiguration
+fails `next build`/`next start` loudly. Four new guard tests in
+`api-base-url.test.ts`. (2) Live rate limiting: `@fastify/rate-limit@11.1.0`
+(the task's one new dependency) registered INSIDE the public-routes
+encapsulation scope (`apps/api/src/routes/public/index.ts`) — /health and
+admin are structurally outside it. Constant-key global bucket per ruling 1
+(recon: no reliable client identity reaches the private API — SSR fetches
+carry none, the Next rewrite proxy adds only x-forwarded-host); per-IP
+enforcement is the Cloudflare edge rule. Exceeded path:
+`errorResponseBuilder` returns `publicError(RATE_LIMITED, <shared message>)`
+and the plugin THROWS it (plugin index.js `throw
+params.errorResponseBuilder(...)`), so the central handler shapes the 429 —
+flat catalog shape with requestId, message from PUBLIC_ERROR_MESSAGES.
+Thresholds env-tunable via loadEnv(): RATE_LIMIT_MAX (default 120) /
+RATE_LIMIT_WINDOW_MS (default 60000), validated positive integers, always
+registered, no disable path (ruling 2). Seven tests in
+`apps/api/src/rate-limit.test.ts`: defaults, env reads, invalid-value
+throws, 429 catalog shape (requestId presence proves central-handler
+routing), two-IPs-one-bucket keying proof, /health 10-request burst all-200,
+env-tuned threshold. (3) `docs/decisions/0004-deployment.md`: all ruled
+decisions with rationale and one-line rejections, plus the six recorded
+hazards including the per-instance in-memory bucket note (required addition
+1). (4) Runbooks at docs/ root (ruling 5): `runbook-go-live.md` (domain,
+DB creation, migrate, nine-table dump/restore with matched `pg_dump -Fc` /
+`pg_restore --single-transaction` pair and explicit FK-ordered TOC per
+required addition 2, private API + web services with CI-proven build
+commands incl. `pnpm generate`, DNS/proxy, edge rate rule ~300/min on
+/api/*, Bot Fight Mode OFF, UptimeRobot probes, three-surface noindex
+verification — every step with a checkpoint), `runbook-verification.md`
+(AGENT read-only half: endpoint sweep, noindex, forbidden-field scratch
+scan per recon 5, one controlled 429 burst then stop; CHOPS half:
+demo-script smoke), `runbook-rollback-republish.md` (Render rollback,
+disposable-mirror data posture, edge point-away, TRUNCATE-then-restore
+republish). Secret hygiene throughout: prod DATABASE_URL only via
+`read -s`, never a file, never echoed.
+
+**Files touched.** apps/web/app/lib/api-base-url.ts + .test.ts;
+apps/api/src/env.ts, app.ts, routes/public/index.ts, rate-limit.test.ts
+(new), package.json (+@fastify/rate-limit); pnpm-lock.yaml;
+packages/shared/src/errors.ts (one line: stale "no middleware exists yet"
+comment retired, ruling 4); .github/workflows/ci.yml (one enumerated edit:
+API_BASE_URL env on the node-job Typecheck step — `next typegen` runs with
+NODE_ENV=production); apps/web/.env.example (production-required note);
+docs/local-setup.md (one enumerated edit, ruling 3b: apps/web/.env copy
+step); docs/decisions/0004-deployment.md (new); docs/runbook-go-live.md,
+docs/runbook-verification.md, docs/runbook-rollback-republish.md (new);
+tasks/worklog.md.
+
+**Deviations from plan.** None. app.ts was touched as anticipated
+("may be untouched" resolved to a five-line register-options change).
+
+**NEW STANDING LOCAL FACT (ruling 3c).** `pnpm typecheck`, web production
+builds, and `pnpm test:e2e` now REQUIRE API_BASE_URL locally (Next defaults
+NODE_ENV=production for every CLI command except `next dev`, and the guard
+evaluates at config load). Set it via `apps/web/.env` (copy the example) or
+a shell export. CI: the node job's Typecheck step carries it explicitly;
+the e2e job already had it at job level.
+
+**For the next task (31.4 / close-out).** Go-live is post-merge Chops work
+from the three runbooks; ACs 3–6 of the plan verify there. Final authority
+for build/E2E behavior claims is CI green at the phase PR (§6.2 exception).
+The in-app limiter bucket is per-instance in-memory — recorded as ADR
+hazard 5; revisit before any scale-out. Run-report file emission remains
+deferred (named at 31.4). README live-URL line belongs to the close-out
+branch, not here.
