@@ -6152,3 +6152,66 @@ E2E/production-build claims). 31.1 (demo script) can now cite the coverage
 note as a served surface. Post-launch queue unchanged: pre-hydration typing
 gap on combobox inputs; two stale `in_progress` aggregate runs remain
 unpublished and harmless.
+
+## Task 31.1 — Demo Script + Demo Data Guardrails (2026-07-15)
+
+**What was done.** Authored `agent-docs/demo-script.md`: the start-to-finish
+demo path per pinned decision 1 (high-sample charge search → charge-only
+result → thin-data example → judge filter → solid judge pair → thin judge
+pair → judge-unavailable fallback → sentencing-unavailable charge →
+remove-filter flow → methodology → data-coverage → mobile view at 390/320),
+every step naming its slug and app path with expected on-screen outcomes in
+copy-safe terms, a staleness-guardrails preamble (snapshot-of-a-published-run
+framing, no pinned numbers anywhere, republish behavior, per-arm re-pick
+criteria), the approved AC-3 re-verify walkthrough (/data-coverage metadata
+check → anchor loads → re-pick criteria; no new tooling), and a
+known-limitations section (judge thinness, MC/CP coverage shape,
+sentencing-unavailable classes, ongoing collection). Held-for-court is
+framed structurally only — non-terminal forms produce no outcome facts by
+construction; no before/after framing anywhere. The sample-size moment
+states the counting construction (outcome samples charge-counted; sentencing
+samples component-counted under eligible parents; may differ in either
+direction) and never asserts which is larger. Opens the phase-31 branch as
+its first commit.
+
+**Path supersession (recorded per planning-chat ruling).** Task 31.1 AC 1's
+literal path `docs/demo-script.md` was superseded to
+`agent-docs/demo-script.md` by planning-chat adjudication at plan approval —
+the CLAUDE.md prohibition on agent-created files in `docs/` stands; nothing
+under `docs/` was created or touched.
+
+**Anchor re-verification (AC 6).** All eight candidate anchors verified
+against the currently published run — ZERO substitutions; the midpoint
+substitution checkpoint was not triggered. Method: production builds booted
+read-only per the 30.1 mechanism (build:packages → API build + `start` under
+plain node, PORT=3101 → web `next build` + `next start -p 3100`,
+API_BASE_URL to 3101; 3100/3101 precedented), each anchor curled on the
+public API and its arm shape confirmed (thin flags, unavailable arms,
+display names, run id on every payload); sole published+non-invalidated run
+confirmed SELECT-only via `docker compose exec -T postgres psql -U pca -d
+pca` (one row). Search terms for every anchor confirmed resolving in the
+charge/judge autocomplete endpoints. Raw outputs verbatim in the completion
+report. Servers torn down and ports verified freed before any suite or gate
+ran; live DB read-only throughout; no .env value echoed.
+
+**Copy safety (AC 5 / pin 8).** One-off scanner invocation confirmed
+feasible and run: `scanPublicCopy` from the built `@pca/shared` dist over
+the whitespace-collapsed doc — CLEAN, 0 violations (output verbatim in the
+completion report). Every quoted on-screen literal in the doc was re-copied
+from source constants and mechanically re-checked against them (25/25
+match). No permanent walker coverage of any doc tree was added.
+
+**Files touched:** `agent-docs/demo-script.md` (new), `tasks/worklog.md`.
+The three pre-existing untracked agent-docs files (v1col-data,
+v1database-schema, v1pipeline-arch) were not touched or staged — their
+disposition is a 31.2 adjudication.
+
+**Deviations from plan:** deliverable path superseded to agent-docs/ by the
+approval ruling (recorded above). None otherwise.
+
+**For the next task:** 31.3 executes this script verbatim against the
+deployed URL (impl AC 5) and 31.4 item 9 runs it as the exit demo. The
+script's guardrails assume /data-coverage remains the live run-metadata
+surface; if 31.3 changes that page's fields, the script's re-verify
+walkthrough needs a same-task update. A republish before the demo requires
+only the script's own re-verify walkthrough, not a doc rewrite.
