@@ -5774,3 +5774,126 @@ with explicit authorization before the E2E gate.
 **For the next task:** 30.1-D (F1 diagnostic, read-only) is queued after
 close. Post-launch queue: pre-hydration typing gap on combobox inputs. 30.3
 inherits no copy changes from this task.
+
+## Task 30.1-D — F1 Diagnostic: Sentencing-vs-Outcome Sample Semantics (2026-07-14)
+
+**Verdict (subject to planning-chat adjudication, never self-adjudicated):
+BY-CONSTRUCTION CONFIRMED, mechanism quantified.** Read-only diagnostic;
+SELECT-only via `docker compose exec -T postgres psql -U pca -d pca`
+(compose service is `postgres`, adjudicated in plan review). No code, copy,
+schema, or data changes; no pipeline invocation. Detail artifact with every
+query and raw output: `~/court-data/reports/30.1-D-f1-sentencing-vs-outcome.txt`.
+
+**TRIANGULATION DEVIATION (adjudication item).** The 29.3 run report the
+plan-review ruling pinned as the primary build-run record does not exist:
+no 29.3-named file under `~/court-data/reports/` (directory last modified
+2026-07-13, before the 29.3 publish) and neither run UUID appears anywhere
+under `~/court-data/`. Substitute primary record used: this worklog's 29.3
+operational record (rebuild-2 build run `cc71204b…`, publish `d47dcd20…`
+from it, default=latest). The substitute agrees exactly with (b)
+`generate.py::_resolve_build_run` (default = latest completed,
+`ORDER BY completed_at DESC LIMIT 1`; live DB: `cc71204b…` completed
+2026-07-14 21:43:50, publish 21:45:36, sole active published run
+`d47dcd20…`) and (c) exact-match recomputation across all five anchors and
+corpus-wide (all counts and per-category splits reconcile to the row). The
+build run's `counts` jsonb also matches this worklog's 29.3 figures
+verbatim (12,792 outcome / 10,578 sentence facts).
+
+**Unit semantics from source (AC 1).** Outcome sample size counts
+`public_eligible` outcome facts, one per disposed charge
+(`aggregates/generate.py::build_charge_outcome_aggregates`,
+`facts/outcome_facts.py` 23.2). Sentencing sample size counts
+`public_eligible` sentence facts, one row per parsed sentence component,
+1:1 never collapsed (`build_charge_sentencing_aggregates`,
+`facts/sentence_facts.py` 23.3; unique `(build_run_id, parsed_sentence_id)`;
+live check: 10,578 facts = 10,578 distinct parsed components). Judge scopes
+group `judge_specific_eligible` facts per pair with independent per-pair
+sentencing denominators (SD 5). Eligibility is read, never recomputed (SD 1).
+
+**Multi-category components (AC 2).** From source: an additive
+(pattern-added) restitution / community-service mapping materializes as ONE
+sentence fact carrying the BASE category only; `multi_category` forces
+`review_needed=True`, which makes the fact public-INeligible
+(`sentence_facts.py::evaluate_sentence_eligibility` — the silent-loss
+guard). Live build run: 64 multi-category components (42 restitution + 22
+community-service, 0 both; SQL replica of the locked 22.5 regexes), exactly
+matching the build run's recorded `multi_category_components: 64`; all 64
+are review-excluded — 0 public_eligible. Implication: pattern-added
+additional mappings do NOT inflate public sentencing sample sizes; they
+remove their component from public aggregates entirely. Bare-`N hours`
+ambiguous components: 33, matching `ambiguous_sentencing_component: 33`.
+
+**Invariants (AC 3, AC 4 + plan-review required fixes 1–2), all zero
+violations on build run `cc71204b…`:** eligible sentence facts with parent
+missing / parent not public_eligible / parent in a DIFFERENT build run:
+0 / 0 / 0 (judge variant likewise 0 / 0 / 0). Denormalized scope
+consistency: child `normalized_charge_id` / `normalized_judge_id` vs parent
+mismatches 0 across all 10,578 facts. Per-scope invariant: distinct parents
+of eligible sentence facts ≤ outcome sample size in all 73 charge scopes
+and all 1,007 pair scopes — 0 violations.
+
+**Anchor decomposition (AC 5), all five exact:** published sample sizes =
+recomputed fact counts = walkthrough anchors; per-category counts identical
+row-for-row; category sums = sample sizes; 0 orphans. Components-per-parent:
+`pwid-controlled-substance` 685 sentence facts over 454 sentenced parents
+(hist 1×244, 2×192, 3×16, 4×1, 5×1) vs 473 outcomes; `voluntary-manslaughter`
+5 over 4 (1×3, 2×1) vs 4; `pwid` × `gibbs-monica` 178 over 118 (1×65, 2×46,
+3×7) vs 124; `aggravated-assault-deadly-weapon` × `gibbs-monica` 3 over 1
+(3×1) vs 1; `aggravated-assault-deadly-weapon` 74 over 47 (1×22, 2×23, 3×2)
+vs 59. Cross-run: the sole active published run is `d47dcd20…`; anchor rows
+under other run ids belong to invalidated or unpublished (`in_progress`)
+runs, invisible to the API predicate — by design, not cross-run leakage.
+
+**Corpus shape (AC 6).** Charges: 33 of 73 sentencing scopes inverted
+(6 equal, 34 smaller; max diff +212 = `pwid-controlled-substance`, median
+inverted diff +5, max ratio 2.00, median 1.23). Pairs: 303 of 1,007
+inverted (473 equal, 231 smaller; max diff +54, median +1, max ratio 4.00,
+median 1.51). Full inverted-charge enumeration by slug in the detail
+artifact. Corpus-wide eligible totals: 5,359 sentence facts vs 5,339
+outcome facts.
+
+**SD-15 recheck (AC 7).** All 10,578 facts: sentence_date earlier than
+disposition_date 35 / equal 10,543 / later 0 / null 0; 2025-01-01
+window-straddles 29 (sentence before window, disposition inside), reverse 0;
+earlier-delta 1–757 days — matches the build run's recorded
+`sd15_divergence: 35`, `sd15_straddle_mvp: 29`, deltas 1/757 exactly.
+Public-eligible subset: 2 earlier, 0 straddles (straddling components are
+mvp-ineligible by construction).
+
+**Methodology hand-off (AC 8, no copy edits).** Served copy traced to the
+REAL constants: `/methodology` = `apps/api/src/content/methodology.ts`
+(`METHODOLOGY_CONTENT`, static per deploy; web page renders the API
+response); `/definitions` = `apps/api/src/taxonomy.ts::PUBLIC_DEFINITIONS`
+from `packages/taxonomy/seeds/*.json` definitions. Independent sentencing
+denominators: EXPLAINED (sentencing section, incl. SD-15 date independence).
+Component-counted samples: NOT explained ("charge dispositions or
+sentencing events" — nothing says one sentencing event contributes one row
+per component). Sentencing n exceeding outcome n: NOT explained — worse,
+the copy asserts sentencing samples are "typically smaller than the outcome
+sample size," contradicted at current corpus scale (33/73 charges,
+303/1,007 pairs inverted, flagship charge 685 vs 473). Definitions copy
+carries no sample-size semantics. → Named 30.3 rewrite items: fix
+"typically smaller," explain per-component counting, state that sentencing
+n can exceed outcome n.
+
+**Verdict basis (AC 9).** Sentencing n = eligible sentence components over
+sentenced eligible parents; every decomposition exact; zero unreconciled
+residue. The inversion is exactly the by-construction mechanism the plans
+describe (23.2/23.3, SD 5, 26.2): multi-component sentences under a subset
+of sentenced parents. ANOMALY arm not triggered; verdict and the
+triangulation substitution both go to planning chat for adjudication.
+
+**Files touched:** `tasks/worklog.md` only. Detail artifact under
+`~/court-data/reports/` (never committed).
+
+**Deviations from plan:** the missing 29.3 run report (above) — worklog
+substituted as primary record, flagged for adjudication rather than treated
+as satisfied. Compose service name `postgres` (approved in plan review).
+
+**For the next task:** 30.3 inherits the three copy rewrite items above.
+The 29.3 publish/rebuild console outputs exist only in planning chat and
+this worklog — if a durable run-report file is wanted, it must be
+reconstructed from planning chat (never from memory) or accepted as
+worklog-only. Two stale `in_progress` aggregate runs (`51d27853…`,
+`2d4707ca…`, pre-publish history) sit unpublished in
+`analytics.aggregate_runs`; harmless to the API predicate.
