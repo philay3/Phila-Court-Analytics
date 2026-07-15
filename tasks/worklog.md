@@ -5689,3 +5689,88 @@ slower-first; size-desc without cache) and must never be relied on. The
 recon-stage pca_test resets were recon-only; no reset is needed to run the
 db suite anymore, in any order. fileParallelism: false in db/vitest.config.ts
 remains a deliberate race fix — never casually revert.
+
+## Task 30.1 — Real-Data Verification Walkthrough + Defect Fixes (2026-07-14)
+
+**What was done.** Systematic real-data verification walkthrough of every
+public page against published run `d47dcd20-2059-46ad-92a9-6dfd3846dc23` on
+production builds (build:packages → API build + `start` under plain node →
+web `next build` + `next start`), live DB read-only throughout. Serving ports
+3100 (web) / 3101 (API) — 3000/3001 were held by dev servers; deviation
+adjudicated at checkpoint, pinned mechanism otherwise intact. Walkthrough
+tooling: a TEMPORARY untracked Playwright config + specs under
+`e2e/walkthrough*` reusing the committed machinery (axe WCAG 2.2 AA tag set,
+`scanPublicCopy`, `scanForForbidden`, combobox driving, section testids,
+horizontal-overflow checks) with soft-collected assertions for inventory;
+deleted before commit (staging-completeness output proves absence). No term
+list or scanning mechanism was created.
+
+**What was checked** (every cell desktop 1280px AND mobile 390×844; per-cell
+results recorded; slugs are live-run examples, never acceptance values):
+homepage search on real rosters with open-listbox states gate-scanned;
+high-sample `pwid-controlled-substance`; widest tail `simple-assault` (six
+terminal outcome categories; 29.3 structural-exclusion framing intact — no
+visible change expected and none observed); thin `voluntary-manslaughter`
+(callout + badges, both distributions); thin + longest display name
+`aggravated-assault-fear-sbi-designated` (85-char name wraps cleanly);
+sentencing-unavailable `criminal-conspiracy-903c` (non-thin, callout
+isolated, `§ 903(c)` renders); solid judge pair `pwid-controlled-substance` ×
+`gibbs-monica` (real single-category 100% distribution) plus multi-row solid
+pair × `shaffer-zachary-c`; thin pair `aggravated-assault-deadly-weapon` ×
+`gibbs-monica` (four slots, real tails incl. ARD + sentencing Other);
+judge-unavailable pair × `brumbach-marissa-j`; `/definitions` with anchor
+existence proven for all 11 category codes served across the four most
+tail-rich pages; `/methodology`; `/data-coverage` (live run id, window, and
+counts served dynamically); `/about`; approved addendum `harassment` (sole
+zero-aggregate charge — honest unavailable arm). AC 2 battery per figure:
+counts + percentages + sample sizes + date ranges + last-refreshed,
+table/bar equivalence (bars aria-hidden, table authoritative), per-row
+Definition links. 320px spot set (adjudicated): home with each autocomplete
+open (longest charge and judge names fully visible), the two long-name
+result pages, plus supplemental zero-overflow probes on the four content
+pages and `harassment`. Keyboard/screen-reader spot pass (AC 3):
+keyboard-only combobox commit → submit → result; judge-filter commit →
+navigation; tab-order sanity on charge/judge/content pages — focus ring
+visible on every stop, no traps, logical order; heading outlines (one h1, no
+skips) and table header scopes everywhere. Final automated state: 39/39
+green; zero axe / copy-safety / privacy violations on every visited state.
+
+**What was found / fixed.** ZERO UI/copy/formatting defects — no fix code,
+no E2E assertion edits (checkpoint-confirmed empty fix list; the post-fix
+re-verification requirement was vacuously satisfied). Three
+walkthrough-harness artifact classes were fixed in the temp specs and are
+recorded for future harness reuse: (1) link-count assertions must scope to
+`main` (the header nav carries its own methodology link); (2) keyboard
+typing must wait for hydration — server-rendered content is visible before
+client handlers attach (framework-inherent; named post-launch queue item,
+not a defect); (3) focus-trap detection must compare element identity, not
+text signatures (distinct per-row "Definition" links share one).
+
+**What was escalated** (stop-and-report per SD-6; checkpoint-adjudicated as
+plausible-by-construction — independent denominators / per-component
+sentence facts; verification queued as separate read-only diagnostic 30.1-D,
+NOT investigated in-task): F1 — sentencing sample size exceeds outcome
+sample size for the same scope, recurring: `pwid-controlled-substance` 685
+vs 473; `voluntary-manslaughter` 5 vs 4; `pwid-controlled-substance` ×
+`gibbs-monica` 178 vs 124; `aggravated-assault-deadly-weapon` ×
+`gibbs-monica` 3 vs 1; the same charge's baseline 74 vs 59. Rendering is
+correct and every figure carries its own honest sample size; the open
+question is aggregates-layer.
+
+**Verification.** E2E suite green on `pca_test` (primary path; scratch
+fallback not needed): `15 passed (12.9s)`. Four gates + typecheck run
+post-staging per the clean-environment gate (outputs in the completion
+report). Live DB untouched: walkthrough traffic read-only; test suites
+pointed at `pca_test` via shell-exported DATABASE_URL; the 29.2 guard was
+never bypassed, weakened, or pointed at the live DB.
+
+**Files touched:** `tasks/worklog.md` only (temp harness deleted before
+commit).
+
+**Deviations from plan:** serving ports 3100/3101 instead of 3000/3001
+(checkpoint-adjudicated); two lingering `tsx watch` API dev watchers stopped
+with explicit authorization before the E2E gate.
+
+**For the next task:** 30.1-D (F1 diagnostic, read-only) is queued after
+close. Post-launch queue: pre-hydration typing gap on combobox inputs. 30.3
+inherits no copy changes from this task.
