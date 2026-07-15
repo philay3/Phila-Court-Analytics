@@ -1,3 +1,17 @@
+> **Point-in-time report of record.** This is the committed summary of
+> record for the Sprint 4 close (Task 20.1), written 2026-07-11. Every
+> figure in it describes the parser evidence base as of that date and
+> is preserved unchanged as recorded. Collection continued after this
+> report was written: no figure below describes the current corpus.
+> Current coverage is published on the live application's data-coverage
+> page (`/data-coverage`).
+>
+> The [Normalization and Attribution Report](normalization-attribution-report.md)
+> (§9, "MC evidence base") subsequently updated the per-court readiness
+> verdicts in §12 below, revising the evidence basis for the MC
+> verdict. This banner is a forward pointer only — the verdicts below
+> stand unedited as part of the record.
+
 # Parser Proof-of-Concept Report (Sprint 4 Close)
 
 - **Task:** 20.1

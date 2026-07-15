@@ -6452,3 +6452,71 @@ The in-app limiter bucket is per-instance in-memory — recorded as ADR
 hazard 5; revisit before any scale-out. Run-report file emission remains
 deferred (named at 31.4). README live-URL line belongs to the close-out
 branch, not here.
+
+## Task 31.3b — Historical-Report Point-in-Time Framing (2026-07-15)
+
+**What was built.** One dated point-in-time framing banner prepended to each
+of the two historical reports, wording approved verbatim in planning chat
+(2026-07-15) before commit: `docs/normalization-attribution-report.md`
+(Sprint 5 / Task 25.1, written 2026-07-12 per the worklog heading — the
+pin-4-sanctioned source; named builds `aef44371` pre-intake and `d591902f`
+post-intake, both already carried by the doc's provenance key) and
+`docs/parser-proof-of-concept.md` (Sprint 4 close / Task 20.1, written
+2026-07-11 per the doc's own header). Both banners are blockquotes at line 1
+above the H1 — true prepend, exactly one insertion hunk per file, zero body
+deletions/modifications (diff-proven). The POC banner carries the pin-3
+forward pointer: the Normalization and Attribution Report (§9, "MC evidence
+base") subsequently updated the §12 per-court readiness verdicts; the
+verdicts stand unedited as part of the record. Banners contain zero counts
+and no run UUIDs beyond what each doc already carried; current coverage is
+pointed at the live application's `/data-coverage` page, path only, no
+hostname. No figure or body line changed in either report.
+
+**Pin-5 sweep.** Four grep passes over the committed doc surface
+(`git ls-files docs README.md`): the only in-class present-tense phrasing is
+`docs/normalization-attribution-report.md:54` ("now stands at:"), inside the
+banner-covered report — body untouched per pin 1, the banner's
+"including any phrased in the present tense" clause covers it.
+`docs/held-for-court-fix-runbook.md` lines 23/29/34/215/218 (corpus counts
+7,758; 9,932/30,285) ruled NOT in class by planning chat: provenance-anchored
+runbook counts pinned to named baseline runs with in-doc STOP-and-restate
+guards, report-only, no edits, no follow-up task. All remaining "currently"
+hits (README:134, demo-script:6, future-work:17/54, col-intake-protocol:42/79,
+refresh-runbook:29, roadmap:5, test-db-guard:56, v1col-data:16) describe
+code/config/process, not corpus counts. Zero fixes outside the two banners.
+
+**Copy gate — ADJUDICATED KNOWN-GOOD FINDING (do not re-litigate silently).**
+One-off `scanPublicCopy` (31.1/31.2a mechanism: built `@pca/shared` dist over
+whitespace-collapsed doc text). POC report: CLEAN, 0 violations.
+Normalization report: exactly two hits — `term=odds`, `term=predict stem` —
+both at the doc's own pre-existing honesty-bar sentence ("No prediction,
+ranking, odds, or legal-advice framing.", body line 19 post-banner),
+adjudicated in planning chat 2026-07-15 as MENTION-NOT-USE in a frozen
+record: the flagged sentence is the negated policy statement itself; the
+mechanical gate did its designed job (flag stems for human framing review)
+and the human gate passes this sentence. Banner-neutrality proven by the
+identical scan over pre-banner HEAD: identical two hits, zero delta (index
+shift 485/506 → 1087/1108 matches the banner's collapsed length —
+corroborating evidence; the diff hunks are the prepend-only authority).
+AC 4 was amended by planning chat to this exact expectation; any hit beyond
+those two, or any delta from HEAD, is STOP. Rejected paths, recorded: body
+edit (would falsify "preserved unchanged as recorded" in the same commit
+that adds those words); guarded-disclaimer amendment in `copy-safety.ts`
+(outside allowed files; landing trigger recorded in the planning-chat
+post-launch queue, not this task — no reference to it in banners or docs).
+
+**Files touched.** `docs/normalization-attribution-report.md` (prepend only),
+`docs/parser-proof-of-concept.md` (prepend only), `tasks/worklog.md`.
+
+**Deviations from plan.** Two required fixes applied at approval (approved
+banner wording superseded the drafts — past-tense framing, no magnitude
+claim; staging-completeness run repo-root unscoped). One mid-implementation
+STOP (the scanner finding above), adjudicated in planning chat, resumed per
+ruling. No other deviations.
+
+**For the next task.** The normalization report's two scanner hits are
+adjudicated known-good (mention-not-use); future scans of that file expect
+exactly those two hits at the honesty-bar sentence and STOP on any delta.
+The copy-safety guarded-disclaimer amendment lives in the planning-chat
+post-launch queue. Republish of current-corpus figures reads from
+`/data-coverage`, never from edits to these two frozen reports.

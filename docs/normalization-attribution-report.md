@@ -1,3 +1,13 @@
+> **Point-in-time report of record.** This is the committed summary of
+> record for Sprint 5 (Task 25.1), written 2026-07-12. Every figure in
+> it describes the corpus as of the report's named builds — the
+> pre-intake build `aef44371` and the post-intake build `d591902f`
+> identified in the provenance key below — and is preserved unchanged
+> as recorded. Collection continued after this report was written: no
+> figure below, including any phrased in the present tense, describes
+> the current corpus. Current coverage is published on the live
+> application's data-coverage page (`/data-coverage`).
+
 # Normalization and Attribution Report — Sprint 5
 
 **Status:** committed summary of record for Sprint 5 (Task 25.1).
