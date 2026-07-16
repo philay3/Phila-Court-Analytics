@@ -80,6 +80,39 @@ Assemble A1–A4 verbatim outputs into the run report under
 
 ## CHOPS half
 
+### C0 — API `/health` (direct via service Shell + transitive)
+
+**Shell-guard rider (mandatory before ANY service-Shell check, here and
+everywhere):** in the Render Shell, first assert the console identity —
+
+```sh
+printenv RENDER_SERVICE_NAME   # must print the intended service's name
+```
+
+— and proceed only if it names the service the check targets. Motivating
+incident: during this runbook's item-4 `/health` check at go-live, the curl
+was first run in the WRONG service's Shell (the web service, which listens
+on the same port), returning the web app's 404 page — plausible-looking
+evidence from the wrong console. Evidence must never come from an
+unasserted shell.
+
+1. Direct: in the API service's Shell, after the guard passes:
+
+   ```sh
+   curl -s "http://localhost:${PORT}/health"
+   ```
+
+   Expected body: `{"status":"ok",...}`. This is the only direct path —
+   the API is private and has no public hostname.
+
+2. Transitive: the UptimeRobot keyword monitor on
+   `/api/v1/public/data-coverage` reports Up with the keyword found —
+   web → rewrite → API → database through the real path (confirmed
+   properly in C2).
+
+**Checkpoint:** the direct body shows `"status":"ok"`; the keyword monitor
+is Up.
+
 ### C1 — Demo-script smoke
 
 Execute `docs/demo-script.md` end to end against the live domain (plan
