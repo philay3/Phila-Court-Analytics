@@ -26,6 +26,8 @@ from pipeline.fact_review_vocab import (
     CHARGE_NOT_NORMALIZED,
     DISPOSITION_DATE_BEFORE_MVP_WINDOW,
     DISPOSITION_NOT_MAPPED,
+    FILED_DATE_BEFORE_FLOOR,
+    FILED_DATE_MISSING,
     JUDGE_NOT_ATTRIBUTED,
     PARENT_OUTCOME_INELIGIBLE,
     REVIEW_NEEDED,
@@ -128,8 +130,8 @@ def _seed(conn: psycopg.Connection) -> None:
             INSERT INTO parsed.dockets
               (source_document_id, docket_number, record_parser_version,
                envelope_parser_version, parsed_at, county, defendant_hash,
-               assigned_judge_raw, envelope_status, review_needed)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+               assigned_judge_raw, envelope_status, review_needed, filed_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
             """,
             (
                 source_document_id,
@@ -142,6 +144,7 @@ def _seed(conn: psycopg.Connection) -> None:
                 "Beta Nomatch",  # assigned judge unmatched -> no fallback anyway
                 "parsed",
                 False,
+                date(2025, 2, 1),  # filed in-window: the floor never gates docket 1
             ),
         )
         docket_id = cur.fetchone()["id"]
@@ -226,7 +229,100 @@ def _seed(conn: psycopg.Connection) -> None:
             (docket_id, SUSPECTED_AMENDED_CHARGE, 7),
         )
         _seed_sentences(cur, charge_ids, docket_id)
+
+        # Filed-date-floor dockets (task filed-date-floor): each carries ONE
+        # otherwise fully eligible charge + one clean probation component, so
+        # the floor is the only ineligibility signal. Distinct sequences (9,
+        # 10) keep the sequence-keyed assertion maps collision-free. Every
+        # normalization path is clean (roster charge/judge, mapped
+        # disposition), so these dockets add NO review items.
+        _seed_floor_docket(
+            cur,
+            file_hash="1" * 64,
+            docket_number="CP-51-CR-0000001-2023",
+            filed_date=date(2023, 5, 1),  # pre-floor
+            seq=9,
+        )
+        _seed_floor_docket(
+            cur,
+            file_hash="2" * 64,
+            docket_number="CP-51-CR-0000002-2024",
+            filed_date=None,  # null filed_date: the fail-closed arm
+            seq=10,
+        )
     conn.commit()
+
+
+def _seed_floor_docket(cur, *, file_hash, docket_number, filed_date, seq) -> None:
+    cur.execute(
+        """
+        INSERT INTO raw.source_documents
+          (file_hash, original_filename, file_size_bytes, imported_at,
+           import_mode, status)
+        VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+        """,
+        (file_hash, "synthetic.pdf", 1, datetime.now(UTC), "manual", "imported"),
+    )
+    source_document_id = cur.fetchone()["id"]
+    cur.execute(
+        """
+        INSERT INTO parsed.dockets
+          (source_document_id, docket_number, record_parser_version,
+           envelope_parser_version, parsed_at, county, defendant_hash,
+           assigned_judge_raw, envelope_status, review_needed, filed_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+        """,
+        (
+            source_document_id,
+            docket_number,
+            2,
+            5,
+            datetime.now(UTC),
+            "Philadelphia",
+            "0" * 64,
+            JUDGE_NAME,  # clean assigned-judge match: no review item
+            "parsed",
+            False,
+            filed_date,
+        ),
+    )
+    docket_id = cur.fetchone()["id"]
+    cur.execute(
+        """
+        INSERT INTO parsed.charges
+          (docket_id, sequence, statute, offense, disposition_raw,
+           disposition_date, disposition_judge_raw)
+        VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+        """,
+        (
+            docket_id,
+            seq,
+            ROSTER_STATUTE,
+            ROSTER_OFFENSE,
+            "Guilty Plea",
+            date(2025, 6, 1),
+            JUDGE_NAME,
+        ),
+    )
+    charge_id = cur.fetchone()["id"]
+    cur.execute(
+        """
+        INSERT INTO parsed.sentences
+          (charge_id, component_order, sentence_type, min_days, max_days,
+           min_assumed, sentence_date, raw_text)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            charge_id,
+            1,
+            "Probation",
+            365,
+            None,
+            False,
+            date(2025, 6, 1),
+            "Probation, Min of 12.00 Months",
+        ),
+    )
 
 
 # Sentence components per DISPOSED charge (never on the held seq 5). Each
@@ -335,10 +431,15 @@ def test_build_lifecycle_and_scenarios(build_conn):
     assert run["parser_version"] == 2 and run["envelope_parser_version"] == 5
     assert run["taxonomy_version"]
     counts = run["counts"]
-    assert counts["charges_processed"] == 8
-    assert counts["facts_written"] == 6  # seq 5 undisposed, seq 8 held-form
+    assert counts["charges_processed"] == 10
+    assert counts["facts_written"] == 8  # seq 5 undisposed, seq 8 held-form
     assert counts["undisposed_skipped"] == 1  # seq 5 (null disposition)
     assert counts["held_for_court_skipped"] == 1  # seq 8 (29.3 bind-over form)
+    # The effective filed-date floor is persisted on the run row (config
+    # visibility) and tallied per floor arm in the reason counts.
+    assert counts["filed_date_floor"] == "2025-01-01"
+    assert counts["ineligible_by_reason"][FILED_DATE_BEFORE_FLOOR] == 1  # seq 9
+    assert counts["ineligible_by_reason"][FILED_DATE_MISSING] == 1  # seq 10
     assert (
         counts["facts_written"]
         + counts["undisposed_skipped"]
@@ -348,8 +449,10 @@ def test_build_lifecycle_and_scenarios(build_conn):
 
     facts = _facts_by_sequence(conn)
     # seq 5 (undisposed) and seq 8 (held-form) produced no fact; their terminal
-    # siblings on the same docket all did (the AC-3 fact-layer proof).
-    assert set(facts) == {1, 2, 3, 4, 6, 7}
+    # siblings on the same docket all did (the AC-3 fact-layer proof). The
+    # floored dockets (seq 9, 10) still produce facts — the floor flips only
+    # the eligibility dimension, never fact creation.
+    assert set(facts) == {1, 2, 3, 4, 6, 7, 9, 10}
 
     # seq 1 — fully eligible.
     f1 = facts[1]
@@ -391,6 +494,18 @@ def test_build_lifecycle_and_scenarios(build_conn):
     assert f7["mvp_eligible"] and f7["review_needed"] and not f7["public_eligible"]
     assert REVIEW_NEEDED in f7["ineligibility_reason_codes"]
 
+    # seq 9 — pre-floor filed_date: fact built, mvp keeps its event-date
+    # meaning, public gated by the floor alone.
+    f9 = facts[9]
+    assert f9["mvp_eligible"] and not f9["public_eligible"]
+    assert f9["ineligibility_reason_codes"] == [FILED_DATE_BEFORE_FLOOR]
+
+    # seq 10 — null filed_date: fail-closed under filed_date_missing ONLY
+    # (the arms are mutually exclusive).
+    f10 = facts[10]
+    assert f10["mvp_eligible"] and not f10["public_eligible"]
+    assert f10["ineligibility_reason_codes"] == [FILED_DATE_MISSING]
+
 
 def test_sentence_facts_built_linked_and_scored(build_conn):
     conn, url = build_conn
@@ -402,9 +517,9 @@ def test_sentence_facts_built_linked_and_scored(build_conn):
         cur.execute("SELECT counts FROM fact.fact_build_runs")
         counts = cur.fetchone()["counts"]
     sc = counts["sentences"]
-    # 2 (seq1) + 1 (seq4) + 1 (seq6) + 1 (seq7) = 5 components on disposed charges.
-    assert sc["sentence_facts_written"] == 5
-    assert sc["components_on_disposed"] == 5
+    # 2 (seq1) + 1 each (seq4, 6, 7, 9, 10) = 7 components on disposed charges.
+    assert sc["sentence_facts_written"] == 7
+    assert sc["components_on_disposed"] == 7
     assert sc["duration_unparseable_facts"] == 1
     assert sc["duration_warning_count"] == 1
     assert sc["duration_predicate_all"] == 1
@@ -413,7 +528,7 @@ def test_sentence_facts_built_linked_and_scored(build_conn):
     outcomes = _facts_by_sequence(conn)
     sentences = _sentence_facts(conn)
     # Exactly the disposed-charge components; the held seq 5 contributes none.
-    assert set(sentences) == {(1, 1), (1, 2), (4, 1), (6, 1), (7, 1)}
+    assert set(sentences) == {(1, 1), (1, 2), (4, 1), (6, 1), (7, 1), (9, 1), (10, 1)}
 
     # seq1 — two components, both fully eligible, FK'd to the seq1 outcome fact,
     # judge + normalized-charge fields inherited verbatim from the parent.
@@ -452,6 +567,20 @@ def test_sentence_facts_built_linked_and_scored(build_conn):
     seven = sentences[(7, 1)]
     assert not seven["public_eligible"]
     assert PARENT_OUTCOME_INELIGIBLE in seven["ineligibility_reason_codes"]
+
+    # seq9 — pre-floor filed_date: the sentence fact carries BOTH the direct
+    # floor code (pinned decision 1: every population) and the transitive
+    # parent code ("every applicable reason").
+    floored = sentences[(9, 1)]
+    assert not floored["public_eligible"]
+    assert FILED_DATE_BEFORE_FLOOR in floored["ineligibility_reason_codes"]
+    assert PARENT_OUTCOME_INELIGIBLE in floored["ineligibility_reason_codes"]
+
+    # seq10 — null filed_date: fail-closed missing arm only, plus the parent.
+    nulled = sentences[(10, 1)]
+    assert not nulled["public_eligible"]
+    assert FILED_DATE_MISSING in nulled["ineligibility_reason_codes"]
+    assert FILED_DATE_BEFORE_FLOOR not in nulled["ineligibility_reason_codes"]
 
     # Task 23.4 now wires review items into the queue: this seed yields exactly one
     # item per real normalization/attribution signal it carries (dedup-collapsed).

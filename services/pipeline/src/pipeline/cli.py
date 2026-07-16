@@ -37,6 +37,7 @@ from pipeline.evaluation.extractors import EXTRACTORS
 from pipeline.evaluation.harness import run_evaluation
 from pipeline.extraction import DEFAULT_LOW_TEXT_THRESHOLD, run_extraction
 from pipeline.facts.build_facts import run_build_facts
+from pipeline.facts.outcome_facts import FILED_DATE_FLOOR_DEFAULT
 from pipeline.load import run_load
 from pipeline.logging_utils import configure_logging
 from pipeline.manual_import import run_manual_import
@@ -314,6 +315,19 @@ def build_parser() -> argparse.ArgumentParser:
                     "(<sha256>.json). An envelope whose source hash has no record "
                     "here is a per-docket failure (no rows written). Default: "
                     "~/court-data/imports/."
+                ),
+            )
+        if name == "build-facts":
+            subparser.add_argument(
+                "--filed-date-floor",
+                type=date.fromisoformat,
+                default=FILED_DATE_FLOOR_DEFAULT,
+                help=(
+                    "Filed-date floor (ISO YYYY-MM-DD): a fact is publicly "
+                    "eligible only if its parent docket's filed_date is on or "
+                    "after it (null filed_date is fail-closed ineligible). "
+                    "Facts are still built for floored dockets — only the "
+                    "eligibility dimension changes. Default: 2025-01-01."
                 ),
             )
         if name == "prune-fact-runs":
@@ -979,7 +993,7 @@ def main(argv: list[str] | None = None) -> int:
                 extra={"command": args.command},
             )
             return 2
-        return run_build_facts(database_url)
+        return run_build_facts(database_url, filed_date_floor=args.filed_date_floor)
     if args.command == "prune-fact-runs":
         if running_in_ci():
             logger.error(

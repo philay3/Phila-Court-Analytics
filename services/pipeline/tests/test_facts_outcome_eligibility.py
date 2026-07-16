@@ -19,6 +19,8 @@ from pipeline.fact_review_vocab import (
     DISPOSITION_DATE_BEFORE_MVP_WINDOW,
     DISPOSITION_DATE_MISSING,
     DISPOSITION_NOT_MAPPED,
+    FILED_DATE_BEFORE_FLOOR,
+    FILED_DATE_MISSING,
     JUDGE_NOT_ATTRIBUTED,
     OUTCOME_CATEGORY_NOT_PUBLIC,
     REVIEW_NEEDED,
@@ -31,6 +33,7 @@ from pipeline.facts.judge_attribution import (
 )
 from pipeline.facts.outcome_facts import (
     ATTRIBUTION_METHOD_CHARGE_ROW,
+    FILED_DATE_FLOOR_DEFAULT,
     OUTCOME_MATCH_METHOD_EXACT,
     OUTCOME_MATCH_METHOD_UNMAPPED,
     OutcomeFactEligibility,
@@ -55,7 +58,22 @@ from pipeline.warning_codes import MISSING_DISPOSITION_DATE, SUSPECTED_AMENDED_C
 
 IN_WINDOW = date(2025, 6, 1)
 PRE_WINDOW = date(2024, 12, 31)
+FILED_IN_WINDOW = date(2025, 3, 1)
+FILED_PRE_FLOOR = date(2024, 12, 31)
 TAXV = "1.0.0"
+
+
+def evaluate(**kwargs):
+    """``evaluate_outcome_eligibility`` with an in-window filed-date default.
+
+    The filed-date floor (task filed-date-floor) is orthogonal to the pre-floor
+    scenarios below, so this wrapper pins ``filed_date`` in-window and the floor
+    to the committed default; each test states only the signal it exercises.
+    The floor tests at the bottom override both explicitly.
+    """
+    kwargs.setdefault("filed_date", FILED_IN_WINDOW)
+    kwargs.setdefault("filed_date_floor", FILED_DATE_FLOOR_DEFAULT)
+    return evaluate_outcome_eligibility(**kwargs)
 
 
 # --- builders for the three upstream results (all synthetic) ----------------
@@ -131,7 +149,7 @@ def unattributed() -> AttributionResult:
 
 # --- the AC 8 scenarios -----------------------------------------------------
 def test_fully_eligible_fact():
-    e = evaluate_outcome_eligibility(
+    e = evaluate(
         disposition_date=IN_WINDOW,
         charge_result=matched_charge(),
         outcome_result=mapped_public_outcome(),
@@ -143,7 +161,7 @@ def test_fully_eligible_fact():
 
 
 def test_assigned_judge_rule_is_attributed():
-    e = evaluate_outcome_eligibility(
+    e = evaluate(
         disposition_date=IN_WINDOW,
         charge_result=matched_charge(MATCH_METHOD_ALIAS),
         outcome_result=mapped_public_outcome(),
@@ -154,7 +172,7 @@ def test_assigned_judge_rule_is_attributed():
 
 
 def test_unknown_outcome_ineligible_disposition_not_mapped():
-    e = evaluate_outcome_eligibility(
+    e = evaluate(
         disposition_date=IN_WINDOW,
         charge_result=matched_charge(),
         outcome_result=unmapped_outcome(),
@@ -168,7 +186,7 @@ def test_unknown_outcome_ineligible_disposition_not_mapped():
 
 
 def test_unnormalized_charge_ineligible_charge_not_normalized():
-    e = evaluate_outcome_eligibility(
+    e = evaluate(
         disposition_date=IN_WINDOW,
         charge_result=unmatched_charge(),
         outcome_result=mapped_public_outcome(),
@@ -180,7 +198,7 @@ def test_unnormalized_charge_ineligible_charge_not_normalized():
 
 
 def test_ambiguous_charge_is_not_public_normalized():
-    e = evaluate_outcome_eligibility(
+    e = evaluate(
         disposition_date=IN_WINDOW,
         charge_result=ChargeNormalizationResult(
             raw_value="Ambiguous Offense",
@@ -199,7 +217,7 @@ def test_ambiguous_charge_is_not_public_normalized():
 
 
 def test_public_eligible_but_judge_unattributed():
-    e = evaluate_outcome_eligibility(
+    e = evaluate(
         disposition_date=IN_WINDOW,
         charge_result=matched_charge(),
         outcome_result=mapped_public_outcome(),
@@ -211,7 +229,7 @@ def test_public_eligible_but_judge_unattributed():
 
 
 def test_pre_window_date_not_mvp_eligible():
-    e = evaluate_outcome_eligibility(
+    e = evaluate(
         disposition_date=PRE_WINDOW,
         charge_result=matched_charge(),
         outcome_result=mapped_public_outcome(),
@@ -222,7 +240,7 @@ def test_pre_window_date_not_mvp_eligible():
 
 
 def test_null_date_not_mvp_eligible():
-    e = evaluate_outcome_eligibility(
+    e = evaluate(
         disposition_date=None,
         charge_result=matched_charge(),
         outcome_result=mapped_public_outcome(),
@@ -233,7 +251,7 @@ def test_null_date_not_mvp_eligible():
 
 
 def test_review_severity_parser_warning_gates_public_via_review_needed():
-    e = evaluate_outcome_eligibility(
+    e = evaluate(
         disposition_date=IN_WINDOW,
         charge_result=matched_charge(),
         outcome_result=mapped_public_outcome(),
@@ -249,7 +267,7 @@ def test_review_severity_parser_warning_gates_public_via_review_needed():
 def test_missing_disposition_date_warning_and_null_date_stack():
     # A null-date charge carrying the charge-grain MISSING_DISPOSITION_DATE
     # warning: both the date reason and review_needed apply (all applicable).
-    e = evaluate_outcome_eligibility(
+    e = evaluate(
         disposition_date=None,
         charge_result=matched_charge(),
         outcome_result=mapped_public_outcome(),
@@ -262,7 +280,7 @@ def test_missing_disposition_date_warning_and_null_date_stack():
 
 
 def test_mapped_nonpublic_category_reason():
-    e = evaluate_outcome_eligibility(
+    e = evaluate(
         disposition_date=IN_WINDOW,
         charge_result=matched_charge(),
         outcome_result=mapped_nonpublic_outcome(),
@@ -274,7 +292,7 @@ def test_mapped_nonpublic_category_reason():
 
 
 def test_statute_text_conflict_adds_blocking_warning_additively():
-    e = evaluate_outcome_eligibility(
+    e = evaluate(
         disposition_date=IN_WINDOW,
         charge_result=conflicted_charge(),
         outcome_result=mapped_public_outcome(),
@@ -290,7 +308,7 @@ def test_statute_text_conflict_adds_blocking_warning_additively():
 def test_all_applicable_reasons_stack():
     # A pre-window, unmatched charge carries BOTH its date reason and its
     # normalization reason (the all-applicable array, not a single code).
-    e = evaluate_outcome_eligibility(
+    e = evaluate(
         disposition_date=PRE_WINDOW,
         charge_result=unmatched_charge(),
         outcome_result=mapped_public_outcome(),
@@ -340,7 +358,7 @@ def test_build_outcome_fact_row_columns():
     charge_result = matched_charge()
     outcome_result = mapped_public_outcome()
     attribution = attributed()
-    eligibility = evaluate_outcome_eligibility(
+    eligibility = evaluate(
         disposition_date=IN_WINDOW,
         charge_result=charge_result,
         outcome_result=outcome_result,
@@ -370,7 +388,7 @@ def test_build_row_unmapped_outcome_match_method():
     charge_result = matched_charge()
     outcome_result = unmapped_outcome()
     attribution = unattributed()
-    eligibility = evaluate_outcome_eligibility(
+    eligibility = evaluate(
         disposition_date=IN_WINDOW,
         charge_result=charge_result,
         outcome_result=outcome_result,
@@ -390,3 +408,81 @@ def test_build_row_unmapped_outcome_match_method():
     assert row["outcome_match_method"] == OUTCOME_MATCH_METHOD_UNMAPPED
     assert row["normalized_judge_id"] is None
     assert row["outcome_category_code"] == OUTCOME_UNKNOWN
+
+
+# --- filed-date floor (task filed-date-floor) --------------------------------
+def test_filed_day_before_floor_public_ineligible():
+    # Boundary: 2024-12-31 is below the default 2025-01-01 floor. The floor
+    # gates public_eligible ONLY — mvp_eligible keeps its event-date meaning.
+    e = evaluate(
+        disposition_date=IN_WINDOW,
+        filed_date=FILED_PRE_FLOOR,
+        charge_result=matched_charge(),
+        outcome_result=mapped_public_outcome(),
+        attribution=attributed(),
+    )
+    assert e.mvp_eligible
+    assert not e.public_eligible and not e.judge_specific_eligible
+    assert e.ineligibility_reason_codes == (FILED_DATE_BEFORE_FLOOR,)
+
+
+def test_filed_on_floor_eligible():
+    # Boundary: exactly 2025-01-01 is on the floor -> eligible, no floor code.
+    e = evaluate(
+        disposition_date=IN_WINDOW,
+        filed_date=date(2025, 1, 1),
+        charge_result=matched_charge(),
+        outcome_result=mapped_public_outcome(),
+        attribution=attributed(),
+    )
+    assert e.public_eligible and e.judge_specific_eligible
+    assert e.ineligibility_reason_codes == ()
+
+
+def test_filed_null_fail_closed_missing_code_only():
+    # Fail-closed: a null filed_date is ineligible and carries
+    # filed_date_missing ONLY — the arms are mutually exclusive.
+    e = evaluate(
+        disposition_date=IN_WINDOW,
+        filed_date=None,
+        charge_result=matched_charge(),
+        outcome_result=mapped_public_outcome(),
+        attribution=attributed(),
+    )
+    assert e.mvp_eligible and not e.public_eligible
+    assert e.ineligibility_reason_codes == (FILED_DATE_MISSING,)
+    assert FILED_DATE_BEFORE_FLOOR not in e.ineligibility_reason_codes
+
+
+def test_filed_floor_is_config_driven():
+    # The evaluator reads the threaded floor, not a hardcoded date: the same
+    # filed_date is eligible under an earlier floor and ineligible under the
+    # committed default.
+    kwargs = dict(
+        disposition_date=IN_WINDOW,
+        filed_date=date(2024, 6, 1),
+        charge_result=matched_charge(),
+        outcome_result=mapped_public_outcome(),
+        attribution=attributed(),
+    )
+    assert evaluate(**kwargs, filed_date_floor=date(2024, 1, 1)).public_eligible
+    assert not evaluate(**kwargs).public_eligible
+
+
+def test_filed_floor_default_constant():
+    assert FILED_DATE_FLOOR_DEFAULT == date(2025, 1, 1)
+
+
+def test_filed_floor_reason_stacks_with_other_reasons():
+    # A floored fact with other defects carries every applicable code.
+    e = evaluate(
+        disposition_date=PRE_WINDOW,
+        filed_date=None,
+        charge_result=unmatched_charge(),
+        outcome_result=mapped_public_outcome(),
+        attribution=unattributed(),
+    )
+    assert not e.mvp_eligible and not e.public_eligible
+    assert DISPOSITION_DATE_BEFORE_MVP_WINDOW in e.ineligibility_reason_codes
+    assert FILED_DATE_MISSING in e.ineligibility_reason_codes
+    assert CHARGE_NOT_NORMALIZED in e.ineligibility_reason_codes

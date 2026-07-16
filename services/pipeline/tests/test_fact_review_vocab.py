@@ -80,13 +80,16 @@ def test_fact_build_run_statuses_are_exactly_three_members():
     assert len(v.FACT_BUILD_RUN_STATUSES) == 3
 
 
-def test_eligibility_reason_codes_are_exactly_the_sixteen_members():
+def test_eligibility_reason_codes_are_exactly_the_eighteen_members():
     # judge_not_normalized added in Task 22.3 (sanctioned plan-level vocabulary
     # addition, Answer 1), the domain-qualified judge analog of
     # charge_not_normalized. disposition_not_mapped added in Task 22.4 (same
     # convention), the domain-qualified outcome-mapping analog. money_amount_unparseable
     # + sentence_duration_unparseable added in Task 22.5 (map-gate approved), the
     # domain-qualified sentencing money/duration analogs.
+    # filed_date_before_floor + filed_date_missing added by task filed-date-floor
+    # (plan-approved 2026-07-16): the filed-date-floor public gate's mutually
+    # exclusive arms, one shared pair for both fact populations.
     assert v.ELIGIBILITY_REASON_CODES == {
         "disposition_date_missing",
         "disposition_date_before_mvp_window",
@@ -104,8 +107,10 @@ def test_eligibility_reason_codes_are_exactly_the_sixteen_members():
         "parent_outcome_ineligible",
         "money_amount_unparseable",
         "sentence_duration_unparseable",
+        "filed_date_before_floor",
+        "filed_date_missing",
     }
-    assert len(v.ELIGIBILITY_REASON_CODES) == 16
+    assert len(v.ELIGIBILITY_REASON_CODES) == 18
 
 
 def test_severities_do_not_collide_with_the_colliding_vocabularies():

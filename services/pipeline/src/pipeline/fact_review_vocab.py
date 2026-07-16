@@ -189,6 +189,18 @@ PARENT_OUTCOME_INELIGIBLE = "parent_outcome_ineligible"
 # the envelope warning to it — the mapper never re-parses durations).
 MONEY_AMOUNT_UNPARSEABLE = "money_amount_unparseable"
 SENTENCE_DURATION_UNPARSEABLE = "sentence_duration_unparseable"
+# Task filed-date-floor additions (plan-approved 2026-07-16): the filed-date
+# floor gates ``public_eligible`` on EVERY fact population (outcome and
+# sentencing alike) by the parent docket's ``filed_date``. Mutually exclusive
+# arms, mirroring the ``disposition_date_missing`` / ``_before_mvp_window``
+# pattern: a null ``filed_date`` is fail-closed ineligible under
+# ``filed_date_missing`` (never ``filed_date_before_floor``). ONE shared pair
+# for both grains — ``filed_date`` is a docket attribute identical for an
+# outcome fact and its sentence facts, so grain-specific variants would add
+# vocabulary without information. Internal-only, like every member here: reason
+# codes never reach aggregate rows or any public surface.
+FILED_DATE_BEFORE_FLOOR = "filed_date_before_floor"
+FILED_DATE_MISSING = "filed_date_missing"
 
 ELIGIBILITY_REASON_CODES: frozenset[str] = frozenset(
     {
@@ -208,5 +220,7 @@ ELIGIBILITY_REASON_CODES: frozenset[str] = frozenset(
         PARENT_OUTCOME_INELIGIBLE,
         MONEY_AMOUNT_UNPARSEABLE,
         SENTENCE_DURATION_UNPARSEABLE,
+        FILED_DATE_BEFORE_FLOOR,
+        FILED_DATE_MISSING,
     }
 )

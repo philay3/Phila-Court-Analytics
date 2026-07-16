@@ -18,6 +18,8 @@ from pathlib import Path
 
 from pipeline.envelope import _is_unparseable_duration
 from pipeline.fact_review_vocab import (
+    FILED_DATE_BEFORE_FLOOR,
+    FILED_DATE_MISSING,
     JUDGE_NOT_ATTRIBUTED,
     MONEY_AMOUNT_UNPARSEABLE,
     PARENT_OUTCOME_INELIGIBLE,
@@ -28,6 +30,7 @@ from pipeline.fact_review_vocab import (
     SENTENCING_COMPONENT_NOT_NORMALIZED,
 )
 from pipeline.facts.judge_attribution import METHOD_DISPOSITION_JUDGE, METHOD_NONE
+from pipeline.facts.outcome_facts import FILED_DATE_FLOOR_DEFAULT
 from pipeline.facts.sentence_facts import (
     ATTRIBUTION_METHOD_CHARGE_COMPONENT,
     build_sentence_fact_row,
@@ -49,6 +52,12 @@ GOLDEN_PATH = Path(__file__).parent / "tier1" / "sentence_fact_goldens.json"
 
 IN_WINDOW = "2025-06-01"
 PRE_WINDOW = "2024-12-31"
+
+# The filed-date floor (task filed-date-floor) is orthogonal to the AC10
+# scenarios: the golden builder pins filed_date in-window so the committed
+# goldens are unchanged; the floor's own arms are covered by the direct
+# evaluator tests at the bottom.
+FILED_IN_WINDOW = date(2025, 3, 1)
 
 # A clean, in-window, attributed parent (the common case) and an ineligible one.
 _CLEAN_PARENT = {
@@ -209,6 +218,8 @@ def _build_rows(scenario: dict, mapper: SentencingMapper, taxv: str) -> list[dic
         )
         eligibility = evaluate_sentence_eligibility(
             sentence_date=sentence_date,
+            filed_date=FILED_IN_WINDOW,
+            filed_date_floor=FILED_DATE_FLOOR_DEFAULT,
             result=result,
             component_match_method=match_method,
             duration_unparseable=duration_unparseable,
@@ -421,6 +432,8 @@ def test_public_eligible_only_when_attributed_promotes_to_judge_specific() -> No
     result = mapper.map("Probation", "Probation, Min of 12.00 Months")
     eligibility = evaluate_sentence_eligibility(
         sentence_date=date(2025, 6, 1),
+        filed_date=FILED_IN_WINDOW,
+        filed_date_floor=FILED_DATE_FLOOR_DEFAULT,
         result=result,
         component_match_method=derive_component_match_method(result),
         duration_unparseable=False,
@@ -430,3 +443,69 @@ def test_public_eligible_only_when_attributed_promotes_to_judge_specific() -> No
     assert eligibility.public_eligible is True
     assert eligibility.judge_specific_eligible is False
     assert eligibility.ineligibility_reason_codes == (JUDGE_NOT_ATTRIBUTED,)
+
+
+# ---------------------------------------------------------------------------
+# Filed-date floor (task filed-date-floor) — direct evaluator coverage
+# ---------------------------------------------------------------------------
+
+
+def _floor_eligibility(
+    filed_date,
+    *,
+    filed_date_floor=FILED_DATE_FLOOR_DEFAULT,
+    parent_public_eligible=True,
+):
+    """An otherwise fully eligible clean component, varying only the floor inputs."""
+    mapper = _mapper()
+    result = mapper.map("Probation", "Probation, Min of 12.00 Months")
+    return evaluate_sentence_eligibility(
+        sentence_date=date(2025, 6, 1),
+        filed_date=filed_date,
+        filed_date_floor=filed_date_floor,
+        result=result,
+        component_match_method=derive_component_match_method(result),
+        duration_unparseable=False,
+        parent_public_eligible=parent_public_eligible,
+        parent_attributed=True,
+    )
+
+
+def test_filed_day_before_floor_sentence_public_ineligible() -> None:
+    # Boundary: 2024-12-31 — the direct sentence-population gate (pinned
+    # decision 1), isolated from the transitive parent gate (parent kept
+    # public-eligible here). Floor gates public only; mvp untouched.
+    e = _floor_eligibility(date(2024, 12, 31))
+    assert e.mvp_eligible
+    assert not e.public_eligible and not e.judge_specific_eligible
+    assert e.ineligibility_reason_codes == (FILED_DATE_BEFORE_FLOOR,)
+
+
+def test_filed_on_floor_sentence_eligible() -> None:
+    e = _floor_eligibility(date(2025, 1, 1))
+    assert e.public_eligible and e.judge_specific_eligible
+    assert e.ineligibility_reason_codes == ()
+
+
+def test_filed_null_fail_closed_sentence_missing_code_only() -> None:
+    # Fail-closed null arm; the arms are mutually exclusive.
+    e = _floor_eligibility(None)
+    assert not e.public_eligible
+    assert e.ineligibility_reason_codes == (FILED_DATE_MISSING,)
+    assert FILED_DATE_BEFORE_FLOOR not in e.ineligibility_reason_codes
+
+
+def test_filed_floor_sentence_config_driven() -> None:
+    assert _floor_eligibility(
+        date(2024, 6, 1), filed_date_floor=date(2024, 1, 1)
+    ).public_eligible
+    assert not _floor_eligibility(date(2024, 6, 1)).public_eligible
+
+
+def test_filed_floor_stacks_with_parent_ineligible() -> None:
+    # A floored docket's sentence fact carries BOTH the direct floor code and
+    # the transitive parent code ("every applicable reason").
+    e = _floor_eligibility(date(2024, 12, 31), parent_public_eligible=False)
+    assert not e.public_eligible
+    assert FILED_DATE_BEFORE_FLOOR in e.ineligibility_reason_codes
+    assert PARENT_OUTCOME_INELIGIBLE in e.ineligibility_reason_codes

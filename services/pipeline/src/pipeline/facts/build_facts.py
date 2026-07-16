@@ -62,6 +62,7 @@ from pipeline.fact_review_vocab import (
 from pipeline.facts.docket_links import collect_docket_links, insert_docket_links
 from pipeline.facts.judge_attribution import build_docket_context, resolve_charge
 from pipeline.facts.outcome_facts import (
+    FILED_DATE_FLOOR_DEFAULT,
     MVP_WINDOW_START,
     build_outcome_fact_row,
     evaluate_outcome_eligibility,
@@ -185,7 +186,8 @@ def _load_charge_warning_codes(
 def _load_dockets(conn: psycopg.Connection) -> list[dict[str, object]]:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
-            "SELECT id, source_document_id, assigned_judge_raw FROM parsed.dockets"
+            "SELECT id, source_document_id, assigned_judge_raw, filed_date "
+            "FROM parsed.dockets"
         )
         return list(cur.fetchall())
 
@@ -217,6 +219,7 @@ def _collect_outcome_rows(
     judge_matcher: JudgeMatcher,
     mapper: OutcomeMapper,
     taxonomy_version: str,
+    filed_date_floor: date,
 ) -> tuple[list[dict[str, object]], dict[str, object], list[dict[str, object]]]:
     """Read the corpus and build every outcome-fact row (no writes here).
 
@@ -247,6 +250,7 @@ def _collect_outcome_rows(
     for docket in dockets:
         docket_id = str(docket["id"])
         source_document_id = str(docket["source_document_id"])
+        filed_date = _to_date(docket["filed_date"])
         charges = charges_by_docket.get(docket_id, [])
 
         # The 23.1 docket context is derived ONCE per docket over ALL its charges.
@@ -364,6 +368,8 @@ def _collect_outcome_rows(
 
             eligibility = evaluate_outcome_eligibility(
                 disposition_date=disposition_date,
+                filed_date=filed_date,
+                filed_date_floor=filed_date_floor,
                 charge_result=charge_result,
                 outcome_result=outcome_result,
                 attribution=attribution,
@@ -446,7 +452,7 @@ def _load_all_sentences(conn: psycopg.Connection) -> list[dict[str, object]]:
             "SELECT s.id, s.charge_id, s.component_order, s.sentence_type, "
             "s.raw_text, s.min_days, s.max_days, s.min_assumed, s.sentence_date, "
             "c.disposition_raw, c.disposition_date, c.docket_id, "
-            "c.sequence AS charge_sequence, d.source_document_id "
+            "c.sequence AS charge_sequence, d.source_document_id, d.filed_date "
             "FROM parsed.sentences s JOIN parsed.charges c ON s.charge_id = c.id "
             "JOIN parsed.dockets d ON c.docket_id = d.id"
         )
@@ -566,6 +572,7 @@ def _collect_sentence_rows(
     *,
     sentencing_mapper: SentencingMapper,
     taxonomy_version: str,
+    filed_date_floor: date,
 ) -> tuple[list[dict[str, object]], dict[str, object], list[dict[str, object]]]:
     """Build every sentence-fact row (pure; no DB) + the separate sentence tallies.
 
@@ -663,6 +670,8 @@ def _collect_sentence_rows(
 
         eligibility = evaluate_sentence_eligibility(
             sentence_date=sentence_date,
+            filed_date=_to_date(sentence["filed_date"]),
+            filed_date_floor=filed_date_floor,
             result=result,
             component_match_method=component_match_method,
             duration_unparseable=duration_unparseable,
@@ -938,6 +947,7 @@ def _finish_run(
 def _print_summary(run_id: str, counts: dict[str, object]) -> None:
     """Print a counts-only run report (fixed codes only; no raw docket data)."""
     print(f"build-facts run={run_id[:16]} status={RUN_COMPLETED}")
+    print(f"filed_date_floor={counts['filed_date_floor']}")
     print(
         f"charges_processed={counts['charges_processed']} "
         f"facts_written={counts['facts_written']} "
@@ -1057,11 +1067,20 @@ def _print_sentence_summary(sc: dict[str, object]) -> None:
             print(f"  {code:34} {n}")
 
 
-def build_facts(conn: psycopg.Connection, database_url: str) -> int:
+def build_facts(
+    conn: psycopg.Connection,
+    database_url: str,
+    *,
+    filed_date_floor: date = FILED_DATE_FLOOR_DEFAULT,
+) -> int:
     """Build outcome facts over the loaded corpus under one new run.
 
     ``conn`` is the open build connection; ``database_url`` is passed to the roster
-    loaders (they open their own read-only connections at the boundary). Returns
+    loaders (they open their own read-only connections at the boundary).
+    ``filed_date_floor`` is the configured filed-date floor (task
+    filed-date-floor): a fact is publicly eligible only if its parent docket's
+    ``filed_date`` is on or after it (null fail-closed); the effective value is
+    printed in the run summary and persisted in the run's counts. Returns
     0 on a clean completed run, nonzero on a STOP or a failed build.
     """
     taxonomy = load_taxonomy_snapshot()
@@ -1111,7 +1130,11 @@ def build_facts(conn: psycopg.Connection, database_url: str) -> int:
             judge_matcher=judge_matcher,
             mapper=mapper,
             taxonomy_version=taxonomy.taxonomy_version,
+            filed_date_floor=filed_date_floor,
         )
+        # The effective floor rides the run's counts JSON (config visibility on
+        # the persisted run row, not only the console summary).
+        counts["filed_date_floor"] = filed_date_floor.isoformat()
         parent_by_charge = {str(row["parsed_charge_id"]): row for row in rows}
         with conn.transaction():
             insert_outcome_facts(conn, rows)
@@ -1125,6 +1148,7 @@ def build_facts(conn: psycopg.Connection, database_url: str) -> int:
                     parent_by_charge,
                     sentencing_mapper=sentencing_mapper,
                     taxonomy_version=taxonomy.taxonomy_version,
+                    filed_date_floor=filed_date_floor,
                 )
             )
             insert_sentence_facts(conn, sentence_rows)
@@ -1183,9 +1207,11 @@ def build_facts(conn: psycopg.Connection, database_url: str) -> int:
     return 0
 
 
-def run_build_facts(database_url: str) -> int:
+def run_build_facts(
+    database_url: str, *, filed_date_floor: date = FILED_DATE_FLOOR_DEFAULT
+) -> int:
     """CLI entry: open the build connection and run the outcome-fact build."""
     from pipeline import db
 
     with db.connect(database_url) as conn:
-        return build_facts(conn, database_url)
+        return build_facts(conn, database_url, filed_date_floor=filed_date_floor)
