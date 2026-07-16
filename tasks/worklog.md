@@ -6660,3 +6660,162 @@ the loop would break the local iteration).
 stays held until Step 3 succeeds. Merge to main may trigger Render service
 auto-deploys; expected, not a deviation. `tasks/current-task.md` local edit
 belongs to the operator and is not part of this commit.
+
+## Sprint 7 close-out (a) — Go-Live Execution Record (2026-07-15/16)
+
+**Summary.** `docs/runbook-go-live.md` executed end to end against merged
+main (Steps 1–10), followed by the post-deploy verification split
+(`docs/runbook-verification.md`, agent half + operator-assisted checks).
+The product is live at https://philacourtoutcomes.org under the
+controlled-launch model: both DNS names proxied through Cloudflare,
+encryption mode Full (strict) verified, noindex confirmed on all three
+hostname surfaces, both UptimeRobot monitors up, edge rate rule Active,
+and the live 429 shape confirmed with a single controlled burst. Render
+hostnames and the internal API address appear only in the banked reports,
+never here, per the hostname rule.
+
+**STOPs and their rulings (by pointer):**
+
+- **31.3c TLS** — migration-runner TLS for the external connection:
+  `?sslmode=verify-full` on the URL for the Node runner; per-command
+  `PGSSLMODE=verify-full PGSSLROOTCERT=system` for libpq tools;
+  `sslmode=require` banned. See the 31.3c worklog entry above and
+  ADR 0004 Addendum item 2; probe evidence banked
+  (`2026-07-15-31.3c-tls-probe.txt`).
+- **PG17 prerequisite** — local client tools predated PG17; ruled: install
+  `postgresql@17` (Homebrew) and gate on the three `--version` checks
+  (all reported 17.10). Runbook prerequisites now carry the executable
+  gate; install + checkpoint banked verbatim.
+- **Step 5 health check** — the health-check path field does not exist on
+  Render private services; ruled: platform-default TCP probe, nothing
+  health-check-related configured, deploy-green stated under TCP semantics
+  only, internal address recorded verbatim as the web service's
+  `API_BASE_URL`, `/health` verification moved to the verification
+  runbook. See ADR 0004 Addendum item 5.
+- **Step 7 sequencing** — ruled: encryption mode Full before any DNS
+  records; both `@` and `www` CNAMEs to the web service's actual hostname
+  created DNS-only (grey); wait for Render domain verification +
+  certificate; flip both to Proxied; Full (strict) as the verified end
+  state via the post-deploy one-shot. Zone was fresh, so the AAAA finding
+  was moot as ruled. See ADR 0004 Addendum item 3.
+- **Step 8 ratification** — ruled: 50 requests / 10 seconds per IP, action
+  Block, minimum (10 s) mitigation timeout, Bot Fight Mode OFF — the
+  ~300 req/min/IP decision under the plan's fixed counting window. See
+  ADR 0004 Addendum item 4.
+
+**Banked artifacts (verbatim console evidence lives there):**
+`~/court-data/reports/2026-07-15-go-live-execution.txt`,
+`~/court-data/reports/2026-07-15-verification.txt`,
+`~/court-data/reports/2026-07-15-31.3c-tls-probe.txt`.
+
+## Sprint 7 close-out (b) — Task 31.4 Exit Demo Record (2026-07-16)
+
+Exit demo run by the operator against the DEPLOYED product per the
+sprint-7 plan's twelve-item list; reviewed in the planning chat.
+
+**Items 1–10 and 12: operator-attested**, with corroborating evidence
+pointers into the banked reports:
+
+- Item 1 (deployed URL loads; noindex) — three-surface noindex assertions
+  banked verbatim (`2026-07-15-verification.txt`, Item 2).
+- Items 2–7 (rosters, distributions, thin-data, judge-specific/fallback,
+  sentencing-unavailable, held-for-court shape) — demo-script smoke over
+  the live domain (C1) plus the read-only endpoint/page checks banked in
+  `2026-07-15-verification.txt` (Item 1) and the go-live Step 6/7
+  checkpoints.
+- Item 8 (methodology + data-coverage honest window, current run
+  metadata, no seeded framing) — live data-coverage body banked verbatim
+  (go-live report, Step 6 checkpoint and Step 9 pre-check).
+- Item 9 (demo script start-to-finish) and item 10 (submission package
+  walkthrough) — operator-attested in planning chat.
+- Item 12 (full CI green) — every phase-31 PR merged on green; final
+  pre-close merge was PR #55 (2026-07-16).
+
+**Item 11: evidenced verbatim** (banked addendum, copy-pasted from
+`2026-07-15-verification.txt`):
+
+```
+=== Addendum (authorized) — test-database-guard deliberate-failure demonstration ===
+$ cd db && DATABASE_URL=postgres://pca:pca_local_dev_password@localhost:5433/pca vitest run   # LOCAL non-test dbname, never prod
+Error: db vitest globalSetup: refusing to run against database "pca" — the name does not match the test-database pattern (contains "test", or is the CI database pca_ci). DB-backed test runs seed reference data and delete-and-reinsert aggregate rows, and must never touch a live database. Point DATABASE_URL at a dedicated test database (e.g. pca_test).
+ ❯ assertTestDatabaseUrl src/test-db-guard.ts:26:11
+ ❯ Object.globalSetup [as setup] vitest.global-setup.ts:9:50
+ ❯ TestProject._initializeGlobalSetup ...
+exit-code=1 ; zero test files executed (abort at globalSetup, before any suite or DB write)
+```
+
+## Sprint 7 close-out (c) — Sprint-Close Record + Retroactive Items (2026-07-16)
+
+**Sprint 7 is COMPLETE.** Exit demo closed in the planning chat; this
+close-out branch is the sprint's final motion.
+
+**Post-launch queue (opened at close):**
+
+1. Collection cadence decision.
+2. Indexing decision (whether/when to lift noindex).
+3. Admin review tooling (ADR 0003 revisit).
+4. Taxonomy-tables landing trigger.
+5. MC defendant-block variant investigation — trigger: recurrence on the
+   next intake (quarantined SUSPECTED VARIANT, UNCONFIRMED; quarantine
+   count 7).
+6. Copy-safety guarded-disclaimer rider.
+7. Option B publish-to-target machinery (source/target split).
+8. Run-report file emission (ADR 0004 Decision 12 deferral).
+9. UptimeRobot ToS primary-source read (ADR 0004 Addendum item 8).
+10. Raw-PDF retention (Sprint 9).
+11. `.env` retention ruling RECORDED: retain — `PROD_DATABASE_URL` kept
+    under its isolated name (never `DATABASE_URL`) in the local
+    gitignored `.env` only; placeholder documented in `.env.example`.
+
+**Retroactive record (item 8a) — the owed worklog-PR merge verification.**
+Pulled via git/gh (verbatim):
+
+```
+PR #54 operational intake: aug2025 window collection — worklog restatement — state=MERGED mergedAt=2026-07-15T22:05:23Z mergeCommit=363cdf26cb655db5827f946e9a4325c43df3de7f head=intake-aug2025-window
+363cdf2 IS ancestor of origin/main
+```
+
+**Retroactive record (item 8b) — the import-duplicates trio.** Question:
+were the aug2025 intake's 3 import duplicates the known trio's previously
+imported documents? **Answer: YES.** From the banked report
+(`aug2025-intake-run-20260715T201916Z.txt`, verbatim line):
+
+```
+[1] import:   imported=3282 duplicate=3 invalid=0 failed=0
+```
+
+Corroboration (counts and hash-prefixes only): intersecting the included
+file hashes of the three intake snapshot manifests (aug2025 ∩ apr2025 =
+3; aug2025 ∩ COL-4b = 3; triple intersection = 3) isolates exactly three
+documents — hash-prefixes `cb57fc53`, `de1eef8a`, `f5272c0f` — and the
+local DB shows all three as `raw.source_documents` rows with
+`status=parse_failed`, first imported 2026-07-13 (verbatim, SELECT-only):
+
+```
+cb57fc53|2026-07-13 18:02:21.362178+00|parse_failed
+de1eef8a|2026-07-13 18:02:21.619103+00|parse_failed
+f5272c0f|2026-07-13 18:02:21.544592+00|parse_failed
+```
+
+The 3 duplicates are the byte-identical parse_failed trio re-flowing (they
+never load into `parsed`, so the freeze's already-loaded exclusion can
+never drop them), consistent with every prior intake's attribution.
+
+**Files touched by this close-out branch.** `README.md` (live-URL line),
+`apps/web/next.config.ts` (comment-only stale "Sprint 9" fix),
+`docs/runbook-go-live.md` (prerequisite version gate; storage/autoscaling
+ruled values; Step 5 TCP semantics; Step 7 adjudicated sequencing; Step 8
+ratified rule), `docs/runbook-verification.md` (C0 `/health` step with the
+shell-guard rider, motivated by the item-4 wrong-shell miss),
+`docs/decisions/0004-deployment.md` (Addendum — completes 31.3
+implementation AC 8), `.env.example` (`PROD_DATABASE_URL` placeholder),
+`tasks/worklog.md` (this record). Riding the branch with authorship noted
+in its commit message: the operator's `docs/planning/roadmap.md` edit and
+the operator's `docs/planning/sprint-4..7-plan.md` files (per the
+operator's go: "include the sprints").
+
+**For the next cycle.** The post-launch queue above is the backlog
+opener; the first post-launch intake must report MC ParseError-cohort
+recurrence (queue item 5). PR #55's remote branch
+(`task-31.3c-migrate-tls`) was left undeleted at merge time — flagged for
+cleanup with this branch's PR loop.
