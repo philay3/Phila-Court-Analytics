@@ -63,20 +63,43 @@ the chosen region, database `pca`, user `pca`.
 
 ## Step 3 — Migrate the production database
 
+Render external endpoints REQUIRE TLS: a plain connection is refused at
+handshake time with `SSL/TLS required` before any migration runs. The
+Node migration runner (`pg`) does not attempt TLS unless the connection
+string opts in, so the invocation below appends `?sslmode=verify-full` —
+TLS with full certificate-chain and hostname verification against the
+system CA store (Render's external chain is publicly trusted; verified
+2026-07-15, probe evidence in `~/court-data/reports/`). Do NOT use
+`sslmode=require`: in the pinned driver it emits a security warning and
+its semantics change in pg v9.
+
+The `?` joiner presumes the pasted external URL carries no existing
+query string (Render's currently does not). If it ever does, join with
+`&` instead of `?`.
+
 From the repo root on `main` (fresh `git pull`; `pnpm install` current):
 
 ```sh
 read -s PROD_DATABASE_URL    # external connection string from Step 2
 export PROD_DATABASE_URL
-DATABASE_URL="$PROD_DATABASE_URL" pnpm db:migrate:latest
+DATABASE_URL="${PROD_DATABASE_URL}?sslmode=verify-full" pnpm db:migrate:latest
 ```
 
 **Checkpoint:** the migrator reports every migration in `db/migrations/`
 applied and exits 0. Confirm bookkeeping came from the migrator (SELECT-only):
 
 ```sh
-psql "$PROD_DATABASE_URL" -c 'select count(*) from public.kysely_migration;'
+PGSSLMODE=verify-full PGSSLROOTCERT=system \
+  psql "$PROD_DATABASE_URL" -c 'select count(*) from public.kysely_migration;'
 ```
+
+TLS note for `psql` (and every libpq tool below): libpq defaults to
+`sslmode=prefer` — encrypted but with an UNVERIFIED certificate chain.
+The inline `PGSSLMODE=verify-full PGSSLROOTCERT=system` prefix enforces
+verified TLS; `sslrootcert=system` (PG ≥ 16 client) points libpq at the
+system trust store. Keep the prefix per-command, never `export`ed — and
+never put `sslrootcert=system` in a URL the Node driver sees (node-pg
+would read it as a file path named `system` and crash).
 
 The count equals the number of files in `db/migrations/` at run time.
 
@@ -88,7 +111,8 @@ matched pair: **custom-format `pg_dump -Fc`** read by **`pg_restore`**.
 
 1. Dump exactly the nine public tables from the local `pca` database
    (data-only, custom format). The local URL is the non-secret local-dev
-   one from the repo-root `.env`:
+   one from the repo-root `.env`. TLS: none — this reads the LOCAL docker
+   Postgres, which does not speak TLS; no SSL settings apply here:
 
    ```sh
    set -a; . ./.env; set +a   # loads local DATABASE_URL (local dev values)
@@ -125,10 +149,13 @@ matched pair: **custom-format `pg_dump -Fc`** read by **`pg_restore`**.
    ```
 
 3. Restore into production in a single transaction (any failure — including
-   a foreign-key violation — rolls back everything):
+   a foreign-key violation — rolls back everything). TLS: `pg_restore` is a
+   libpq tool — the inline prefix enforces verified TLS exactly as in the
+   Step 3 checkpoint note:
 
    ```sh
-   pg_restore --single-transaction --data-only \
+   PGSSLMODE=verify-full PGSSLROOTCERT=system \
+     pg_restore --single-transaction --data-only \
      -L /tmp/toc.ordered \
      -d "$PROD_DATABASE_URL" \
      /tmp/pca-public-9table.dump
@@ -144,21 +171,26 @@ matched pair: **custom-format `pg_dump -Fc`** read by **`pg_restore`**.
   ordering satisfied every foreign key.
 - Per-table count comparison against the local source AT RUN TIME (no
   pinned counts). Run the same query against both URLs and compare the two
-  outputs line by line — they must be identical:
+  outputs line by line — they must be identical. TLS differs per target, so
+  the two invocations are explicit rather than a loop: the local docker
+  Postgres speaks no TLS (a `verify-full` prefix there would fail the
+  connection), while the production psql run takes the verified-TLS prefix
+  from the Step 3 checkpoint note:
 
   ```sh
-  for url in "$DATABASE_URL" "$PROD_DATABASE_URL"; do
-    psql "$url" -At -c "
-      select 'ref.normalized_charges', count(*) from ref.normalized_charges
-      union all select 'ref.charge_aliases', count(*) from ref.charge_aliases
-      union all select 'ref.normalized_judges', count(*) from ref.normalized_judges
-      union all select 'ref.judge_aliases', count(*) from ref.judge_aliases
-      union all select 'analytics.aggregate_runs', count(*) from analytics.aggregate_runs
-      union all select 'analytics.charge_outcome_aggregates', count(*) from analytics.charge_outcome_aggregates
-      union all select 'analytics.charge_sentencing_aggregates', count(*) from analytics.charge_sentencing_aggregates
-      union all select 'analytics.judge_outcome_aggregates', count(*) from analytics.judge_outcome_aggregates
-      union all select 'analytics.judge_sentencing_aggregates', count(*) from analytics.judge_sentencing_aggregates;"
-  done
+  COUNT_SQL="
+    select 'ref.normalized_charges', count(*) from ref.normalized_charges
+    union all select 'ref.charge_aliases', count(*) from ref.charge_aliases
+    union all select 'ref.normalized_judges', count(*) from ref.normalized_judges
+    union all select 'ref.judge_aliases', count(*) from ref.judge_aliases
+    union all select 'analytics.aggregate_runs', count(*) from analytics.aggregate_runs
+    union all select 'analytics.charge_outcome_aggregates', count(*) from analytics.charge_outcome_aggregates
+    union all select 'analytics.charge_sentencing_aggregates', count(*) from analytics.charge_sentencing_aggregates
+    union all select 'analytics.judge_outcome_aggregates', count(*) from analytics.judge_outcome_aggregates
+    union all select 'analytics.judge_sentencing_aggregates', count(*) from analytics.judge_sentencing_aggregates;"
+  psql "$DATABASE_URL" -At -c "$COUNT_SQL"          # local: docker, non-TLS
+  PGSSLMODE=verify-full PGSSLROOTCERT=system \
+    psql "$PROD_DATABASE_URL" -At -c "$COUNT_SQL"   # production: verified TLS
   ```
 
 ## Step 5 — API service (Render, PRIVATE)

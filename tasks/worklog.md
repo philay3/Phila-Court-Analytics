@@ -6604,3 +6604,59 @@ pipeline lines pasted verbatim from tool output.
   POST-LAUNCH INVESTIGATION — the first post-launch intake must report
   recurrence; it is NOT folded into expected quarantine. No parser edits
   were made in this cycle per the ruling.
+
+## Task 31.3c — Migration-Runner TLS for External (Prod) Connections (2026-07-15)
+
+**What was built.** Zero runtime code diff — recon proved the pinned driver
+(`pg@8.22.0` / `pg-connection-string@2.14.0`) already honors TLS opt-in
+end-to-end through the raw `DATABASE_URL` that `db/src/connection.ts` passes
+to `pg.Pool` unmodified. Deliverables per the approved plan + planning-chat
+rulings: (1) `docs/runbook-go-live.md` amended — Step 3 invocation now
+appends `?sslmode=verify-full` (with the joiner assumption stated: `&` if
+the external URL ever carries a query string), the Step 3 psql checkpoint
+and every prod-touching libpq command in Step 4 (`pg_restore`, prod psql
+count check) take a per-command `PGSSLMODE=verify-full PGSSLROOTCERT=system`
+prefix (never exported), the Step 4 count-comparison loop was split into two
+explicit invocations because the local docker iteration cannot take a
+verify-full prefix, and the local-side `pg_dump` is annotated local/non-TLS;
+(2) `db/tests/connection-tls.test.ts` — lock test pinning that a
+parameter-free URL resolves ssl=false (local/CI opt-in absent) and
+`?sslmode=verify-full` resolves to full verification (empty ssl object: no
+rejectUnauthorized/checkServerIdentity weakening). The test fails on the
+pre-announced pg v9 sslmode semantics change, forcing re-adjudication at
+upgrade time.
+
+**TLS chain probe (agent-executed per the amended division of labor;
+operator supplied host+port only, never the credential-bearing URL).**
+Capability verified first: system OpenSSL 3.6.3 supports `-starttls
+postgres` (operator's earlier LibreSSL attempt did not; also zsh ate the
+`<placeholder>` as a redirect). Verdict: PASS. Probe A (openssl, stderr
+captured): chain `i:C=US, O=Let's Encrypt, CN=R12` → `i:C=US, O=Internet
+Security Research Group, CN=ISRG Root X1`, `Verify return code: 0 (ok)`
+against system roots. Probe A2: leaf SANs include the wildcard matching the
+external host pattern — hostname verification (the verify-full half openssl
+alone doesn't prove) holds. Probe B (exact pinned stack: `pg@8.22.0` via
+tsx, `?sslmode=verify-full`, dummy user): `error.code=28P01
+error.routine=auth_failed` — server-side auth rejection AFTER a completed,
+verified handshake, the ruled pass signal. Two tooling false starts (CJS
+top-level-await, unresolvable `pg` from scratchpad) are banked as-is and
+were not TLS failures. Full verbatim evidence:
+`~/court-data/reports/2026-07-15-31.3c-tls-probe.txt` (hostname appears
+there only, never in committed artifacts). `sslmode=require` stays banned:
+runtime security warning in the pinned version + v9 semantics change.
+
+**Files touched.** `docs/runbook-go-live.md`, `db/tests/connection-tls.test.ts`
+(new), `tasks/worklog.md`. `db/src/migrate.ts` and `db/src/connection.ts`
+deliberately untouched (pinned decision 3, minimal remedy).
+
+**Deviations from plan.** None from the approved plan as amended by the
+execution relay (probe agent-executed; lock test in; strict libpq posture
+in; URL-param spelling for Step 3). The Step 4 loop split was the approved
+libpq ruling applied correctly rather than literally (a blanket prefix on
+the loop would break the local iteration).
+
+**For the next step.** Chops re-runs amended runbook Step 3 (fresh shell,
+`read -s`, the `?sslmode=verify-full` invocation) — the psql checkpoint
+stays held until Step 3 succeeds. Merge to main may trigger Render service
+auto-deploys; expected, not a deviation. `tasks/current-task.md` local edit
+belongs to the operator and is not part of this commit.
