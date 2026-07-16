@@ -6819,3 +6819,87 @@ opener; the first post-launch intake must report MC ParseError-cohort
 recurrence (queue item 5). PR #55's remote branch
 (`task-31.3c-migrate-tls`) was left undeleted at merge time — flagged for
 cleanup with this branch's PR loop.
+
+## Task filed-date-floor — Filed-Date Floor (Fact-Builder Eligibility Criterion) (2026-07-16)
+
+**What was built.** A config-driven filed-date floor at the fact layer: a
+fact is publicly eligible only if its parent docket's `filed_date` is on or
+after the floor (default `2025-01-01`); null `filed_date` is fail-closed
+ineligible. Applied DIRECTLY in both eligibility evaluators (outcome and
+sentencing populations — pinned decision 1), gating `public_eligible` only
+(`mvp_eligible` keeps its single event-date meaning; `judge_specific_eligible`
+flips transitively as its subset — plan-review adjudication 2). Two new
+plan-approved reason codes, mutually exclusive arms shared by both grains:
+`filed_date_before_floor` and `filed_date_missing`. Vocabulary is
+code-resident (`text[]`, no CHECK) — no migration. Config is
+`FILED_DATE_FLOOR_DEFAULT` beside `MVP_WINDOW_START` (deliberately NOT
+consolidated with the aggregation-time `DATA_START_DATE_DEFAULT` — the
+event-date window is untouched, decision 5), overridable via a new
+`build-facts --filed-date-floor` flag; the effective floor prints in the run
+summary (`filed_date_floor=…`) and persists in the run's counts JSON. Facts
+are still built for floored dockets — only the eligibility dimension flips.
+
+**Files touched.** `services/pipeline/src/pipeline/fact_review_vocab.py`,
+`facts/outcome_facts.py`, `facts/sentence_facts.py`, `facts/build_facts.py`,
+`cli.py`; tests: `test_facts_outcome_eligibility.py` (evaluate-wrapper +
+boundary/null/mutual-exclusivity/config-driven/stacking tests),
+`test_facts_sentence_eligibility.py` (goldens pinned in-window, unchanged;
+direct floor tests incl. floor+parent stacking), `test_facts_build_facts.py`
+(seed gains in-window `filed_date` on docket 1 + a pre-floor docket seq 9 and
+a null-filed docket seq 10), `test_fact_review_vocab.py` (vocabulary lock
+16 → 18 — adjudicated as the mechanism working, not scope creep).
+
+**Public-gate sufficiency (plan Addition A).** All four public aggregate
+populations filter on the gated flags — `aggregates/generate.py:299`
+(`public_eligible`, outcomes), `:393` (`judge_specific_eligible`), `:488`
+(`public_eligible`, sentencing), `:592` (`judge_specific_eligible`); none
+keys off `mvp_eligible`. Reason codes feed internal run-report tallies only
+(`generate.py:302/491`); zero references in `apps/api/src` /
+`packages/shared/src`.
+
+**Verification rebuild (adjudicated ACCEPTED 2026-07-16).** New unpublished
+fact run `eb7022ed-1f65-4701-81c9-1cafee577847` vs baseline `50c7b88b…`;
+verbatim console + all six delta proofs banked at
+`~/court-data/reports/filed-date-floor-rebuild-20260716T231545Z.txt`. Corpus
+freeze held (no import/load; join orphans 0). Headline verbatim lines:
+
+```
+filed_date_floor=2025-01-01
+charges_processed=41449 facts_written=16511 undisposed_skipped=9219 held_for_court_skipped=15719
+mvp_eligible=8590 public_eligible=6578 judge_specific_eligible=6395 review_needed=5658
+P2 public flips eligible->ineligible=399 reverse=0 flips_without_new_floor_code=0   (outcome)
+P4 flip census by filed year x court: {('2023', 'CP'): 398, ('2024', 'CP'): 1}      (outcome)
+P2 public flips eligible->ineligible=418 reverse=0 flips_without_new_floor_code=0   (sentence)
+P4 flip census by filed year x court: {('2023', 'CP'): 416, ('2024', 'CP'): 2}      (sentence)
+P5 mvp_eligible deltas=0 review_needed deltas=0                                      (both)
+```
+
+Outcome flips = 399 = the D4 snapshot expectation exactly (6,977 − 399 =
+6,578 reconciles). Sentence-side `sentence_parent_code_additions=477` ruled
+attributed-and-approved (transitive stacking; 418 flipped + 59 already
+ineligible gaining codes without flipping); proof-6 wording amended for the
+record to permit `parent_outcome_ineligible` on facts whose parent flipped
+via the floor. Null-`filed_date` census: 0 dockets (fail-closed arm live,
+tested, unexercised). Run `eb7022ed…` retained as evidence; published
+aggregate run `dfbecb20…` untouched and active; no
+generate/validate/publish executed.
+
+**Gates (post-staging, caches cleared).** `ruff check` clean; `ruff format
+--check` clean (127 files); `pytest -q` 1009 passed / 1 skipped
+(pre-existing local fixture skip; DB-backed fact suites green against
+`pca_pipeline_test`); repo-root `pnpm format:check` clean; `pnpm typecheck`
+clean. Staging gate: all 9 files staged, no untracked/ignored files under
+the task paths.
+
+**Deviations from plan.** One: `test_fact_review_vocab.py` (the committed
+vocabulary-lock test) was not on the plan's file list; updating it is
+inherent to the approved vocabulary addition and was accepted at
+adjudication.
+
+**For the next task.** The next fact-build baseline for delta work is
+`eb7022ed…` (adjudication, standing notes). Corpus freeze lifted at
+adjudication, but intake stays held: the banked sequence runs the
+map-addition task (own freeze) before intake → rebuild → republish (step-2
+copy rides that window). Also banked from #55: remote branch
+`task-31.3c-migrate-tls` was left undeleted — cleaned up (or reported)
+with this branch's PR loop.

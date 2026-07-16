@@ -8,7 +8,9 @@ boolean, and the ``ineligibility_reason_codes`` array. Eligibility is defined
 VERBATIM by Sprint 5 plan Task 23.2 AC 2:
 
 - ``mvp_eligible`` = ``disposition_date`` present AND >= 2025-01-01.
-- ``public_eligible`` = ``mvp_eligible`` AND the charge match method is one of
+- ``public_eligible`` = ``mvp_eligible`` AND the parent docket's ``filed_date``
+  is present AND >= the configured filed-date floor (task filed-date-floor;
+  default 2025-01-01, null fail-closed) AND the charge match method is one of
   ``{exact, alias, statute}`` AND the outcome category is public AND the fact's
   ``review_needed`` is False.
 - ``judge_specific_eligible`` = ``public_eligible`` AND the judge is attributed
@@ -46,6 +48,8 @@ from pipeline.fact_review_vocab import (
     DISPOSITION_DATE_BEFORE_MVP_WINDOW,
     DISPOSITION_DATE_MISSING,
     DISPOSITION_NOT_MAPPED,
+    FILED_DATE_BEFORE_FLOOR,
+    FILED_DATE_MISSING,
     JUDGE_NOT_ATTRIBUTED,
     OUTCOME_CATEGORY_NOT_PUBLIC,
     REVIEW_NEEDED,
@@ -68,6 +72,19 @@ from pipeline.warning_codes import derive_review_needed
 # ``mvp_eligible = False`` (the date is never dropped; aggregation enforces the
 # window downstream in Sprint 7).
 MVP_WINDOW_START = date(2025, 1, 1)
+
+# The filed-date floor (task filed-date-floor, plan-approved 2026-07-16): a fact
+# is publicly eligible only if its parent docket's ``filed_date`` is on or after
+# this floor (null -> ineligible, fail-closed). Gates ``public_eligible`` ONLY —
+# ``mvp_eligible`` keeps its single event-date meaning. This is the named
+# configuration default the ``--filed-date-floor`` CLI flag overrides; the
+# evaluators read the threaded value and carry no date literal. DELIBERATELY a
+# parallel constant to the aggregation-time ``DATA_START_DATE_DEFAULT``
+# (aggregates/generate.py): the event-date window there is untouched and NOT
+# consolidated with this filed-date floor — the floor is additive at the fact
+# layer, and sharing the constant would couple the fact layer to the aggregates
+# module.
+FILED_DATE_FLOOR_DEFAULT = date(2025, 1, 1)
 
 # The charge match methods that count as a public-eligible normalization (AC 2):
 # a clean single-identity match. ``pattern`` (never emitted by the 22.2 matcher)
@@ -121,6 +138,8 @@ class OutcomeFactEligibility:
 def evaluate_outcome_eligibility(
     *,
     disposition_date: date | None,
+    filed_date: date | None,
+    filed_date_floor: date,
     charge_result: ChargeNormalizationResult,
     outcome_result: OutcomeMappingResult,
     attribution: AttributionResult,
@@ -129,8 +148,9 @@ def evaluate_outcome_eligibility(
     """Decide the eligibility trio + reason codes for one disposed charge (AC 2).
 
     Pure: given the three upstream verdicts (all consumed UNCHANGED), the
-    disposition date, and the charge's charge-grain PARSER warning codes, it
-    returns the :class:`OutcomeFactEligibility`. ``charge_warning_codes`` are the
+    disposition date, the parent docket's filed date + the configured filed-date
+    floor, and the charge's charge-grain PARSER warning codes, it returns the
+    :class:`OutcomeFactEligibility`. ``charge_warning_codes`` are the
     ``parsed.warnings`` codes for this charge (from the 11-code parser
     vocabulary); their review severity drives the fact's ``review_needed`` via the
     locked 18.1 map — no separate blocking list exists.
@@ -140,13 +160,20 @@ def evaluate_outcome_eligibility(
     review_needed = derive_review_needed(charge_warning_codes)
 
     mvp_eligible = disposition_date is not None and disposition_date >= MVP_WINDOW_START
+    # Filed-date floor: gates public_eligible ONLY (mvp_eligible keeps its single
+    # event-date meaning). Null filed_date is fail-closed ineligible.
+    filed_ok = filed_date is not None and filed_date >= filed_date_floor
     charge_public_match = charge_result.match_method in PUBLIC_CHARGE_MATCH_METHODS
     # The 22.4 result's ``public_eligible`` is the taxonomy ``public`` flag for the
     # mapped code (always False for the unmapped -> ``unknown`` sink).
     category_public = outcome_result.public_eligible
 
     public_eligible = (
-        mvp_eligible and charge_public_match and category_public and not review_needed
+        mvp_eligible
+        and filed_ok
+        and charge_public_match
+        and category_public
+        and not review_needed
     )
     attributed = attribution.method != METHOD_NONE
     judge_specific_eligible = public_eligible and attributed
@@ -158,6 +185,13 @@ def evaluate_outcome_eligibility(
         reasons.append(DISPOSITION_DATE_MISSING)
     elif disposition_date < MVP_WINDOW_START:
         reasons.append(DISPOSITION_DATE_BEFORE_MVP_WINDOW)
+
+    # Filed-date-floor reasons (mutually exclusive arms; drive public-
+    # ineligibility only — never mvp).
+    if filed_date is None:
+        reasons.append(FILED_DATE_MISSING)
+    elif filed_date < filed_date_floor:
+        reasons.append(FILED_DATE_BEFORE_FLOOR)
 
     # Charge-normalization reasons.
     if not charge_public_match:

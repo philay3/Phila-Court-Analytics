@@ -14,11 +14,14 @@ parent's):
 - ``mvp_eligible`` = ``sentence_date`` present AND >= 2025-01-01 (the SAME
   :data:`~pipeline.facts.outcome_facts.MVP_WINDOW_START`, imported unchanged).
 - ``public_eligible`` = parent outcome fact ``public_eligible`` AND
-  ``mvp_eligible`` AND the base sentencing category is public AND the component
-  match method is a clean single-identity match (:data:`PUBLIC_COMPONENT_MATCH_METHODS`
-  = ``{exact}``) AND the fact's ``review_needed`` is False. The docket/charge
-  blocking-warning gate is inherited TRANSITIVELY via "parent must be
-  public_eligible" — never re-implemented here.
+  ``mvp_eligible`` AND the parent docket's ``filed_date`` is present AND >= the
+  configured filed-date floor (task filed-date-floor; applied DIRECTLY to this
+  population, null fail-closed) AND the base sentencing category is public AND
+  the component match method is a clean single-identity match
+  (:data:`PUBLIC_COMPONENT_MATCH_METHODS` = ``{exact}``) AND the fact's
+  ``review_needed`` is False. The docket/charge blocking-warning gate is
+  inherited TRANSITIVELY via "parent must be public_eligible" — never
+  re-implemented here.
 - ``judge_specific_eligible`` = ``public_eligible`` AND the inherited judge
   attribution is present.
 
@@ -53,6 +56,8 @@ from datetime import date
 import psycopg
 
 from pipeline.fact_review_vocab import (
+    FILED_DATE_BEFORE_FLOOR,
+    FILED_DATE_MISSING,
     JUDGE_NOT_ATTRIBUTED,
     MONEY_AMOUNT_UNPARSEABLE,
     PARENT_OUTCOME_INELIGIBLE,
@@ -135,6 +140,8 @@ class SentenceFactEligibility:
 def evaluate_sentence_eligibility(
     *,
     sentence_date: date | None,
+    filed_date: date | None,
+    filed_date_floor: date,
     result: SentencingComponentResult,
     component_match_method: str,
     duration_unparseable: bool,
@@ -161,6 +168,11 @@ def evaluate_sentence_eligibility(
     review_needed = result.review_needed or duration_unparseable or multi_category
 
     mvp_eligible = sentence_date is not None and sentence_date >= MVP_WINDOW_START
+    # Filed-date floor (task filed-date-floor): applied DIRECTLY to the sentence
+    # population (pinned decision 1 — every fact population), not only inherited
+    # transitively via the parent gate. Gates public_eligible ONLY; null
+    # filed_date is fail-closed ineligible.
+    filed_ok = filed_date is not None and filed_date >= filed_date_floor
     clean_match = component_match_method in PUBLIC_COMPONENT_MATCH_METHODS
     # The 22.5 base mapping's ``public_eligible`` is the taxonomy ``public`` flag
     # for the base category (always False for the unmapped -> ``unknown`` sink).
@@ -169,6 +181,7 @@ def evaluate_sentence_eligibility(
     public_eligible = (
         parent_public_eligible
         and mvp_eligible
+        and filed_ok
         and clean_match
         and category_public
         and not review_needed
@@ -184,6 +197,14 @@ def evaluate_sentence_eligibility(
         reasons.append(SENTENCE_DATE_MISSING)
     elif sentence_date < MVP_WINDOW_START:
         reasons.append(SENTENCE_DATE_BEFORE_MVP_WINDOW)
+
+    # Filed-date-floor reasons (mutually exclusive arms; shared with the outcome
+    # grain — filed_date is a docket attribute). A floored sentence fact stacks
+    # these with ``parent_outcome_ineligible`` below ("every applicable reason").
+    if filed_date is None:
+        reasons.append(FILED_DATE_MISSING)
+    elif filed_date < filed_date_floor:
+        reasons.append(FILED_DATE_BEFORE_FLOOR)
 
     # Transitive parent gate (the docket/charge blocking-warning set is inherited
     # here, never re-implemented for sentences).
