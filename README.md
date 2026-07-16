@@ -31,9 +31,9 @@ surface.
 
 ## Launch model
 
-The product is built for a controlled launch: site-wide `noindex` (search
-engines are deliberately not invited), no promotion, and honest disclosures on
-every result surface. Collection is ongoing — coverage begins January 1, 2025,
+The product is deployed at <https://philacourtoutcomes.org> under a
+controlled launch: site-wide `noindex` (search engines are deliberately not
+invited), no promotion, and honest disclosures on every result surface. Collection is ongoing — coverage begins January 1, 2025,
 anchored to disposition and sentencing event dates rather than filing dates,
 and figures grow as newly collected records are aggregated. Known limitations
 are documented rather than smoothed over: see

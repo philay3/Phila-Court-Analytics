@@ -23,8 +23,16 @@ Secret hygiene (applies to every step):
 Prerequisites:
 
 - Phase-31 PR merged; deployment builds come from `main` only.
-- PostgreSQL 17 client tools locally (`pg_dump --version`,
-  `pg_restore --version` report 17.x — the pair must match the server major).
+- PostgreSQL 17 client tools locally. This is a GATE, not a sentence — run
+  all three, each must report 17.x (the client pair must match the server
+  major); do not proceed past a mismatch:
+
+  ```sh
+  psql --version         # expected: psql (PostgreSQL) 17.x
+  pg_dump --version      # expected: pg_dump (PostgreSQL) 17.x
+  pg_restore --version   # expected: pg_restore (PostgreSQL) 17.x
+  ```
+
 - Prices quoted in ADR 0004 are July 2026 readings — re-verify each on the
   provider's pricing page before creating the resource, and record actuals.
 
@@ -53,13 +61,16 @@ using Cloudflare nameservers, WHOIS redaction enabled.
 1. Create a Render Postgres instance: plan **Basic** (not free),
    PostgreSQL version **17**, region **US-East class** (record the exact
    region — every later resource must use the same one), database name
-   `pca`, user `pca` (permanent, deliberate).
+   `pca`, user `pca` (permanent, deliberate), initial storage **1 GB**,
+   Storage Autoscaling **off** (ruled: this is a tiny public-table mirror;
+   storage sizing is one-way, and autoscaling would be silent cost drift).
 2. Record the INTERNAL connection string (for the API service) and the
    EXTERNAL connection string (for the migrate/restore steps below). Do not
    write either to a file.
 
 **Checkpoint:** instance status is Available; the dashboard shows PG 17,
-the chosen region, database `pca`, user `pca`.
+the chosen region, database `pca`, user `pca`, storage 1 GB, Storage
+Autoscaling off.
 
 ## Step 3 — Migrate the production database
 
@@ -218,11 +229,17 @@ matched pair: **custom-format `pg_dump -Fc`** read by **`pg_restore`**.
      with a 3001 fallback. Record the port the service actually listens on.
    - Do NOT set `CI` or `GITHUB_ACTIONS`. `DEFENDANT_HASH_SALT` must not
      exist on this service.
-5. Health check path: `/health`.
+5. Health check: configure NOTHING. Render private services take the
+   platform-default TCP probe; the health-check path field does not exist
+   on them. Deploy-green therefore means TCP semantics only — build
+   succeeded, process started, port accepting connections — and carries NO
+   `/health` claim. `/health` verification lives in
+   `docs/runbook-verification.md`: direct via the API service Shell, and
+   transitive via the Step 9 keyword monitor.
 
-**Checkpoint:** deploy succeeds; Render health check is green (proves
-`{"status":"ok",...}` from `/health`); record the internal hostname and
-port (`http://<internal-host>:<port>`).
+**Checkpoint:** deploy succeeds (TCP semantics only, per above); record the
+internal address VERBATIM (`<internal-host>:<port>`) — it becomes the web
+service's `API_BASE_URL` value (`http://<internal-host>:<port>`) in Step 6.
 
 ## Step 6 — Web service (Render)
 
@@ -249,25 +266,58 @@ port (`http://<internal-host>:<port>`).
 homepage AND one charge result page renders with data (server-side fetch →
 internal API → database → published run, end to end).
 
-## Step 7 — DNS and proxy (Cloudflare)
+## Step 7 — DNS, TLS mode, and proxy (Cloudflare)
 
-1. Add the domain as a custom domain on the Render web service; complete
-   Render's domain verification.
-2. In Cloudflare DNS, point the apex at the Render web hostname (Cloudflare
-   flattens CNAME at the apex), proxy ON (orange cloud).
-3. Confirm TLS end to end (Cloudflare edge cert + Render cert).
+Sequencing is adjudicated and ordered — do not reorder:
+
+1. BEFORE creating any DNS records: set the zone's SSL/TLS encryption mode
+   to **Full**. **Full (strict) is the verified end state**, reached via
+   the post-deploy one-shot in item 6 — never Flexible, and never
+   strict-first (the Render origin certificate does not exist yet).
+2. Add the domain (apex and `www`) as custom domains on the Render web
+   service.
+3. In Cloudflare DNS, create BOTH records — `@` (apex; Cloudflare flattens
+   CNAME at the apex) and `www` — as CNAMEs to the web service's ACTUAL
+   `*.onrender.com` hostname recorded in Step 6, **DNS only (grey cloud)**,
+   not proxied. AAAA / fresh-zone note: a fresh zone starts empty, so there
+   are no stale AAAA (or other) records to collide with; if the zone is NOT
+   fresh, audit and remove stale records for these names first.
+4. Wait for Render's domain verification to complete AND its certificate
+   to issue.
+5. Only then flip BOTH records to **Proxied** (orange cloud).
+6. Post-deploy one-shot (after the proxied names serve): flip the zone's
+   encryption mode Full → **Full (strict)** and re-verify both names in one
+   shot — `curl -sI https://<domain>/` and `https://www.<domain>/` return
+   200 with `www` redirecting to the apex, and `openssl s_client` against
+   each shows `Verify return code: 0 (ok)`.
+
+The Step 3 `?`-joiner assumption on the URL parameter is retained
+unchanged (see Step 3); nothing in this step alters it.
 
 **Checkpoint:** `https://<domain>/` loads the homepage with a valid
-certificate; a result page loads over the domain.
+certificate; `https://www.<domain>/` resolves and redirects to the apex; a
+result page loads over the domain; encryption mode reads **Full (strict)**
+after the item-6 one-shot.
 
 ## Step 8 — Edge rate rule + Bot Fight Mode
 
-1. Create the one free unmetered Cloudflare rate limiting rule: path
-   `/api/*`, ~300 requests per minute per IP, action Block.
-2. Verify Bot Fight Mode is OFF (it interferes with legitimate monitors).
+1. Create the one free unmetered Cloudflare rate limiting rule: expression
+   "URI Path starts with `/api/`", threshold **50 requests / 10 seconds
+   per IP**, action **Block**, mitigation timeout at the form's minimum
+   (expected 10 seconds).
 
-**Checkpoint:** the rule shows Active in the dashboard on `/api/*` at the
-configured threshold; Bot Fight Mode toggle shows Off.
+   Derivation note: 50/10s is the ~300 requests/minute/IP decision
+   (ADR 0004 Decision 6) expressed under the plan's FIXED 10-second
+   counting window — average-identical, tighter on bursts. Future readers
+   correct it in NEITHER direction: do not "fix" the rule up to 300/min,
+   and do not "fix" the ADR down to 50/10s-as-a-new-decision.
+
+2. Bot Fight Mode is OFF — verify the toggle (it interferes with
+   legitimate monitors and adds no needed protection at this scale).
+
+**Checkpoint:** the rule shows Active on the `/api/` path expression at
+50 requests / 10 seconds per IP, action Block, minimum mitigation timeout;
+Bot Fight Mode toggle shows Off.
 
 ## Step 9 — UptimeRobot monitors
 

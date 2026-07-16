@@ -205,3 +205,62 @@ ops/close worklog) → second PR. Deployment builds only ever come from
    instance; any future scale-out must revisit the backstop so it does not
    silently loosen.
 6. Prices cited at the gate are July 2026 readings; re-verify at execution.
+
+## Addendum — go-live execution rulings (2026-07-16)
+
+Recorded at Sprint 7 close-out. This addendum completes 31.3
+implementation AC 8 (the ADR captures the decisions actually executed).
+Each ruling below was adjudicated in the planning chat during go-live
+execution; rationale is recorded so future readers re-litigate nothing.
+
+1. **Database storage: 1 GB initial, Storage Autoscaling OFF** (amends
+   Decision 1's Postgres line). The production database is a tiny
+   public-table mirror of nine aggregate/reference tables; storage sizing
+   is one-way (it grows but never shrinks back), and autoscaling would be
+   silent cost drift with no corresponding need.
+
+2. **TLS: `verify-full` end-to-end on BOTH client stacks; `sslmode=require`
+   is BANNED.** The Node migration runner opts in via
+   `?sslmode=verify-full` appended to the connection URL; every
+   prod-touching libpq tool (`psql`, `pg_restore`) takes a per-command
+   `PGSSLMODE=verify-full PGSSLROOTCERT=system` prefix, never exported.
+   `sslmode=require` is banned because the pinned driver emits a security
+   warning for it and its semantics change in pg v9 (adjudicated at 31.3c;
+   a lock test pins the behavior).
+
+3. **Cloudflare encryption mode: Full BEFORE any DNS records; Full
+   (strict) is the verified end state**, reached via the post-deploy
+   one-shot once the Render origin certificate exists. Full-first closes
+   the window where a default/Flexible mode could serve during DNS
+   cutover; strict-first is impossible (no origin certificate yet); Full
+   (strict) is the only end state that authenticates the origin.
+
+4. **Edge rate rule: 50 requests / 10 seconds per IP, action Block,
+   minimum (10 s) mitigation timeout.** This is Decision 6's
+   ~300 requests/minute/IP expressed under the free plan's fixed
+   10-second counting window — average-identical, tighter on bursts,
+   accepted as such. Future readers correct it in neither direction. Bot
+   Fight Mode confirmed OFF (Decision 7 unchanged).
+
+5. **Health check (amends Decision 5):** the API is a Render PRIVATE
+   service, and private services take the platform-default TCP probe —
+   no health-check path can be configured, so Decision 5's "`/health` is
+   the Render internal health-check path" is retired as written.
+   `/health` remains DB-independent process liveness and is verified
+   post-deploy: directly via the API service Shell and transitively via
+   the keyword monitor. Deploy-green claims are stated under TCP
+   semantics only.
+
+6. **Domain: `philacourtoutcomes.org` registered** — the pinned primary;
+   the pre-approved fallback was not needed. Registration actual: $8.50
+   at-cost (Decision 3 executed as ruled).
+
+7. **Cost actuals (execution-time readings, per the re-verify rule):**
+   API service $7/mo (Starter), web service $7/mo (Starter), Render
+   Postgres Basic $6/mo, domain $8.50/yr at-cost.
+
+8. **UptimeRobot free-tier terms note:** secondary sources describe the
+   free tier as personal/non-commercial use since October 2024; this
+   project is non-revenue civic transparency. A primary-source read of
+   the ToS is queued in the post-launch queue; the two monitors stand as
+   deployed (Decision 7) pending that read.
