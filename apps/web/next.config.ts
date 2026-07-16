@@ -4,8 +4,9 @@ import { resolveApiBaseUrl } from './app/lib/api-base-url';
 // The local-dev default lives in ONE place (app/lib/api-base-url) so this
 // rewrite and the server-side client resolve the base identically. See that
 // module for why: http://localhost:3001 is a LOCAL-DEV DEFAULT ONLY (API on
-// 3001, web on 3000; CI's `next build` relies on it), and removing reliance on
-// it is Sprint 9 launch-readiness scope.
+// 3001, web on 3000; CI's `next build` relies on it). In production the
+// resolver THROWS when API_BASE_URL is unset (ADR 0004 Decision 8), so the
+// default can never leak past local dev and CI.
 const apiBaseUrl = resolveApiBaseUrl();
 
 const nextConfig: NextConfig = {
