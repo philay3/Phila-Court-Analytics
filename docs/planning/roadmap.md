@@ -2,7 +2,7 @@
 
 This is the clearest “what happens next?” document for the project.
 
-The project is currently at the end of planning/docs and ready to begin implementation.
+Deployed under controlled launch at philacourtoutcomes.org, 2026-07-16
 
 ## Current Status
 
