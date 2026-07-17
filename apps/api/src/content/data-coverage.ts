@@ -21,14 +21,16 @@ export const DATA_COVERAGE_KNOWN_LIMITATIONS: string[] = [
     'charges when they are part of a criminal case; standalone summary ' +
     'citations are not collected. Charges from cases still awaiting a final ' +
     'outcome do not appear until one is recorded.',
-  // Dismissal disclosure (final copy pass, framing-gate approved 2026-07-16):
-  // the SAME sentence verbatim lives in the methodology limitations body; the
-  // public-copy-safety suite pins the two homes in lockstep. Placed here to
-  // extend the previous line's final-outcome exclusion mechanically.
+  // Dismissal disclosure (re-tuned task 32.4, framing-gate approved
+  // 2026-07-17): the SAME sentence verbatim lives in the methodology
+  // limitations body; the public-copy-safety suite pins the two homes in
+  // lockstep. The former missing-date clause is gone — that exclusion
+  // mechanism is extinct as of the envelope-6 rebuild; right-censoring
+  // (cases still awaiting a final outcome) is the surviving mechanism.
   'At this stage, dismissals are underrepresented in the figures: dismissals ' +
-    'tend to take longer to resolve than convictions, and records without a ' +
-    'recorded event date are excluded until one is recorded, so dismissal ' +
-    'figures fill in more slowly than other outcomes.',
+    'tend to take longer to resolve than convictions, and records from cases ' +
+    'still awaiting a final outcome are not counted until one is recorded, so ' +
+    'dismissal figures fill in more slowly than other outcomes.',
   'Collection is ongoing. The covered records are a growing subset of ' +
     'Philadelphia criminal cases, and results grow as newly collected records ' +
     'are aggregated.',

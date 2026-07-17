@@ -77,9 +77,10 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
     },
     sentencing: {
       heading: 'Sentencing figures',
-      // SD-15 disclosure: sentencing dates are captured independently of
-      // disposition dates, usually coincide, can fall earlier, and decide
-      // covered-period eligibility for sentencing figures.
+      // SD-15 disclosure (re-tuned task 32.4): sentencing dates are captured
+      // independently of disposition dates (now event-line sourced), often
+      // coincide, mostly fall later when they differ, occasionally earlier,
+      // and decide covered-period eligibility for sentencing figures.
       body:
         'Sentencing distributions summarize the sentence types recorded for charges ' +
         'that reached sentencing. A single sentencing event can include several ' +
@@ -90,8 +91,9 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
         'charge reaches sentencing, while each charge that does can contribute more ' +
         'than one component. Sentencing figures may be unavailable for some charges. ' +
         'Sentencing dates are recorded independently of disposition dates: the two ' +
-        'usually coincide, but a small share of sentencing dates fall earlier, and ' +
-        'whether a sentencing event is inside the covered period is decided by the ' +
+        'often coincide, but sentencing can also be recorded later than the ' +
+        'disposition and, in a small share of records, earlier, and whether a ' +
+        'sentencing event is inside the covered period is decided by the ' +
         'sentencing date itself.',
     },
     limitations: {
@@ -116,8 +118,9 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
         'or corrected manually after aggregation — a process for that is planned ' +
         'as future work. At this stage, dismissals are underrepresented in the ' +
         'figures: dismissals tend to take longer to resolve than convictions, ' +
-        'and records without a recorded event date are excluded until one is ' +
-        'recorded, so dismissal figures fill in more slowly than other outcomes.',
+        'and records from cases still awaiting a final outcome are not counted ' +
+        'until one is recorded, so dismissal figures fill in more slowly than ' +
+        'other outcomes.',
     },
   },
 };

@@ -49,10 +49,10 @@ registry that the committed privacy gates use
 **Checkpoint:** zero violations on every body; paste the scan summary
 verbatim.
 
-### A4 — One controlled burst: live 429 shape (then stop)
+### A4 — One controlled burst: live 429 at the edge (then stop)
 
-Purpose: confirm the in-app limiter emits the catalog shape in production.
-One burst, once, then stop — do not repeat, do not script retries.
+Purpose: confirm the EDGE rate-limit layer fires in production. One burst,
+once, then stop — do not repeat, do not script retries.
 
 ```sh
 for i in $(seq 1 125); do
@@ -62,14 +62,19 @@ done | sort | uniq -c
 curl -s "https://<domain>/api/v1/public/definitions" | head -c 400; echo
 ```
 
-Expected: the tail of the burst flips from 200 to 429 (the in-app 120/min
-bucket trips before the ~300/min edge rule), and the final body is the flat
-catalog shape: `statusCode` 429, `code` `"RATE_LIMITED"`, `error`,
-`message`, `requestId` — all five fields.
+Expected (32.4 A4 ruling — layer ordering is burst-speed-dependent): a
+fast burst (>~5 req/sec) trips the Cloudflare edge rule FIRST — HTTP 429
+with Cloudflare body `error code: 1015` at approximately 50 requests
+inside a 10-second fixed window (the rule is 50 requests / 10 seconds per
+IP; boundary and activation slop of a few requests is normal, and prior
+requests in the same window shift the trip point). The in-app 120/min
+catalog-shaped 429 (`RATE_LIMITED`, five fields) is exercised only by a
+sustained ~2–5 req/sec probe and is authoritatively covered by the CI
+inject tests; prod A4 verifies the EDGE layer only.
 
-**Checkpoint:** 429s observed with the five-field catalog body; paste the
-uniq count table and the body verbatim. STOP after this — the bucket
-clears within the window (default 60s).
+**Checkpoint:** 429s observed with the Cloudflare `1015` body at
+approximately the 50-in-10s mark; paste the uniq count table and the body
+verbatim. STOP after this — the window clears within seconds.
 
 ### A5 — Report
 

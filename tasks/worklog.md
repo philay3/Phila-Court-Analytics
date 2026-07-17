@@ -7234,3 +7234,125 @@ materialization and the C4 re-match recovery in the rebuild reconciliation.
 Group-1 rows are 0% dated in the pre-reload DB (D-A class) — their facts
 materialize only via the envelope-6 reload. "Proceed to Court" rows will land
 as non-public `unknown` + review items; expected and correct until Sprint 9.
+
+## Task 32.4 — Rebuild → Validate → Publish + Copy Re-Tune (2026-07-17)
+
+**Dispatch declaration (Chops, 2026-07-17, recorded per spec).** Corpus
+scope option (a): current corpus only — no new import this cycle; parse
+(envelope 6) → load → build-facts → generate → validate over the existing
+17,610-docket corpus for exact-number reconciliation. Pending intake is
+DECOUPLED: the collector keeps running on its own schedule; landed intake
+rides a routine intake → rebuild → republish cycle at operator discretion
+after this task closes. Sprint plans `sprint-8-plan.md` / `sprint-9-plan.md`
+staged into this phase-32 close PR (unchanged from v1, `git add` only).
+
+**Cycle (all consoles under `~/court-data/reports/`, cycle report
+`32.4-cycle-20260717T231800Z.txt`).** Step-0 coverage proof: 8 extraction
+dirs (`extracted/` + seven `extracted-intake-*`; the approved plan said
+seven total — enumeration corrected, Q1 ruling principle unchanged),
+`imported_docs_ZERO_artifact` = 0; the 9 artifact-only hashes are the
+parse_failed quarantine set. Prune (verbatim):
+`pruned=7 not_found=0 outcomes_deleted=113268 sentences_deleted=76330 outcomes_selected=113268 sentences_selected=76330`.
+Parse: 8 invocations, one per dir, single cycle envelopes dir; parsed sums
+to 17,610; 28 failed events = the 9 known quarantine hashes (no new
+signature); envelope census `parser_version_counts= {6: 17619}`. Load
+(verbatim):
+`loaded=0 skipped_same_version=0 replaced_newer_version=17610 refused_older_version=0 superseded=0 skipped_stale_superseded=0 failed_envelope_loaded=9 failed_exception=0 missing_import_record=0 total=17619`
+— v5 zero-residue proven (`v5_residue_rows | 0`; version distribution
+`6 | 17610`). Build-facts run `1767bea3-cf1c-4b` (verbatim):
+`charges_processed=57961 facts_written=22506 undisposed_skipped=13535 held_for_court_skipped=21920`
+(reconcile True);
+`sentence_facts_written=14384 components_on_disposed=14384` (reconcile
+True);
+`sd15 divergence (sentence_date!=disposition_date): 4657 straddle_mvp=197 negative_lag=50 lag_days=-757..965`.
+Generate run `82b6cc99-d988-46`:
+`facts_loaded=22506 facts_included=15714 facts_excluded=6792`;
+validate: 369/240/2824/1936 rows checked, `violations=0` all four tables.
+
+**Reconciliation (adjudicated ACCEPTED pre-publish; report
+`32.4-reconciliation-20260717T231800Z.md`).** D-A 8,745 exact three ways
+(8,578+167 instruments; 22,506 dated − 13,761 banked pre-dated; undated
+facts 0 — `disposition_date_missing` extinct). D-B 4,753 exact, un-disposal
+0, facts count invariant 22,506; window-edge crossings enumerated: 1 enter
+/ 149 leave (equivalence cohort only). Map delta exact row-for-row:
+unknown −668 = dismissed +603, guilty_plea +35, withdrawn +18, acquittal
++4, other +8; unknown residual 50, all strings in the banked S1 census. C4:
+recovery 52 + 3 `ambiguous` = 55 = the evidenced candidate set (ruled PASS:
+the 3 rows' clean text matches multiple normalized charges; exactly 3 new
+`ambiguous_charge` review items, 1:1 verified — they join the human-review
+queue); unmatched_now 108 = the banked never-matches set; leak census
+1,087/607/480 exact. Sentencing: 14,384 = 14,384; negative_lag 50 = 42 ARD
+(12 dockets, legitimate progression) + 8 enumerated non-ARD re-disposition
+progressions (ruled legitimate siblings; SD-15 signal stays soft). `other`
+gap confirm (addendum F/F2): 354 facts / 353 mvp / 20 public; gap 333 =
+`charge_not_normalized` 314 + `filed_date_before_floor` 15 +
+`review_needed` 9.
+
+**Copy re-tune (framing-gate approved 2026-07-17; scanner + build green
+BEFORE the swap: monorepo build green; apps/api vitest 14 files / 188
+tests passed against `pca_test`).** String 1 (dismissal disclosure, three
+pinned sites — both content homes + test pin literal): missing-date clause
+removed (mechanism extinct — undated facts 0); right-censoring clause
+("records from cases still awaiting a final outcome are not counted until
+one is recorded") is the surviving mechanism. String 2 (SD-15 sentencing
+clause): "often coincide" (68%), later-vs-earlier asymmetry (4,607 vs 50)
+expressed; covered-period rule (sentencing date decides) unchanged.
+Reviewed-no-change: coverage-start lines (more literally true under
+event-line semantics); no disposition-date-provenance line added (parser
+mechanics are forbidden vocabulary on public surfaces).
+
+**Publish + prod (verbatim).**
+`publish-aggregates run=82b6cc99-d988-46 published` /
+`prior published run a0738c1f-2a1b-49 invalidated (superseded)`;
+published_at `2026-07-17 23:47:03.579499+00`. Prod republish per runbook:
+`dump-exit=0`; TOC `9 /tmp/toc.ordered`; `migration parity local=8 prod=8`;
+amended 11-table TRUNCATE (oct2025 precedent: + the two empty fact tables);
+`restore-exit=0`; artifacts removed; per-table count comparison
+`diff IDENTICAL` (aggregate_runs=12, charge_outcome_aggregates=2905,
+charge_sentencing_aggregates=2128, judge_outcome_aggregates=15071,
+judge_sentencing_aggregates=12680). Verification
+(`32.4-prod-verification-20260717T231800Z.txt`): A1 all 200, coverage
+`available: True` with run `82b6cc99-d988-46a4-8268-3862492ec526`,
+counts 77/74/1539; A2 noindex on all three surfaces; A3
+`scanForForbidden` TOTAL violations=0 over seven bodies; local API spot
+check serves the new run, `/health` ok, stopped after.
+
+**A4 finding + runbook amendment (adjudicated).** Burst result
+`56 200 / 69 429` with Cloudflare body `error code: 1015` — ruled an
+EXPECTATION-TEXT defect, A4 PASSES: the edge rule is 50 req/10s per IP
+(fixed window); a fast burst trips the edge before the in-app 120/min
+bucket; the in-app catalog-shaped 429 is CI-owned (31.3 inject tests).
+`docs/runbook-verification.md` A4 expectation rewritten accordingly (rides
+this commit).
+
+**Counts restated (SD-14 snapshots, verbatim above).** Loaded dockets
+17,610 (all envelope 6); facts 22,506 (all dated); sentence facts 14,384;
+public-eligible outcome facts 15,714; sentencing included 7,958;
+per-category public-eligible movement: dismissed 1,793→6,139, withdrawn
+98→1,605, acquittal 235→567, guilty_plea 5,044→5,510, guilty_verdict
+961→1,272, ard 589→601, other –→20. Published aggregate run ID:
+`82b6cc99-d988-46a4-8268-3862492ec526`.
+
+**Files touched.** `apps/api/src/content/data-coverage.ts`,
+`apps/api/src/content/methodology.ts`,
+`apps/api/src/public-copy-safety.test.ts`, `docs/runbook-verification.md`,
+`docs/planning/sprint-8-plan.md` + `docs/planning/sprint-9-plan.md`
+(staged unmodified at Chops's direction), this worklog.
+`tasks/current-task.md` remains uncommitted (standing convention).
+
+**Deviations from plan.** Three, all adjudicated mid-task: (1) eight
+extraction dirs, not seven (enumeration correction, accepted); (2) C4
+recovery 52 vs band 55–163 (ruled PASS — 52 + 3 ambiguous = the evidenced
+55); (3) A4 expectation-text defect (ruled PASS; runbook amended in this
+commit). Also noted: the checkpoint sequencing deliberately overrides the
+refresh runbook's same-session-publish rule (publish held for two
+checkpoints); recon report E2/E3 are mis-scoped docket-wide sweeps kept
+for transparency (E4–E7 are the class-exact checks).
+
+**For the next task (Phase 33, sentencing stage one).** Judged against the
+pages this cycle produced: sentencing aggregates now stand on event-line
+disposition dates with SD-15 independently sourced (divergence 4,657 is
+the EXPECTED state; `sd15_negative_lag_count`=50 fully attributed). The 3
+new `ambiguous_charge` review items are in Chops's queue. Demo staleness
+re-walk (Chops) pending at entry-write time; findings land in planning
+chat.
