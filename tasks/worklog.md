@@ -6951,3 +6951,91 @@ collection + intake + runbook'd rebuild/republish. Deferred to the Sprint 8
 queue (not dropped): map additions, outcomes-vs-sentencing explainer, MC
 universe wording. The dismissal disclosure should be revisited for
 retirement once dismissal coverage settles.
+
+## Task oct2025-window-intake — First Post-Launch COL Intake + Republish (2026-07-17)
+
+**What was run.** Full COL Intake Protocol cycle (first post-launch), label
+`oct2025-window-intake`, run report
+`~/court-data/reports/oct2025-intake-run-20260717T002136Z.txt` (all stage
+lines verbatim there). A live collector session (search mode,
+2025-10-18..2025-12-31) was running throughout; the freeze isolated it by
+design (post-freeze files belong to the next intake).
+
+**Stage counts (restated from the run report).**
+Freeze: staged_at_freeze=16063 mtime_guard_dropped=0
+excluded_already_loaded=11654 included=4409 (snapshot
+`oct2025-window-intake-20260717T002146Z`). Import: imported=4402
+duplicate=7 invalid=0 failed=0. Extract: success=4409 partial=0
+needs_ocr_or_review=0 failed=0. Parse: parsed=4400 failed=9 skipped=0 —
+7 = known quarantine re-flowing byte-identical; 2 NEW (a0477b60…,
+1843aeb9…, both MC, 5 and 4 sheets).
+
+**MC missing-caption ruling (planning chat, 2026-07-17).** Both new
+failures reproduce `ParseError: Missing defendant name or date of birth` —
+recurrence across two consecutive intakes upgraded the class
+SUSPECTED→CONFIRMED, renamed **"MC missing-caption class"** (court +
+signature; sheet count retired as a trait). Quarantine restated **7 → 9**.
+NEW STANDING RULE: this class auto-quarantines-and-proceeds in future
+intakes without a planning-chat pause; literal STOPs = >15 docs/run, OR >1%
+of the run's MC documents, OR any new failure signature. Parser support
+queued (Sprint 8, low urgency). No copy change (existing "cannot be read
+reliably" line covers it).
+
+**Goldens note (mandatory per golden-writing invocation).**
+`run-fixtures --init-goldens` over the snapshot: tier1 match=35 diverged=0;
+tier2 new=4400 diverged=0 golden_missing=0 failed=9 (adjudicated
+quarantine; exit 1 = documented dirty-on-failed semantics). Report:
+`goldens/reports/tier2-report-20260717T010542_515551Z.json`.
+
+**Load (exit 0).** loaded=4400 failed_envelope_loaded=9, all other
+categories 0, total=4409. Post-load corpus: dockets=17610 (cp=7291
+mc=10319, +1463/+2937), charges=57961, duplicate_docket_numbers=0,
+parse_failed_documents=9, single version pair (2,5) across the corpus.
+
+**Fact rebuild (run `a3f277e6…`, exit 0, floor default 2025-01-01).**
+charges_processed=57961 facts_written=22506 undisposed_skipped=13535
+held_for_court_skipped=21920 (reconciles True);
+sentence_facts_written=14384 = components_on_disposed (True). Review-item
+dedup held (0 duplicate dedup keys; all 11093 new items on new dockets
+only). Sentinel gate: 40 pre-existing SENTINEL_COLLISION dockets produce
+identical facts (86, attribution 'none', zero judge-eligible) in prior run
+eb7022ed… and this run.
+
+**Aggregates + publish swap.** generate run `a0738c1f…` (data_range
+2025-01-01..2026-07-15); validate: 303/241/2308/1924 rows checked, 0
+violations everywhere; publish: `a0738c1f…` published, prior `dfbecb20…`
+invalidated (superseded). Local API spot check: active_published_runs=1,
+new run served.
+
+**PR #58 merge splice.** Merged (merge commit `1fef8f8`, non-squash)
+immediately after the local publish swap per the ruling and the PR's
+recorded hold; branch deleted local+remote, tracking pruned.
+
+**Republish-to-prod (first use of docs/runbook-rollback-republish.md).**
+Migration parity 8=8 (no migrator run). ATTEMPT 1 FAILED SAFE: the
+runbook's nine-table TRUNCATE was refused — prod's migrated schema carries
+`fact.charge_outcomes`/`fact.charge_sentences` (both 0 rows on prod; fact
+data never ships) whose FKs reference `ref.normalized_*`; the
+single-transaction restore rolled back, prod verified intact. DEVIATION
+(data-equivalent, documented in the run report): TRUNCATE list extended by
+those two empty fact tables (explicit list, no CASCADE); all else
+runbook-verbatim. **Proposed runbook amendment (operator to adopt): add the
+two fact tables to the republish TRUNCATE list.** ATTEMPT 2: restore-exit=0;
+per-table count comparison local vs prod IDENTICAL (aggregate_runs=11,
+charge_outcome=2536, charge_sentencing=1888, judge_outcome=12247,
+judge_sentencing=10744).
+
+**Public checkpoints.** coverage.available=true,
+lastRefreshed=2026-07-17T01:16:29.017Z; prod charge-results serves
+`a0738c1f…` (dateRange 2025-01-01..2026-07-15); result page 200; Render
+auto-deploy off merged main confirmed live — result page carries the filed
+criterion and the dismissal disclosure is present in both methodology and
+data-coverage (lockstep verified against prod).
+
+**For the next task.** The published baseline is now run `a0738c1f…` over
+the 17,610-docket corpus. The dismissal-disclosure retirement watch and the
+MC missing-caption parser support both sit in the Sprint 8 queue; the
+standing auto-quarantine rule (with its >15 / >1% / new-signature
+tripwires) governs future intakes. The next intake's [0b] exclusion
+baseline includes everything loaded here; post-freeze collector output from
+the still-running 2025-10-18..2025-12-31 session awaits that run.
