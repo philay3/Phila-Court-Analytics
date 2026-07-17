@@ -22,9 +22,11 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
     dataRange: {
       heading: 'What time period is covered',
       body:
-        'Coverage begins on January 1, 2025 and is anchored to the date of the ' +
-        'disposition or sentencing event, not the filing date. A case filed earlier ' +
-        'is included when its qualifying event happened on or after that date.',
+        'Coverage begins on January 1, 2025 and applies that date twice: only ' +
+        'cases filed on or after January 1, 2025 are covered, and only ' +
+        'disposition or sentencing events on or after that date are counted. A ' +
+        'case filed earlier is excluded, even when its disposition or ' +
+        'sentencing happened after coverage began.',
     },
     whatResultsMean: {
       heading: 'What the results mean',
@@ -112,7 +114,10 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
         'judge attribution is unclear are excluded from the figures automatically ' +
         'rather than resolved by hand, and in this version no figure is adjusted ' +
         'or corrected manually after aggregation — a process for that is planned ' +
-        'as future work.',
+        'as future work. At this stage, dismissals are underrepresented in the ' +
+        'figures: dismissals tend to take longer to resolve than convictions, ' +
+        'and records without a recorded event date are excluded until one is ' +
+        'recorded, so dismissal figures fill in more slowly than other outcomes.',
     },
   },
 };

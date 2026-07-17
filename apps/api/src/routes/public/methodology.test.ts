@@ -63,12 +63,13 @@ describe('GET /methodology', () => {
     expect(notLegalAdvice).toMatch(/not legal advice|does not provide legal advice/i);
   });
 
-  it('names the UJS portal source and the 2025-01-01 event-date anchor', async () => {
+  it('names the UJS portal source and the 2025-01-01 filed-and-event coverage rule', async () => {
     const body = (await getMethodology()).json<MethodologyResponse>();
     expect(body.sections.dataSource.body).toMatch(/Unified Judicial System|UJS/);
     expect(body.sections.dataSource.body).toMatch(/Philadelphia/);
     expect(body.sections.dataRange.body).toMatch(/January 1, 2025/);
-    expect(body.sections.dataRange.body).toMatch(/not the filing date/i);
+    expect(body.sections.dataRange.body).toMatch(/filed on or after January 1, 2025/i);
+    expect(body.sections.dataRange.body).toMatch(/events on or after that date/i);
   });
 
   it('contains no forbidden term outside the guarded disclaimer phrases', async () => {

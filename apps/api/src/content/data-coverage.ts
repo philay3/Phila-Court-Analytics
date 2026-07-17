@@ -14,12 +14,21 @@ export const DATA_COVERAGE_KNOWN_LIMITATIONS: string[] = [
   // real Philadelphia court records.
   // No calendar dates or counts beyond the fixed 2025-01-01 MVP start may
   // appear here: served date ranges and counts come from the published run.
-  'Coverage begins on January 1, 2025 and is anchored to disposition and ' +
-    'sentencing event dates, not filing dates.',
+  'Coverage begins on January 1, 2025 and requires both that a case was ' +
+    'filed on or after that date and that its disposition or sentencing ' +
+    'events happened on or after that date.',
   'Coverage includes misdemeanor and felony charges, along with summary-graded ' +
     'charges when they are part of a criminal case; standalone summary ' +
     'citations are not collected. Charges from cases still awaiting a final ' +
     'outcome do not appear until one is recorded.',
+  // Dismissal disclosure (final copy pass, framing-gate approved 2026-07-16):
+  // the SAME sentence verbatim lives in the methodology limitations body; the
+  // public-copy-safety suite pins the two homes in lockstep. Placed here to
+  // extend the previous line's final-outcome exclusion mechanically.
+  'At this stage, dismissals are underrepresented in the figures: dismissals ' +
+    'tend to take longer to resolve than convictions, and records without a ' +
+    'recorded event date are excluded until one is recorded, so dismissal ' +
+    'figures fill in more slowly than other outcomes.',
   'Collection is ongoing. The covered records are a growing subset of ' +
     'Philadelphia criminal cases, and results grow as newly collected records ' +
     'are aggregated.',

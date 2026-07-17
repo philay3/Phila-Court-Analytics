@@ -6903,3 +6903,51 @@ map-addition task (own freeze) before intake → rebuild → republish (step-2
 copy rides that window). Also banked from #55: remote branch
 `task-31.3c-migrate-tls` was left undeleted — cleaned up (or reported)
 with this branch's PR loop.
+
+## Task final-copy-pass — Filed-Universe Framing + Dismissal Disclosure (2026-07-16)
+
+**What was built.** Strings-only final copy pass (the last code task before
+freeze); framing gate approved all four strings verbatim. (1) Methodology
+`dataRange` now states both coverage criteria — cases filed on or after
+January 1, 2025 AND disposition/sentencing events on or after that date —
+with the old "filed earlier is included" sentence inverted to an explicit
+exclusion. (2) Data-coverage known-limitations line 1 rewritten to the same
+two-criteria statement (lines 2–5 untouched). (3) Result-page `coverageNote`
+gains the filed criterion; final-outcome and ongoing-collection sentences
+kept verbatim. (4) Dismissal disclosure — ONE sentence, TWO homes verbatim
+(methodology limitations body; data-coverage list, placed after the
+final-outcome line per gate ruling 3): "At this stage, dismissals are
+underrepresented in the figures: dismissals tend to take longer to resolve
+than convictions, and records without a recorded event date are excluded
+until one is recorded, so dismissal figures fill in more slowly than other
+outcomes." Mechanism-based, stage-qualified, no numbers, no cause claim on
+missing dates, self-retiring.
+
+**Files touched.** `apps/api/src/content/methodology.ts`,
+`apps/api/src/content/data-coverage.ts`,
+`apps/web/app/components/result-display-copy.ts`,
+`apps/api/src/routes/public/methodology.test.ts` (retired the "not the
+filing date" pin; added filed-and-event assertions),
+`apps/api/src/public-copy-safety.test.ts` (new lockstep assertion pinning
+the dismissal sentence verbatim-identical in both homes — gate ruling 4).
+Diff is string/test changes only.
+
+**Verification.** Both copy gates green (shared scanner + stricter
+methodology/data-coverage route lists, term regexes and substring sweeps);
+API suite 188 passed; web suite 187 passed; all five gates green (`ruff
+check`, `ruff format --check`, `pytest -q` 1009 passed / 1 pre-existing
+skip, `pnpm format:check`, `pnpm typecheck`); PR #58 CI fully green
+including E2E copy/privacy assertions.
+
+**MERGE HOLD (deviation from the default land-on-green flow, per spec).**
+PR #58 is authored, reviewed, and CI-green but NOT merged: it merges
+immediately after the publish swap in the operator's first
+intake → rebuild → republish session, then deploy — the rewritten claims
+become true only once the floored fact run is the published one. The hold
+and its reason are stated in the PR description.
+
+**For the next task.** Code freeze after this lands; remaining work is
+collection + intake + runbook'd rebuild/republish. Deferred to the Sprint 8
+queue (not dropped): map additions, outcomes-vs-sentencing explainer, MC
+universe wording. The dismissal disclosure should be revisited for
+retirement once dismissal coverage settles.
