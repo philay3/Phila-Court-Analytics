@@ -480,16 +480,23 @@ def _prepare_sentences(conn: psycopg.Connection) -> dict[str, object]:
     count that disagrees with the envelope's UNPARSEABLE_DURATION emission
     (single-source-of-truth drift).
 
-    SD 15 (``sentence_date`` == parent ``disposition_date``) is a SOFT REPORT, not
-    a stop: the parser has two provenance paths for ``sentence_date`` — a
-    component-level captured value (docket_parser.py:738) and a copy of the
-    charge's disposition_date (docket_parser.py:925) — and the 21.3 loader carries
-    the captured value verbatim. A divergence is therefore parser-origin and
-    sound, not a defect; PD5 keys ``mvp_eligible`` off ``sentence_date`` regardless,
-    so a sub-window captured date falls out via the existing
-    ``sentence_date_before_mvp_window`` reason code. The divergence count, the
-    MVP-boundary-straddle count, and the delta-day range are recorded for the run
-    report.
+    SD 15 (``sentence_date`` vs parent ``disposition_date``) is a SOFT REPORT,
+    not a stop — REFRAMED in 32.2: ``disposition_date`` is now the Final
+    Disposition event-line date and ``sentence_date`` is the judge-line
+    (Sentence Date column) date, so the two are genuinely different dates and
+    divergence is the EXPECTED state — it measures sentencing lag. The retained
+    anomaly signal is a NEGATIVE lag (sentence date before disposition date),
+    counted separately for the run report. PD5 keys ``mvp_eligible`` off
+    ``sentence_date`` regardless, so a sub-window sentence date falls out via
+    the existing ``sentence_date_before_mvp_window`` reason code. The
+    divergence count, the negative-lag count, the MVP-boundary-straddle count,
+    and the signed lag-day range are recorded for the run report (pre-32.2 key
+    mapping: ``sd15_delta_days_min/max`` — absolute — became the signed
+    ``sd15_lag_days_min/max``; ``sd15_negative_lag_count`` is new). Known-
+    legitimate negative-lag contributor (32.2 STOP ruling, amendment 4): an
+    ARD-progression charge — ARD sentence at program entry, re-disposed by a
+    later Final block whose event-line date governs — sentences before it
+    disposes; such rows are expected, not anomalies.
     """
     all_sentences = _load_all_sentences(conn)
 
@@ -515,11 +522,15 @@ def _prepare_sentences(conn: psycopg.Connection) -> dict[str, object]:
 
     disposed = [s for s in all_sentences if s["disposition_raw"] is not None]
 
-    # SD 15 soft report: characterize (never gate) the sentence_date vs
-    # disposition_date divergence.
+    # SD 15 soft report (reframed in 32.2): characterize (never gate) the
+    # sentence_date vs disposition_date relationship. Divergence is EXPECTED —
+    # it is the sentencing lag between the event-line disposition date and the
+    # judge-line sentence date. A NEGATIVE lag (sentence before disposition) is
+    # the retained anomaly signal.
     sd15_divergence = 0
     sd15_straddle_mvp = 0
-    deltas: list[int] = []
+    sd15_negative_lag = 0
+    lags: list[int] = []
     for s in disposed:
         sentence_date = _to_date(s["sentence_date"])
         disposition_date = _to_date(s["disposition_date"])
@@ -527,7 +538,10 @@ def _prepare_sentences(conn: psycopg.Connection) -> dict[str, object]:
             continue
         sd15_divergence += 1
         if sentence_date is not None and disposition_date is not None:
-            deltas.append(abs((sentence_date - disposition_date).days))
+            lag = (sentence_date - disposition_date).days
+            lags.append(lag)
+            if lag < 0:
+                sd15_negative_lag += 1
             if (sentence_date >= MVP_WINDOW_START) != (
                 disposition_date >= MVP_WINDOW_START
             ):
@@ -540,8 +554,9 @@ def _prepare_sentences(conn: psycopg.Connection) -> dict[str, object]:
         "duration_predicate_all": dur_predicate_all,
         "sd15_divergence": sd15_divergence,
         "sd15_straddle_mvp": sd15_straddle_mvp,
-        "sd15_delta_days_min": min(deltas) if deltas else 0,
-        "sd15_delta_days_max": max(deltas) if deltas else 0,
+        "sd15_negative_lag_count": sd15_negative_lag,
+        "sd15_lag_days_min": min(lags) if lags else 0,
+        "sd15_lag_days_max": max(lags) if lags else 0,
     }
 
 
@@ -746,8 +761,9 @@ def _collect_sentence_rows(
         "duration_predicate_all": prep["duration_predicate_all"],
         "sd15_divergence": prep["sd15_divergence"],
         "sd15_straddle_mvp": prep["sd15_straddle_mvp"],
-        "sd15_delta_days_min": prep["sd15_delta_days_min"],
-        "sd15_delta_days_max": prep["sd15_delta_days_max"],
+        "sd15_negative_lag_count": prep["sd15_negative_lag_count"],
+        "sd15_lag_days_min": prep["sd15_lag_days_min"],
+        "sd15_lag_days_max": prep["sd15_lag_days_max"],
     }
     return rows, counts, review_items
 
@@ -1049,14 +1065,16 @@ def _print_sentence_summary(sc: dict[str, object]) -> None:
         f"envelope_warnings={sc['duration_warning_count']} "
         f"predicate_all={sc['duration_predicate_all']}"
     )
-    # SD 15 soft report (documented finding, not a gate): the parser has two
-    # sentence_date provenance paths — captured (docket_parser.py:738) and copied
-    # from disposition_date (docket_parser.py:925); a divergence is parser-origin.
+    # SD 15 soft report (documented finding, not a gate; reframed in 32.2):
+    # disposition_date is the event-line date, sentence_date the judge-line
+    # (Sentence Date column) date — divergence is expected sentencing lag; a
+    # negative lag is the retained anomaly signal.
     print(
         f"sd15 divergence (sentence_date!=disposition_date): {sc['sd15_divergence']} "
         f"straddle_mvp={sc['sd15_straddle_mvp']} "
-        f"delta_days={sc['sd15_delta_days_min']}..{sc['sd15_delta_days_max']} "
-        "(parser paths: 738 captured / 925 copied)"
+        f"negative_lag={sc['sd15_negative_lag_count']} "
+        f"lag_days={sc['sd15_lag_days_min']}..{sc['sd15_lag_days_max']} "
+        "(expected: sentencing lag; negative lag is the anomaly signal)"
     )
     print("sentencing_category_split:")
     for code, n in sc["sentencing_category_split"].items():  # type: ignore[attr-defined]

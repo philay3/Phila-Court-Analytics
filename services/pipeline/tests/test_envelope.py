@@ -84,12 +84,16 @@ LIFE_DURATION = build(
     "Min of Life Max of Life",
 )
 
-# Disposed charge whose judge/date line is absent: disposition_date and
-# sentence_date are None -> MISSING_DISPOSITION_DATE + MISSING_SENTENCE_DATE.
+# Disposed charge with no judge/date line AND an unparseable event-line date
+# (32.2 decision-7 failure mode: the event regex matches but parse_date fails),
+# so disposition_date and sentence_date are both None ->
+# MISSING_DISPOSITION_DATE + MISSING_SENTENCE_DATE. Pre-32.2 this specimen
+# needed only the absent judge line; the event-line date now dates disposed
+# rows, so the dateless shape requires the unparseable event date.
 MISSING_DATES = build(
     "DISPOSITION SENTENCING/PENALTIES",
     "Trial",
-    "01/15/2025 Final Disposition",
+    "99/99/2025 Final Disposition",
     "1 / Simple Assault Guilty",
     "Confinement",
     "Max of 12.00 Months",
@@ -201,7 +205,7 @@ def _all_keys(obj) -> set:
 def test_envelope_shape_has_exactly_the_pinned_fields():
     envelope = make_envelope(DISPOSED_CLEAN)
     assert set(envelope) == EXPECTED_ENVELOPE_KEYS
-    assert envelope["parser_version"] == env.ENVELOPE_PARSER_VERSION == 5
+    assert envelope["parser_version"] == env.ENVELOPE_PARSER_VERSION == 6
     assert set(envelope["extraction_artifact"]) == {
         "artifact_id",
         "text_hash",

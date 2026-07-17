@@ -85,9 +85,12 @@ logger = logging.getLogger("pipeline.load")
 
 # The envelope format versions this loader accepts (21.3 pinned set). Anything
 # else -> per-docket failure, never a guess (AC2). Pinned literally to the
-# canonical 21.3 corpus version rather than tracking ENVELOPE_PARSER_VERSION so a
+# current corpus version rather than tracking ENVELOPE_PARSER_VERSION so a
 # future format bump cannot silently widen what this task's loader accepts.
-ACCEPTED_ENVELOPE_VERSIONS: frozenset[int] = frozenset({5})
+# 32.2: moved {5} -> {6} with the event-line date fix, so the version tuple's
+# newer-version arm transactionally replaces each docket's parsed graph at the
+# 32.4 reload cycle.
+ACCEPTED_ENVELOPE_VERSIONS: frozenset[int] = frozenset({6})
 
 # The raw.source_documents.status value the loader writes for a failed-parse
 # envelope. The 16.3 import-stage vocabulary (imported/duplicate/invalid/failed,

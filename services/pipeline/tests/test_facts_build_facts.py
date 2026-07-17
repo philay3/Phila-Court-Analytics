@@ -428,7 +428,7 @@ def test_build_lifecycle_and_scenarios(build_conn):
     run = runs[0]
     assert run["status"] == RUN_COMPLETED
     assert run["completed_at"] is not None
-    assert run["parser_version"] == 2 and run["envelope_parser_version"] == 5
+    assert run["parser_version"] == 2 and run["envelope_parser_version"] == 6
     assert run["taxonomy_version"]
     counts = run["counts"]
     assert counts["charges_processed"] == 10

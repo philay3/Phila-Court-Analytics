@@ -7039,3 +7039,144 @@ standing auto-quarantine rule (with its >15 / >1% / new-signature
 tripwires) governs future intakes. The next intake's [0b] exclusion
 baseline includes everything loaded here; post-freeze collector output from
 the still-running 2025-10-18..2025-12-31 session awaits that run.
+
+## Date-audit verdict (§6.13, summary level) — 2026-07-17
+
+**Finding (human sheet audit, packet `~/court-data/reports/audit-20260717/`;
+code recon 32.1, report `32.1-recon-20260717-150752.md`).** Disposition dates
+print on every audited sheet on the Final Disposition EVENT line; the parser
+captured dates only from the judge line — the sheet's "Sentencing Judge
+Sentence Date Credit For Time Served" columns — which prints only once
+sentencing is processed. Consequences at the pre-fix snapshot: 8,591 floored
+(8,745 corpus) disposed rows dateless; dated rows carried the judge-line
+(sentence) date, ~4 months late on the S5-03 control (43/43 rows). 32.1
+pinned the mechanism at code level (event regex captured the event date at
+docket_parser.py:767/775 but discarded it for routed events; the sole
+disposition_date assignment site was the judge-line branch at 882–884) and
+the fix design was adjudicated into the 32.2 spec. C4 (seq-99,999 offense
+leak, 1,087 CP dockets) was ruled damage-with-bounded-scope and bundled.
+
+## Task 32.2 — Parser Date-Source Fix + 99,999 Guard (2026-07-17)
+
+**What was built (pinned decisions 1–8 + STOP-ruling amendments 1–5).**
+`disposition_date` now comes from the Final Disposition EVENT-line date,
+assigned at the routed charge line so string and date always come from the
+same governing block; the judge-line date (the Sentence Date column) is
+captured into a parse-local `judge_line_dates` transient and feeds sentence
+components only — except under an ARD-routed Not-Final event, where the
+judge line still supplies `disposition_date` (decision 4 as restated:
+carve-out applies to rows whose GOVERNING block is the ARD block). Guards on
+the event-date assignment: Final blocks only, non-empty token (Q5: the
+date-without-string class stays empty), and held-for-court forms excluded
+via `HELD_FOR_COURT_DISPOSITIONS` IMPORTED from `outcome_mapper` (29.3
+single authority, no re-listing; import-cycle check passed — nothing under
+`pipeline.normalization` imports the parser). Latest-valid-event-wins
+unchanged. New CHARGES-section guard drops seq-99,999 placeholder rows
+byte-exactly (`"99,999 "` prefix) AND their wrapped continuation lines via a
+placeholder-wrap state reset by the next real charge row; disposition-section
+placeholder lines are untouched (proven inert). Versions:
+`ENVELOPE_PARSER_VERSION` 5 → 6 (parse-behavior change, 18.4 precedent);
+record `parser_version` stays 2; loader `ACCEPTED_ENVELOPE_VERSIONS`
+{5} → {6} so the newer-version arm replaces each docket's graph at the 32.4
+reload.
+
+**STOP ruling (ARD-progression, option a).** A charge re-disposed by a later
+Final block takes that block's event-line date even when an earlier ARD
+block supplied judge + sentence (decisions 1–2 applied verbatim). D-B was
+widened accordingly with the ARD-progression subclass enumerated separately;
+`ard_progression_cp`'s golden updated (its unit test now asserts the Final
+event date, judge/sentence assertions unchanged); the fixture-8 zero-diff
+proof narrowed to `ard_diversion_cp` (byte-identical ✓).
+
+**SD-15 soft report reframed (decision 8 + amendment 4).** Divergence
+between `sentence_date` (judge line) and `disposition_date` (event line) is
+now the EXPECTED state — sentencing lag. Key mapping OLD → NEW for readers
+of historical run reports: `sd15_delta_days_min/max` (absolute) →
+`sd15_lag_days_min/max` (SIGNED, sentence − disposition);
+`sd15_negative_lag_count` is new (the retained anomaly signal;
+ARD-progression rows are a known-legitimate negative-lag contributor).
+`sd15_divergence` and `sd15_straddle_mvp` unchanged.
+
+**Tier-1 fixtures/goldens (flag-gated; this note is the golden-write
+record).** `pipeline run-fixtures --update-goldens` →
+`tier1: match=34 diverged=0 updated=1 new=7 missing=0`. Updated:
+`ard_progression_cp` (STOP ruling). New: `final_block_dating_cp`,
+`latest_final_wins_cp`, `not_final_dated_superseded_mc`,
+`held_sibling_final_block_mc` (added BESIDE `held_for_court_disposed_mc`,
+whose same-day golden proved byte-identical — the item-4 conditional's
+"add beside" path), `final_block_page_break_cp` (first fixture using the
+`=== PAGE BREAK ===` delimiter), `deferred_sentencing_divergence_cp`,
+`placeholder_99999_charges_cp`. Converted: `missing_disposition_date_mc`
+(event-line date now dates disposed rows, so the dateless shape requires an
+unparseable event date — `99/99/2025`; golden byte-identical, warning
+coverage and fixture name stay honest; Q3 ruling). The envelope test
+specimen `MISSING_DATES` got the same conversion.
+
+**Corpus rerun (acceptance authority; delta ADJUDICATED-ACCEPTED
+2026-07-17, report `~/court-data/reports/32.2-delta-report-20260717-171024.md`).**
+Two instruments per the Q1 ruling, jointly covering `raw.source_documents`
+to the row (16,016 + 1,603 = 17,619). Drift (verbatim):
+`tier2: match=11346 diverged=4661 updated=0 new=0 golden_missing=3094 failed=11`
+(report `tier2-report-20260717T205935_330395Z.json`). Equivalence
+(`~/court-data/equivalence-32.2-20260717T154804Z/`): corpus 1,603,
+baseline_missing exactly 7, held gate PASS 463/463, un-disposal 0,
+parse/extraction failures 0. Attribution: D-A 8,745 rows (8,578 drift +
+167 equivalence; includes docket `79cfa95c…` seq 2, RULED a D-A member —
+its governing block is `ARD Completion … Final Disposition`, closing the
+ARD carve-out class with zero dateless and zero shifted rows); D-B 4,753
+rows (3,499 + 1,254), ARD-progression subclass 15 rows / 7 dockets, within
+the 18.5 bound; D-C sentence dates ZERO diffs both instruments (hard zero
+proven); D-D 1,087 = the R4 snapshot exactly (1,053 + 34); D-E path-class
+table byte-count-identical to the pre-fix 18.5 run on every pre-existing
+class with exactly two new classes (disposition_date 1,421; offense 34);
+warning deltas are MISSING_DISPOSITION_DATE removals only (apparent new
+codes were positional-shift artifacts, disproven by pre/post re-parse of
+two specimens).
+
+**Scan-noise record (item-2 ruling, so future drift runs can account for
+`failed=11` and `golden_missing=3094`).** Two intake files
+(`24f9661dcc3c7340`, `ee39376833062feb`) fail with the pre-existing
+KeyError class IDENTICALLY under the pre-fix parser; they and the 3,094
+golden_missing files are non-canonical intake-dir residue (never imported:
+0 of them in `raw.source_documents`; no goldens by construction) — NOT
+corpus members, NOT quarantine entries. Intake-dir residue policy is queued
+for the Sprint 9 ops track.
+
+**Tier-2 golden refresh (post-adjudication; golden-write record).**
+`pipeline run-fixtures --corpus-dir ~/court-data/intake --update-goldens` →
+`tier2: match=11346 diverged=0 updated=4661 new=0 golden_missing=3302 failed=11`
+(report `tier2-report-20260717T223009_587766Z.json`; updated=4661 equals the
+drift run's diverged count exactly; failed=11 the same set; golden_missing
+grew 3,094 → 3,302 because the still-running post-freeze collector session
+deposited 208 new not-yet-imported files into `intake/` between the two
+runs — non-canonical residue, same class as above)
+(console `~/court-data/reports/32.2-tier2-refresh-console-20260717T171833Z.txt`).
+
+**Gates (all five, fresh after staging + cache clear).** `ruff check`: All
+checks passed! · `ruff format --check .`: 127 files already formatted ·
+`pytest -q`: 961 passed, 74 skipped · repo-root `pnpm format:check`: All
+matched files use Prettier code style! · `pnpm typecheck`: e2e/apps-web/
+apps-api Done. Staging completeness: task paths fully staged, zero
+untracked/ignored files under `services/pipeline`.
+
+**Files touched.** `services/pipeline/src/pipeline/docket_parser.py`,
+`envelope.py`, `load.py`, `run_fixtures.py` (comment), `facts/build_facts.py`,
+`tests/test_docket_parser.py`, `tests/test_envelope.py`, `tests/test_load.py`,
+`tests/test_facts_build_facts.py`, `tests/test_run_fixtures.py`,
+`tests/tier1/fixture-index.yaml`, 7 new fixture/golden pairs + 1 converted
+fixture + 1 updated golden (enumerated above), this worklog.
+
+**Deviations from plan.** Two, both adjudicated mid-task: the
+ARD-progression date shift (STOP ruling, option a — mechanism unchanged,
+expectations amended) and the dateless-ARD-row D-A membership (delta
+adjudication item 1). 32.1 housekeeping done: recon workfiles relocated to
+`~/court-data/reports/32.1-recon-workfiles/`.
+
+**For the next task (32.3/32.4).** Envelopes must be REGENERATED (envelope
+6) and reloaded at 32.4 — the loader now accepts only version 6, and the
+newer-version arm will transactionally replace every docket's parsed graph;
+the fact rebuild then re-derives eligibility off event-line dates. The SD-15
+run report will show large EXPECTED divergence (sentencing lag) with
+`sd15_negative_lag_count` as the anomaly signal. The instructions' §6.13
+"single dateless ard row stays dateless" line is superseded by the
+governing-block restatement (per the delta adjudication).
