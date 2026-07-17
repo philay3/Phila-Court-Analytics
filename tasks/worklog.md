@@ -7180,3 +7180,57 @@ run report will show large EXPECTED divergence (sentencing lag) with
 `sd15_negative_lag_count` as the anomaly signal. The instructions' §6.13
 "single dateless ard row stays dateless" line is superseded by the
 governing-block restatement (per the delta adjudication).
+
+## Task 32.3 — Outcome Map Additions (2026-07-17)
+
+**What was built (two-stage; table approved in planning chat 2026-07-17).**
+Stage 1: read-only scan of local canonical `pca` (SELECT-only, zero writes;
+report `~/court-data/reports/32.3-stage1-scan-20260717T224449Z.md`) — full
+unmapped sweep (57 distinct strings, all classified, appendix empty), fresh
+per-form counts with court and dated splits, docket-structure evidence for the
+two ruling-4 open forms, and the RD - County shape check (CONFIRMED
+leading-char-loss of "ARD - County": all three rows are sequence-1 rows on
+dockets otherwise entirely ARD - County). Stage 2: **17 byte-exact keys added
+to `DISPOSITION_OUTCOME_MAP`**, additive only, per the approved table:
+6 dismissal-family kin -> `dismissed` (LOP, Rule 1013, Rule 586, Rule 546,
+Abatement, De Minimis); Nolo Contendere/Probation -> `guilty_plea`; Mistrial ->
+`other`; 8 IC-suffix variants -> base categories (Guilty Plea - Non-Negotiated
+IC, Guilty Plea IC -> `guilty_plea`; Nolle Prossed IC, Quashed IC, Dismissed -
+Abatement IC -> `dismissed`; Withdrawn IC -> `withdrawn`; Judgment of Acquittal
+IC, Not Guilty IC -> `acquittal`); Charge Changed (Lower Court) -> `other`
+(ruled terminal on the S3 evidence — the Transferred shape). No new categories;
+no taxonomy bump; no parser/fixture/golden change.
+
+**Rulings landed/recorded.** "Proceed to Court" DEFERRED to Sprint 9
+(non-terminal continuation shape per S4 evidence — active docket, dateless,
+sentence-less; the parser's NON_TERMINAL_DISPOSITIONS vocabulary independently
+lists it); stays unmapped under the designed fail-safe (non-public `unknown` +
+review item). Contaminated strings are NEVER map keys (ruling 5): census banked
+for Sprint 9 — leading-char-loss 11 rows (incl. RD - County), offense-text
+~28, scheduling bleed 4, status-suffix 1. Held-bypass residual grown 2 -> 5
+rows (`eld for Court` x2 + 3 offense-contaminated embedding Held for Court);
+no carve-out expansion (ruling 6 stands).
+
+**Expected 32.4 delta (SD-14 snapshots, verified at rebuild reconciliation):**
+`unknown` −668: dismissed +603, guilty_plea +35, withdrawn +18, acquittal +4,
+other +8.
+
+**Tests.** `tests/test_outcome_mapper.py` (97 total): new
+`TASK_32_3_ADDITIONS` literal pin (17 pairs, parametrized key->approved-category
+lock + count-is-17 + no-new-categories checks); `UNMAPPED_VALUES` updated —
+"Nolo Contendere/Probation" left the list (now mapped), "Proceed to Court",
+"ismissed - LOE", "ARD - County Open" joined it. Regression locks held
+unchanged: truncated Rule 600 key -> `dismissed`; `HELD_FOR_COURT_DISPOSITIONS`
+exactly its six members and disjoint from the map. Build-facts-level test:
+ruled not warranted at the gate (new keys exercise the identical mapped arm).
+
+**Files touched.** `services/pipeline/src/pipeline/normalization/outcome_mapper.py`,
+`services/pipeline/tests/test_outcome_mapper.py`, this worklog.
+
+**Deviations from plan.** None; the approved table landed exactly (17 keys).
+
+**For the next task (32.4).** The map deltas above join the D-A/D-B/D-D
+materialization and the C4 re-match recovery in the rebuild reconciliation.
+Group-1 rows are 0% dated in the pre-reload DB (D-A class) — their facts
+materialize only via the envelope-6 reload. "Proceed to Court" rows will land
+as non-public `unknown` + review items; expected and correct until Sprint 9.
