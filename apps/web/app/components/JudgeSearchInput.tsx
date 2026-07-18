@@ -108,7 +108,7 @@ export function JudgeSearchInput({
               aria-selected={index === activeIndex}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => commit(judge)}
-              className={`cursor-pointer px-4 py-2.5 ${index === activeIndex ? 'bg-canvas' : ''}`}
+              className={`min-h-11 cursor-pointer px-4 py-2.5 ${index === activeIndex ? 'bg-band' : ''}`}
             >
               <span className="block text-base text-ink">{judge.displayName}</span>
               {judge.matchedAlias !== undefined && (

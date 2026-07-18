@@ -7452,3 +7452,66 @@ follows this record):
 Phase-33 review gate (rendered pages vs live post-32.4) and the 33.2 AC6
 framing review are adjudicated in planning chat; PR opened on operator
 instruction. Sprint 9 opens on the post-32.4 data per the plan's handoff.
+
+## Task DP-1 — Civic Atlas Design Recon (2026-07-18, adjudicated summary)
+
+Read-only recon of the full public surface against the Civic Atlas design
+bundle; zero repo modifications; full report delivered in the completion
+relay (not committed). Facts that shaped the restyle spec: tokens live
+solely in the web `@theme` block (no spacing/radius/shadow tokens; no
+fonts loaded; no breakpoints; no dark mode; no print styles); the chart
+is a semantic table + aria-hidden percentage-width bars with no axis
+structure; every pinned string verified in place (sentencing caption
+matched its planning-pinned value exactly); the served methodology has
+ten sections vs the mock's nine-section rework; coverage-page limitation
+strings match served copy verbatim; the aggregate run id is served on
+all three public result/coverage surfaces. Contrast audit: the bundle's
+faint tone #8A8477 fails WCAG AA on every paper tone (nearest passing
+darkened value #706B61); tan #B9B4A4 fails 3:1 as a functional boundary.
+Two design-vs-contract contradictions were flagged, not self-adjudicated:
+frequency ordering vs served taxonomy order, and fixed axes vs the
+frontend-calculates-nothing contract. Planning adjudications recorded as
+DP-2 pinned decisions A1–A6 (taxonomy order stands; fixed 0–100 axis
+with raw served percentage widths; #706B61 faint; ink functional
+boundaries; next/font self-hosting; nav/footer IA; thin-data label keeps
+its period). Also surfaced for follow-up: the thin-data threshold has
+two constant homes with different values (pipeline default 10 live;
+taxonomy artifact 30, provisional, unconsumed).
+
+## Task DP-2 — Civic Atlas Restyle (2026-07-18)
+
+Full reskin of every existing public surface on branch `phase-dp2`,
+commits DP-2.1–DP-2.6. Token system replaced (paper/card/band, ink/body/
+muted/faint, accent pair, decorative rule + hairline, chart track/grid,
+eight Tol-muted categorical fills with wine #882255 as the extension
+color and grey pinned to `other`); Source Serif 4 + Source Sans 3 via
+next/font/google, build-time self-hosted, wired into @theme as CSS
+variables; global tabular-nums and the site-wide 3px accent focus ring.
+Chrome: double-rule masthead, two-item nav (Home · Methodology, new
+SiteNav client component), footer band carrying About · Definitions ·
+Data Coverage relocated byte-identically plus the existing sentence.
+BRAND CHANGE (the single sanctioned copy change, plan-approval
+amendment): the site brand is now 'Phila Court Outcomes' on exactly
+three surfaces — masthead, footer lockup, metadata title pair;
+HOME_COPY.heading and HOME_COPY.intro still carry the full former
+wording and are listed in the completion report for a follow-up copy
+item. Homepage: segmented 2px-ink search card (stacked mobile, 3-column
+md grid), borderless in-card serif inputs, ink-bordered shadowless
+listboxes. Result pages: card grammar with double-rule section headers,
+right-aligned sample metadata, tan-bordered notices, ink-bordered
+no-fill thin badge; charts keep the untouched semantic table and gain a
+fixed 0–100 axis (ticks every 20%, gridlines every 10%) inside the
+aria-hidden block, Tol category fills via a deterministic code→token map
+(new app/components/category-fill.ts), square bars, dashed thin-data
+treatment; fill width remains the raw served percentage (A2). Content
+pages: register rows, coverage stat cards (presentational LabeledRow
+variant), CSS-counter Roman numerals (generated content only). First
+breakpoints in the codebase (mobile-first, md: additions); 44px touch
+targets. Deviations from plan: none beyond the two approved required
+fixes. Tests: zero test-file changes; all 45 unit files (191 tests) and
+the full Playwright suite (15/15, axe WCAG 2.2 AA on every visited
+state incl. 390px) green locally against a migrated+seeded scratch
+`pca_e2e`; canonical `pca` untouched (read-only review posture per the
+approved fix). Next task should know: the AC13 product review gate and
+PR open on operator instruction; the coverage window band and all
+copy-gated bundle items remain excluded per spec.
