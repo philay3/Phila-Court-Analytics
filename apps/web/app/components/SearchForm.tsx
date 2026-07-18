@@ -24,6 +24,7 @@ import type { ChargeSearchResult, JudgeSearchResult } from '@pca/shared';
 import { HOME_COPY } from './home-copy';
 import { CHARGE_SEARCH_COPY } from './charge-search-copy';
 import { ChargeSearchInput } from './ChargeSearchInput';
+import { JudgeDisclosure } from './JudgeDisclosure';
 import { JudgeSearchInput } from './JudgeSearchInput';
 
 export function SearchForm() {
@@ -97,25 +98,29 @@ export function SearchForm() {
             />
           </div>
 
-          {/* Judge region — visually SECONDARY, optional */}
+          {/* Judge region — visually SECONDARY, optional. DP-3: the region
+              sits behind the shared JudgeDisclosure; label, help, combobox
+              wiring, and staged-commit behavior are byte-identical inside. */}
           <div className="border-b border-rule p-5 desktop:border-r desktop:border-b-0">
-            <label
-              htmlFor="judge-search"
-              className="block text-xs font-semibold tracking-[.12em] text-faint uppercase"
-            >
-              {HOME_COPY.judgeLabel}
-            </label>
-            <p id="judge-search-help" className="mt-1 text-sm text-muted">
-              {HOME_COPY.judgeHelp}
-            </p>
-            {/* Task 12.3: the disabled 12.1 placeholder is replaced by the judge
-                combobox. The id and aria-describedby wiring are preserved. */}
-            <JudgeSearchInput
-              id="judge-search"
-              describedById="judge-search-help"
-              committedJudge={committedJudge}
-              onCommitChange={handleJudgeCommitChange}
-            />
+            <JudgeDisclosure>
+              <label
+                htmlFor="judge-search"
+                className="block text-xs font-semibold tracking-[.12em] text-faint uppercase"
+              >
+                {HOME_COPY.judgeLabel}
+              </label>
+              <p id="judge-search-help" className="mt-1 text-sm text-muted">
+                {HOME_COPY.judgeHelp}
+              </p>
+              {/* Task 12.3: the disabled 12.1 placeholder is replaced by the judge
+                  combobox. The id and aria-describedby wiring are preserved. */}
+              <JudgeSearchInput
+                id="judge-search"
+                describedById="judge-search-help"
+                committedJudge={committedJudge}
+                onCommitChange={handleJudgeCommitChange}
+              />
+            </JudgeDisclosure>
           </div>
 
           <div className="flex items-stretch p-4 desktop:items-end">

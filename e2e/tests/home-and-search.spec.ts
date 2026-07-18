@@ -3,6 +3,7 @@ import { assertPageClean } from '../support/checks';
 import { selectFromCombobox } from '../support/combobox';
 import { DISPLAY_NAMES, SLUGS } from '../support/constants';
 import { HOME_COPY } from '../../apps/web/app/components/home-copy';
+import { CHARGE_RESULT_COPY } from '../../apps/web/app/components/charge-result-copy';
 
 /**
  * Homepage layout + the charge autocomplete happy path (task 15.2 scope 2:
@@ -19,10 +20,22 @@ test('homepage: charge search is primary, judge input is visibly optional', asyn
   await expect(page.locator('#charge-search')).toBeVisible();
   await expect(page.getByText(HOME_COPY.chargeLabel, { exact: true })).toBeVisible();
 
+  // DP-3: the judge control sits behind the disclosure — the trigger renders
+  // closed by default; opening it reveals the unchanged judge region (every
+  // pre-DP-3 assertion below is retained post-open).
+  const judgeTrigger = page.getByRole('button', {
+    name: CHARGE_RESULT_COPY.judgeDisclosureTriggerText,
+  });
+  await expect(judgeTrigger).toBeVisible();
+  await expect(judgeTrigger).toHaveAttribute('aria-expanded', 'false');
+  await judgeTrigger.click();
+  await expect(judgeTrigger).toHaveAttribute('aria-expanded', 'true');
+
   // The judge input is present but flagged optional in its own label copy.
   await expect(page.locator('#judge-search')).toBeVisible();
   await expect(page.getByText(HOME_COPY.judgeLabel, { exact: true })).toBeVisible();
 
+  // The gate runs with the disclosure OPEN, so axe scans the revealed region.
   await assertPageClean(page, 'homepage');
 });
 

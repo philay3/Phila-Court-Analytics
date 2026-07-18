@@ -35,6 +35,7 @@ import { ResponsibleUseNotice } from './ResponsibleUseNotice';
 import { ThinDataCallout } from './ThinDataCallout';
 import { DistributionSection } from './DistributionSection';
 import { SentencingUnavailableNotice } from './SentencingUnavailableNotice';
+import { JudgeDisclosure } from './JudgeDisclosure';
 import { JudgeFilterEntry } from './JudgeFilterEntry';
 import { ResultMetadataAside } from './ResultMetadataAside';
 import { SampleSizeLabel } from './SampleSizeLabel';
@@ -119,7 +120,13 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
       <ResultMetadataAside
         lastRefreshed={data.lastRefreshed}
         links={links}
-        actions={<JudgeFilterEntry chargeSlug={charge.slug} />}
+        actions={
+          // DP-3 disclosure wraps the DP-2 entry from the OUTSIDE — the
+          // entry's ARIA, testid, strings, and routing are byte-identical.
+          <JudgeDisclosure>
+            <JudgeFilterEntry chargeSlug={charge.slug} />
+          </JudgeDisclosure>
+        }
       >
         {/* Sample-size pairs per available distribution (bglad §14.4 pair
             grammar): one-word context label over the existing SampleSizeLabel

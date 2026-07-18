@@ -32,6 +32,12 @@ export const CHARGE_RESULT_COPY = {
   asideOutcomesLabel: 'Outcomes',
   asideSentencingLabel: 'Sentencing',
 
+  // Judge-disclosure trigger (task DP-3, sanctioned string 4 of 4). One
+  // source for both surfaces (charge-page aside and homepage search card) via
+  // the shared JudgeDisclosure component. The plus/minus glyph is CSS
+  // generated content (disclosure-glyph utility), never part of this string.
+  judgeDisclosureTriggerText: 'Add judge filter',
+
   // Judge-filter entry point (pinned decision 5). The help copy states the
   // availability caveat in guard-passing language.
   judgeFilterHeading: 'View this charge for a specific judge',

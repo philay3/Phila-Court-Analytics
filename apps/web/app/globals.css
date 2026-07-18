@@ -169,6 +169,24 @@
 }
 
 /*
+ * Judge-disclosure trigger glyph (task DP-3, bglad §14.3): plus when closed,
+ * minus when open, keyed off aria-expanded so the DOM state is the single
+ * source of truth. Generated content with an empty alternative text (`/ ''`)
+ * so the glyph never reaches the accessible name — the button's name is the
+ * sanctioned trigger string alone (same pinned-decision grammar as the
+ * section counters below: glyphs are CSS generated content, never JSX string
+ * literals).
+ */
+@utility disclosure-glyph {
+  &::before {
+    content: '+ ' / '';
+  }
+  &[aria-expanded='true']::before {
+    content: '− ' / '';
+  }
+}
+
+/*
  * Roman-numeral section markers (pinned decision: CSS counter generated
  * content only, never string literals in JSX — ordinal markers, not copy).
  * Reset on a page/view wrapper; increment on each marked heading/caption.
