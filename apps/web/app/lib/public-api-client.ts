@@ -1,6 +1,7 @@
 import { resolveApiBaseUrl } from './api-base-url';
 import {
   isPublicErrorCode,
+  type ChargeDirectoryResponse,
   type ChargeOnlyResultResponse,
   type ChargeSearchResponse,
   type DataCoverageResponse,
@@ -173,6 +174,10 @@ export function getJudgeSpecificResult(
   return fetchPublic(
     `${PUBLIC_API_PREFIX}/results/charge/${encodeURIComponent(chargeIdOrSlug)}/judge/${encodeURIComponent(judgeIdOrSlug)}`,
   );
+}
+
+export function getCharges(): Promise<PublicApiResult<ChargeDirectoryResponse>> {
+  return fetchPublic(`${PUBLIC_API_PREFIX}/charges`);
 }
 
 export function getDefinitions(): Promise<PublicApiResult<DefinitionsResponse>> {

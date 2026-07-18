@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getChargeResult,
+  getCharges,
   getDataCoverage,
   getDefinitions,
   getJudgeSpecificResult,
@@ -107,6 +108,16 @@ describe('public API client — success', () => {
     stubFetch(() => jsonResponse(unavailableArm));
     const result = await getChargeResult('harassment');
     expect(result).toEqual({ ok: true, data: unavailableArm });
+  });
+
+  it('fetches the charge directory and returns either 200 arm as ok:true data', async () => {
+    const fetchMock = vi.fn<(url: string | URL) => Promise<Response>>(() =>
+      Promise.resolve(jsonResponse({ available: false, message: 'unavailable' })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await getCharges();
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`${TEST_BASE}/api/v1/public/charges`);
+    expect(result).toEqual({ ok: true, data: { available: false, message: 'unavailable' } });
   });
 
   it('builds the search query string with q and limit', async () => {
