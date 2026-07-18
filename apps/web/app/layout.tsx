@@ -1,7 +1,25 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { Source_Serif_4, Source_Sans_3 } from 'next/font/google';
 import type { ReactNode } from 'react';
 import './globals.css';
+
+/*
+ * Civic Atlas families (task DP-2, pinned decision A4): next/font/google
+ * self-hosts both at build time — the built output serves the font files
+ * from _next/static and makes no runtime request to Google domains. Both
+ * are variable fonts, so no weight list is needed. The CSS variables are
+ * consumed by @theme in globals.css (--font-serif / --font-sans).
+ */
+const sourceSerif = Source_Serif_4({
+  subsets: ['latin'],
+  style: ['normal', 'italic'],
+  variable: '--font-source-serif-4',
+});
+const sourceSans = Source_Sans_3({
+  subsets: ['latin'],
+  variable: '--font-source-sans-3',
+});
 
 export const metadata: Metadata = {
   title: {
@@ -27,7 +45,7 @@ const NAV_LINKS = [
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${sourceSerif.variable} ${sourceSans.variable}`}>
       <body>
         <header className="border-b border-line bg-surface px-6 py-4">
           <p className="mb-2 text-lg font-semibold text-ink">Philadelphia Court Outcomes</p>
