@@ -16,11 +16,18 @@
  * Mobile content order (pinned decision 6) is DOM source order in a single
  * column, mobile-first, no CSS `order`. Leaf blocks carry `data-testid`s so the
  * order is asserted directly:
- *   summary → responsible-use → thin-data → judge outcome → judge sentencing →
- *   baseline outcome → baseline sentencing → links.
+ *   summary → responsible-use → thin-data → judge slots → baseline slots →
+ *   links.
  * The two section HEADINGS ("Judge-specific result", "Philadelphia-wide
  * baseline") wrap their two slots without their own `section-*` testid, so the
  * leaf order matches the pinned mobile order one-for-one.
+ *
+ * Slot order WITHIN each scope is conditional on that scope's API
+ * `sentencing.available` flag (task 33.2 pinned decisions 3–4): available →
+ * sentencing above outcome; unavailable → outcome first with the callout in
+ * the sentencing slot below. The page stays scope-major, each scope branches
+ * independently (mixed combinations are expected), and the branch consumes
+ * the API boolean only.
  *
  * Every count, percentage, sample size, date, and label renders through the
  * 11.4 formatters; the page computes no analytics.
@@ -137,30 +144,45 @@ interface ScopeSlotsProps {
  * the judge and baseline sections are structurally identical (pinned decision
  * 1). The sentencing slot renders the 13.1 distribution when available, else the
  * 13.2 sentencing-unavailable callout — independently of the other scope.
+ * Slot order follows this scope's `sentencing.available` flag (task 33.2
+ * pinned decision 4): sentencing leads when available, outcome leads on the
+ * unavailable arm.
  */
 function ScopeSlots({ scope, methodologyHref, outcomeTestId, sentencingTestId }: ScopeSlotsProps) {
-  return (
-    <>
-      <div data-testid={outcomeTestId} className="overflow-x-auto">
+  const outcomeSlot = (
+    <div data-testid={outcomeTestId} className="overflow-x-auto">
+      <DistributionSection
+        kind="outcome"
+        rows={scope.outcomes.rows}
+        sampleSize={scope.outcomes.sampleSize}
+        thinData={scope.outcomes.thinData}
+      />
+    </div>
+  );
+  const sentencingSlot = (
+    <div data-testid={sentencingTestId} className="overflow-x-auto">
+      {scope.sentencing.available ? (
         <DistributionSection
-          kind="outcome"
-          rows={scope.outcomes.rows}
-          sampleSize={scope.outcomes.sampleSize}
-          thinData={scope.outcomes.thinData}
+          kind="sentencing"
+          rows={scope.sentencing.rows}
+          sampleSize={scope.sentencing.sampleSize}
+          thinData={scope.sentencing.thinData}
         />
-      </div>
-      <div data-testid={sentencingTestId} className="overflow-x-auto">
-        {scope.sentencing.available ? (
-          <DistributionSection
-            kind="sentencing"
-            rows={scope.sentencing.rows}
-            sampleSize={scope.sentencing.sampleSize}
-            thinData={scope.sentencing.thinData}
-          />
-        ) : (
-          <SentencingUnavailableNotice methodologyHref={methodologyHref} />
-        )}
-      </div>
+      ) : (
+        <SentencingUnavailableNotice methodologyHref={methodologyHref} />
+      )}
+    </div>
+  );
+
+  return scope.sentencing.available ? (
+    <>
+      {sentencingSlot}
+      {outcomeSlot}
+    </>
+  ) : (
+    <>
+      {outcomeSlot}
+      {sentencingSlot}
     </>
   );
 }

@@ -148,7 +148,7 @@ describe('ChargeOnlyResultView', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('renders top-level sections in the pinned mobile DOM order', () => {
+  it('renders sentencing above outcome when sentencing is available (task 33.2 conditional order)', () => {
     const { container } = render(
       <ChargeOnlyResultView
         data={makeSuccess({ outcomes: { sampleSize: 8, thinData: true, rows: OUTCOME_ROWS } })}
@@ -159,6 +159,25 @@ describe('ChargeOnlyResultView', () => {
       'section-summary',
       'section-responsible-use',
       'section-thin-data',
+      'section-sentencing',
+      'section-outcome',
+      'section-links',
+      'section-judge-filter',
+    ]);
+  });
+
+  it('renders outcome first with the callout below on the sentencing-unavailable arm', () => {
+    const { container } = render(
+      <ChargeOnlyResultView
+        data={makeSuccess({
+          sentencing: { available: false, message: CHARGE_SENTENCING_UNAVAILABLE_MESSAGE },
+        })}
+      />,
+    );
+
+    expect(sectionOrder(container)).toEqual([
+      'section-summary',
+      'section-responsible-use',
       'section-outcome',
       'section-sentencing',
       'section-links',

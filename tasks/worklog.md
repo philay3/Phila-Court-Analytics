@@ -7366,3 +7366,48 @@ a deliberate literal pin). Gate hole closed NOW per ruling: the pytest gate
 runs with `PIPELINE_TEST_DATABASE_URL` pinned to `pca_pipeline_test`
 (CLAUDE.md amended in this commit); expected skip count drops to ~1, and a
 `74 skipped` gate line is henceforth a red flag, not noise.
+
+## Task 33.2 — Sentencing-First Reorder, Stage One (2026-07-18)
+
+**What was built.** Display-only reorder of both result page types:
+sentencing block leads wherever the API `sentencing.available` flag is
+true, outcome demoted below; sentencing-unavailable arms keep today's
+outcome-first order with the existing callout in the sentencing slot.
+`RESULT_DISPLAY_COPY.sentencingCaption` reworded to the pinned conditional
+framing ('Historical sentencing distribution — when cases like this ended
+in conviction') — a table caption, not a heading; heading hierarchy on both
+pages is byte-identical to pre-task. Judge page stays scope-major; the swap
+is within-scope in the file-local `ScopeSlots`, each scope branching
+independently on its own flag (mixed combinations legal and tested).
+`DistributionSection` untouched — the caption flows through `captionFor`.
+No API, schema, aggregate, formatter, or bar-rendering change; the order
+branch consumes the API boolean only (no counts or thresholds evaluated in
+the frontend).
+
+**Files touched.** `apps/web/app/components/result-display-copy.ts`,
+`apps/web/app/components/ChargeOnlyResultView.tsx`,
+`apps/web/app/components/JudgeSpecificResultView.tsx`,
+`apps/web/app/components/ChargeOnlyResultView.test.tsx`,
+`apps/web/app/components/JudgeSpecificResultView.test.tsx`,
+`e2e/tests/mobile.spec.ts`, this worklog. `tasks/current-task.md` remains
+uncommitted (standing convention).
+
+**Tests.** The three 33.1-identified order pins moved to conditional
+expectations: charge-only order test split into available (sentencing
+first) + unavailable (outcome first) arms; judge view covers the full
+availability matrix (both available, both unavailable, one mixed case per
+direction); `e2e/tests/mobile.spec.ts` EXPECTED_SECTION_ORDER now
+sentencing-before-outcome for the data-bearing charge.
+`result-display-copy.test.ts` needed no edit (it iterates constants, pins
+no literals); `charge-only-result.spec.ts` / `judge-flow.spec.ts` /
+`unavailable-and-not-found.spec.ts` confirmed assertion-compatible (test-id
+scoped + imported constants, no order or caption-literal assertions). The
+caption literal exists in exactly one module; every assertion resolves via
+the imported constant.
+
+**Deviations from plan.** None.
+
+**For the next task.** Phase 33 review gate (plan AC 5) pending: rendered
+pages to be judged against live post-32.4 pages with Chops before the
+phase-33 PR opens. Human framing review of the conditional caption (task
+AC 6) also lands in planning chat.

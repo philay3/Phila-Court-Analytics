@@ -245,7 +245,7 @@ describe('JudgeSpecificResultView', () => {
     expect(link).toHaveAttribute('href', `/charges/${CHARGE.slug}`);
   });
 
-  it('renders top-level leaf sections in the pinned mobile DOM order', () => {
+  it('renders top-level leaf sections in the pinned mobile DOM order (both scopes sentencing-available)', () => {
     const { container } = render(
       <JudgeSpecificResultView
         data={makeSuccess({
@@ -266,8 +266,82 @@ describe('JudgeSpecificResultView', () => {
       'section-summary',
       'section-responsible-use',
       'section-thin-data',
+      'section-judge-sentencing',
+      'section-judge-outcome',
+      'section-baseline-sentencing',
+      'section-baseline-outcome',
+      'section-links',
+    ]);
+  });
+
+  // Task 33.2 pinned decision 4: each scope orders its slots independently on
+  // its own `sentencing.available` flag — available → sentencing first,
+  // unavailable → outcome first with the callout below. The remaining three
+  // availability combinations (both unavailable + one mixed case per
+  // direction) complete the matrix; the both-available order is pinned above.
+  const UNAVAILABLE_SENTENCING = {
+    available: false,
+    message: CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
+  } as const;
+
+  function makeUnavailableScope(outcomeN: number): ResultDistributions {
+    return {
+      outcomes: { sampleSize: outcomeN, thinData: false, rows: OUTCOME_ROWS },
+      sentencing: UNAVAILABLE_SENTENCING,
+    };
+  }
+
+  it('orders both scopes outcome-first when both sentencing slots are unavailable', () => {
+    const { container } = render(
+      <JudgeSpecificResultView
+        data={makeSuccess({
+          judgeSpecific: makeUnavailableScope(JUDGE_OUTCOME_N),
+          baseline: makeUnavailableScope(BASELINE_OUTCOME_N),
+        })}
+      />,
+    );
+
+    expect(sectionOrder(container)).toEqual([
+      'section-summary',
+      'section-responsible-use',
       'section-judge-outcome',
       'section-judge-sentencing',
+      'section-baseline-outcome',
+      'section-baseline-sentencing',
+      'section-links',
+    ]);
+  });
+
+  it('mixes orders independently: judge sentencing unavailable, baseline available', () => {
+    const { container } = render(
+      <JudgeSpecificResultView
+        data={makeSuccess({ judgeSpecific: makeUnavailableScope(JUDGE_OUTCOME_N) })}
+      />,
+    );
+
+    expect(sectionOrder(container)).toEqual([
+      'section-summary',
+      'section-responsible-use',
+      'section-judge-outcome',
+      'section-judge-sentencing',
+      'section-baseline-sentencing',
+      'section-baseline-outcome',
+      'section-links',
+    ]);
+  });
+
+  it('mixes orders independently: judge sentencing available, baseline unavailable', () => {
+    const { container } = render(
+      <JudgeSpecificResultView
+        data={makeSuccess({ baseline: makeUnavailableScope(BASELINE_OUTCOME_N) })}
+      />,
+    );
+
+    expect(sectionOrder(container)).toEqual([
+      'section-summary',
+      'section-responsible-use',
+      'section-judge-sentencing',
+      'section-judge-outcome',
       'section-baseline-outcome',
       'section-baseline-sentencing',
       'section-links',
