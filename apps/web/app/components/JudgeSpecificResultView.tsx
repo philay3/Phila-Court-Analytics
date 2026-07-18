@@ -49,8 +49,7 @@ interface JudgeSpecificResultViewProps {
   data: JudgeSpecificResultSuccess;
 }
 
-const LINK_CLASS =
-  'text-accent hover:text-accent-hover hover:underline';
+const LINK_CLASS = 'text-accent hover:text-accent-hover hover:underline';
 
 export function JudgeSpecificResultView({ data }: JudgeSpecificResultViewProps) {
   const { charge, judge, judgeSpecific, baseline, links } = data;
@@ -69,7 +68,9 @@ export function JudgeSpecificResultView({ data }: JudgeSpecificResultViewProps) 
   ].some(Boolean);
 
   return (
-    <div className="flex flex-col gap-8">
+    // section-counter-reset scopes the Roman-numeral markers the four
+    // DistributionSection captions render via CSS counters (DP-2).
+    <div className="section-counter-reset flex flex-col gap-8">
       <section data-testid="section-summary" className="space-y-2">
         <h1>{charge.displayName}</h1>
         <p className="text-base font-semibold text-ink">{judge.displayName}</p>
@@ -92,7 +93,7 @@ export function JudgeSpecificResultView({ data }: JudgeSpecificResultViewProps) 
       )}
 
       <section aria-labelledby={judgeHeadingId} className="flex flex-col gap-6">
-        <h2 id={judgeHeadingId} className="text-lg font-semibold text-ink">
+        <h2 id={judgeHeadingId} className="font-serif text-lg font-semibold text-ink">
           {JUDGE_RESULT_COPY.sectionJudgeSpecificHeading}
         </h2>
         <ScopeSlots
@@ -104,7 +105,7 @@ export function JudgeSpecificResultView({ data }: JudgeSpecificResultViewProps) 
       </section>
 
       <section aria-labelledby={baselineHeadingId} className="flex flex-col gap-6">
-        <h2 id={baselineHeadingId} className="text-lg font-semibold text-ink">
+        <h2 id={baselineHeadingId} className="font-serif text-lg font-semibold text-ink">
           {JUDGE_RESULT_COPY.sectionBaselineHeading}
         </h2>
         <ScopeSlots

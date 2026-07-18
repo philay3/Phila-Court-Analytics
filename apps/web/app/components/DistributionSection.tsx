@@ -29,6 +29,7 @@ import type {
 } from '@pca/shared';
 import { formatCount, formatPercentage } from '../lib/formatters';
 import { definitionAnchor, type DistributionKind } from '../lib/definition-anchor';
+import { categoryFillClass } from './category-fill';
 import { RESULT_DISPLAY_COPY } from './result-display-copy';
 import { SampleSizeLabel } from './SampleSizeLabel';
 import { ThinDataBadge } from './ThinDataBadge';
@@ -70,25 +71,41 @@ export function DistributionSection({
   const categoryHeader = categoryHeaderFor(kind);
 
   return (
-    <section aria-labelledby={captionId} className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3">
+    <section
+      aria-labelledby={captionId}
+      className="space-y-3 border-t-3 border-double border-ink pt-3"
+    >
+      {/* Section metadata, right-aligned on the header line (Civic Atlas). */}
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <SampleSizeLabel sampleSize={sampleSize} />
         <ThinDataBadge thin={thinData} />
       </div>
 
       <table className="w-full border-collapse text-left text-sm">
-        <caption id={captionId} className="mb-2 text-left text-base font-semibold text-ink">
+        <caption
+          id={captionId}
+          className="section-counter mb-2 text-left font-serif text-base font-semibold text-ink"
+        >
           {caption}
         </caption>
         <thead>
           <tr>
-            <th scope="col" className="border-b border-line py-2 pr-4 font-semibold text-muted">
+            <th
+              scope="col"
+              className="border-b border-ink py-2 pr-4 text-xs font-semibold tracking-[.10em] text-faint uppercase"
+            >
               {categoryHeader}
             </th>
-            <th scope="col" className="border-b border-line py-2 pr-4 font-semibold text-muted">
+            <th
+              scope="col"
+              className="border-b border-ink py-2 pr-4 text-xs font-semibold tracking-[.10em] text-faint uppercase"
+            >
               {RESULT_DISPLAY_COPY.countHeader}
             </th>
-            <th scope="col" className="border-b border-line py-2 font-semibold text-muted">
+            <th
+              scope="col"
+              className="border-b border-ink py-2 text-xs font-semibold tracking-[.10em] text-faint uppercase"
+            >
               {RESULT_DISPLAY_COPY.percentageHeader}
             </th>
           </tr>
@@ -96,18 +113,20 @@ export function DistributionSection({
         <tbody>
           {rows.map((row) => (
             <tr key={row.categoryCode}>
-              <th scope="row" className="border-b border-line py-2 pr-4 font-normal text-ink">
-                <span>{row.displayName}</span>{' '}
+              <th scope="row" className="border-b border-hairline py-2 pr-4 font-normal text-ink">
+                <span className="font-serif">{row.displayName}</span>{' '}
                 <a
                   href={definitionAnchor(kind, row.categoryCode)}
                   aria-label={`${RESULT_DISPLAY_COPY.definitionLinkLabelPrefix}${row.displayName}`}
-                  className="text-accent underline"
+                  className="text-accent underline hover:text-accent-hover"
                 >
                   {RESULT_DISPLAY_COPY.definitionLinkText}
                 </a>
               </th>
-              <td className="border-b border-line py-2 pr-4 text-ink">{formatCount(row.count)}</td>
-              <td className="border-b border-line py-2 text-ink">
+              <td className="border-b border-hairline py-2 pr-4 text-body">
+                {formatCount(row.count)}
+              </td>
+              <td className="border-b border-hairline py-2 text-body">
                 {formatPercentage(row.percentage)}
               </td>
             </tr>
@@ -118,27 +137,51 @@ export function DistributionSection({
       {/*
        * Presentational bars (pinned decision 3). aria-hidden so assistive tech
        * reads the table instead; each fill width comes straight from the API
-       * percentage. Visible label + value text keeps meaning off color/hover.
+       * percentage — the fixed 0-100 axis (pinned decision A2) means the raw
+       * served percentage IS the axis position, no scaling arithmetic. All
+       * chart chrome (ticks, gridlines, fills) lives inside this hidden block.
+       * Visible label + value text keeps meaning off color/hover.
        */}
-      <div aria-hidden="true" className="space-y-2">
-        {rows.map((row) => (
-          <div key={row.categoryCode} className="space-y-1">
-            <div className="flex justify-between text-sm text-ink">
-              <span>{row.displayName}</span>
-              <span>
-                {formatCount(row.count)} · {formatPercentage(row.percentage)}
-              </span>
+      <div aria-hidden="true" className="space-y-2 pt-1">
+        {/* Fixed 0-100 axis: tick labels every 20%, gridlines every 10% (the
+            chart-track gradient). Numerals are axis geometry, not copy. */}
+        <div className="relative h-4 text-[11px] font-semibold text-faint">
+          {AXIS_TICKS.map((tick) => (
+            <span
+              key={tick}
+              className={`absolute ${
+                tick === 0 ? '' : tick === 100 ? '-translate-x-full' : '-translate-x-1/2'
+              }`}
+              style={{ left: `${tick}%` }}
+            >
+              {tick}
+            </span>
+          ))}
+        </div>
+        {rows.map((row) => {
+          const thinBar = thinData ? ' border border-dashed border-ink opacity-[0.72]' : '';
+          return (
+            <div key={row.categoryCode} className="space-y-1">
+              <div className="flex justify-between gap-4 text-sm text-body">
+                <span className="font-serif">{row.displayName}</span>
+                <span className="text-xs font-semibold text-ink">
+                  {formatCount(row.count)} · {formatPercentage(row.percentage)}
+                </span>
+              </div>
+              <div className="chart-track h-4 w-full overflow-hidden">
+                <div
+                  data-testid={`distribution-bar-fill-${row.categoryCode}`}
+                  className={`h-full ${categoryFillClass(kind, row.categoryCode)}${thinBar}`}
+                  style={{ width: `${row.percentage}%` }}
+                />
+              </div>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-surface">
-              <div
-                data-testid={`distribution-bar-fill-${row.categoryCode}`}
-                className="h-full rounded-full bg-accent"
-                style={{ width: `${row.percentage}%` }}
-              />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
 }
+
+/** 0-100 axis tick positions (labels every 20%; gridlines every 10% via CSS). */
+const AXIS_TICKS = [0, 20, 40, 60, 80, 100] as const;

@@ -14,17 +14,11 @@ export default function HomePage() {
 
       <p className="mt-4 text-muted">
         {HOME_COPY.linksIntro}{' '}
-        <Link
-          href="/methodology"
-          className="text-accent underline hover:text-accent-hover"
-        >
+        <Link href="/methodology" className="text-accent underline hover:text-accent-hover">
           {HOME_COPY.methodologyLinkText}
         </Link>{' '}
         ({HOME_COPY.methodologyLinkDescription}) ·{' '}
-        <Link
-          href="/data-coverage"
-          className="text-accent underline hover:text-accent-hover"
-        >
+        <Link href="/data-coverage" className="text-accent underline hover:text-accent-hover">
           {HOME_COPY.dataCoverageLinkText}
         </Link>{' '}
         ({HOME_COPY.dataCoverageLinkDescription}).

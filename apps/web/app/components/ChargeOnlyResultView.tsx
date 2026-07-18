@@ -38,8 +38,7 @@ interface ChargeOnlyResultViewProps {
   data: ChargeOnlyResultSuccess;
 }
 
-const LINK_CLASS =
-  'text-accent hover:text-accent-hover hover:underline';
+const LINK_CLASS = 'text-accent hover:text-accent-hover hover:underline';
 
 export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
   const { charge, outcomes, sentencing, links } = data;
@@ -73,7 +72,9 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
   );
 
   return (
-    <div className="flex flex-col gap-8">
+    // section-counter-reset scopes the Roman-numeral markers the two
+    // DistributionSection captions render via CSS counters (DP-2).
+    <div className="section-counter-reset flex flex-col gap-8">
       <section data-testid="section-summary" className="space-y-2">
         <h1>{charge.displayName}</h1>
         <p className="text-base font-semibold text-ink">{formatResultTypeLabel(data.resultType)}</p>

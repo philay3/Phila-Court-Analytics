@@ -21,8 +21,7 @@ interface JudgeUnavailableViewProps {
   data: JudgeSpecificResultUnavailable;
 }
 
-const LINK_CLASS =
-  'text-accent hover:text-accent-hover hover:underline';
+const LINK_CLASS = 'text-accent hover:text-accent-hover hover:underline';
 
 export function JudgeUnavailableView({ data }: JudgeUnavailableViewProps) {
   const { charge, judge } = data;

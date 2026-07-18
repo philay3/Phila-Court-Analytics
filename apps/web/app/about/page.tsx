@@ -21,8 +21,7 @@ export const metadata: Metadata = {
   title: 'About this site',
 };
 
-const LINK_CLASS =
-  'text-accent hover:text-accent-hover hover:underline';
+const LINK_CLASS = 'text-accent hover:text-accent-hover hover:underline';
 
 export default function AboutPage() {
   return (

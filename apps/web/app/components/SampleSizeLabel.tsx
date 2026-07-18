@@ -13,5 +13,5 @@ interface SampleSizeLabelProps {
 }
 
 export function SampleSizeLabel({ sampleSize }: SampleSizeLabelProps) {
-  return <p className="text-sm text-muted">{formatSampleSize(sampleSize)}</p>;
+  return <p className="text-sm text-faint">{formatSampleSize(sampleSize)}</p>;
 }

@@ -23,7 +23,7 @@ export default function JudgeError({ reset }: JudgeErrorProps) {
       <button
         type="button"
         onClick={reset}
-        className="rounded-md bg-accent px-5 py-3 text-base font-semibold text-canvas hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className="min-h-11 bg-ink px-5 py-3 text-sm font-semibold tracking-[.08em] text-card uppercase hover:bg-ink-hover"
       >
         {CHARGE_RESULT_COPY.errorRetryText}
       </button>
