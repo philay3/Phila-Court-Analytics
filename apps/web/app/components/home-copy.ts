@@ -15,9 +15,11 @@
  * placeholder text — may live in page.tsx or SearchForm.tsx; add them here.
  */
 export const HOME_COPY = {
-  heading: 'Philadelphia Court Outcomes',
+  // DP-2.7 sanctioned copy change #2 (planning-chat approved): the homepage
+  // heading/intro pair. Straight apostrophe per this module set's convention.
+  heading: "What happened with charges like yours in Philadelphia's courts.",
   intro:
-    'Philadelphia Court Outcomes presents historical aggregate outcomes from Philadelphia criminal court data. It summarizes how charges were resolved in past cases — historical outcome distributions and historical sentencing distributions, shown Philadelphia-wide and, when you add a judge, as judge-specific results where available — always with the sample size behind each figure.',
+    'Look up a Philadelphia criminal charge and see how past cases resolved: outcomes and sentences, citywide or before a specific judge, with the sample size behind every figure.',
   disclaimer:
     'This site describes what happened in past cases. It is not a prediction of any current or future case, and it is not legal advice. Where the underlying data is thin, we say so rather than draw conclusions.',
   searchHeading: 'Search court outcomes',

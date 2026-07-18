@@ -7490,12 +7490,12 @@ variables; global tabular-nums and the site-wide 3px accent focus ring.
 Chrome: double-rule masthead, two-item nav (Home · Methodology, new
 SiteNav client component), footer band carrying About · Definitions ·
 Data Coverage relocated byte-identically plus the existing sentence.
-BRAND CHANGE (the single sanctioned copy change, plan-approval
-amendment): the site brand is now 'Phila Court Outcomes' on exactly
-three surfaces — masthead, footer lockup, metadata title pair;
-HOME_COPY.heading and HOME_COPY.intro still carry the full former
-wording and are listed in the completion report for a follow-up copy
-item. Homepage: segmented 2px-ink search card (stacked mobile, 3-column
+SANCTIONED COPY CHANGES, exactly two: (1) brand — 'Phila Court
+Outcomes' on exactly three surfaces (masthead, footer lockup, metadata
+title pair; plan-approval amendment); (2) DP-2.7 — the homepage
+HOME_COPY.heading/intro pair replaced with the planning-approved
+what-happened framing (straight apostrophe per module convention, no em
+dashes, scanner-clean through the existing copy suites). Homepage: segmented 2px-ink search card (stacked mobile, 3-column
 md grid), borderless in-card serif inputs, ink-bordered shadowless
 listboxes. Result pages: card grammar with double-rule section headers,
 right-aligned sample metadata, tan-bordered notices, ink-bordered
