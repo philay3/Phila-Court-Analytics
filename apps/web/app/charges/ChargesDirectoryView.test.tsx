@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import {
   CHARGE_DIRECTORY_UNAVAILABLE_MESSAGE,
   type ChargeDirectoryEntry,
@@ -94,6 +94,55 @@ describe('ChargesDirectoryView', () => {
     for (const sampleSize of ['8412', '517', '1206']) {
       expect(container.textContent).not.toContain(sampleSize);
     }
+  });
+
+  it('filters by display name, case-insensitively, updating rows and count', () => {
+    render(<ChargesDirectoryView data={ROWS} />);
+    fireEvent.change(screen.getByLabelText(CHARGES_COPY.filterLabel), {
+      target: { value: 'BASIC exa' },
+    });
+    const items = within(screen.getByRole('list')).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(within(items[0] as HTMLElement).getByRole('link')).toHaveTextContent('Basic Example');
+    expect(screen.getByText(formatChargeCountLine(1))).toBeInTheDocument();
+  });
+
+  it('matches statute codes as well as display names', () => {
+    render(<ChargesDirectoryView data={ROWS} />);
+    fireEvent.change(screen.getByLabelText(CHARGES_COPY.filterLabel), {
+      target: { value: '9902' },
+    });
+    const items = within(screen.getByRole('list')).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(within(items[0] as HTMLElement).getByRole('link')).toHaveTextContent('Closing Example');
+  });
+
+  it('announces the count through a polite live region', () => {
+    render(<ChargesDirectoryView data={ROWS} />);
+    expect(screen.getByText(formatChargeCountLine(3))).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('shows the no-match state with a zero count and no list — never a blank container', () => {
+    render(<ChargesDirectoryView data={ROWS} />);
+    fireEvent.change(screen.getByLabelText(CHARGES_COPY.filterLabel), {
+      target: { value: 'zzz-no-such-charge' },
+    });
+    expect(screen.getByText(CHARGES_COPY.noMatchBody)).toBeInTheDocument();
+    expect(screen.getByText(formatChargeCountLine(0))).toBeInTheDocument();
+    expect(screen.queryByRole('list')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: CHARGES_COPY.clearAction })).toBeInTheDocument();
+  });
+
+  it('clear restores the full list, empties the input, and refocuses it', () => {
+    render(<ChargesDirectoryView data={ROWS} />);
+    const input = screen.getByLabelText(CHARGES_COPY.filterLabel);
+    fireEvent.change(input, { target: { value: 'zzz-no-such-charge' } });
+    fireEvent.click(screen.getByRole('button', { name: CHARGES_COPY.clearAction }));
+
+    expect(input).toHaveValue('');
+    expect(input).toHaveFocus();
+    expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(3);
+    expect(screen.getByText(formatChargeCountLine(3))).toBeInTheDocument();
   });
 
   it('renders the served unavailable message for the unavailable arm — no list, no count', () => {
