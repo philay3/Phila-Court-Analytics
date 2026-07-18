@@ -1,0 +1,23 @@
+COURT OF COMMON PLEAS OF PHILADELPHIA COUNTY
+DOCKET
+Docket Number: CP-51-CR-0000000-2025
+CASE INFORMATION
+Judge Assigned: Torres, Judge A. Date Filed: 02/03/2025
+OTN: X 7654321-1
+STATUS INFORMATION
+Case Status: Closed
+DEFENDANT INFORMATION
+Date Of Birth: 05/05/1985
+CASE PARTICIPANTS
+Participant Type Name
+Defendant Sample, Dana
+CHARGES
+Seq. Statute Grade Description
+1 1 18 § 3502 F1 Burglary 02/01/2025 X7654321
+2 1 18 § 3921 M1 Theft 02/01/2025 X7654321
+3 1 18 § 3925 M1 Receiving Stolen Property 02/01/2025 X7654321
+DISPOSITION SENTENCING/PENALTIES
+Waiver Trial 06/09/2026 Final Disposition
+1 / Burglary Nolle Prossed
+2 / Theft Nolle Prossed
+3 / Receiving Stolen Property Nolle Prossed

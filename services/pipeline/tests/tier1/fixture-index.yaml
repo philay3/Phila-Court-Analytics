@@ -290,7 +290,9 @@ fixtures:
 
   - filename: missing_disposition_date_mc.txt
     court_type: Municipal Court
-    scenario: disposition recorded without a date (MISSING_DISPOSITION_DATE)
+    scenario: disposition recorded without a date (MISSING_DISPOSITION_DATE) —
+      32.2 unparseable-event-date specimen (event regex matches, parse_date
+      fails, no judge line; the decision-7 failure mode)
     expected_charge_count: 1
     expected_warnings:
       - MISSING_DISPOSITION_DATE
@@ -320,4 +322,77 @@ fixtures:
     expected_charge_count: 1
     expected_warnings: []
     layout_unverified: true
+    synthetic: true
+
+  - filename: final_block_dating_cp.txt
+    court_type: Common Pleas
+    scenario: 32.2 core fix — dated Final Disposition block, all rows disposed
+      with NO judge lines; every row carries the event-line date (N1-01 audit
+      pattern)
+    expected_charge_count: 3
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: latest_final_wins_cp.txt
+    court_type: Common Pleas
+    scenario: 32.2 latest-Final-wins — Not-Final trial block then a later Final
+      Status block re-lists the charges; string and date both come from the
+      later Final block (N1-07 audit pattern)
+    expected_charge_count: 2
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: not_final_dated_superseded_mc.txt
+    court_type: Municipal Court
+    scenario: 32.2 Not-Final exclusion — earlier Not-Final block with a
+      disposition token and a dated line contributes nothing; the later Final
+      block supplies string and date (S5-04 audit pattern)
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: held_sibling_final_block_mc.txt
+    court_type: Municipal Court
+    scenario: 32.2 held exclusion — held-for-court row inside a dated Final
+      block stays dateless (no judge lines anywhere) while its terminal sibling
+      takes the event-line date (N2/S6-02 audit pattern; added beside
+      held_for_court_disposed_mc, whose same-day golden is byte-identical)
+    expected_charge_count: 2
+    expected_warnings:
+      - MISSING_DISPOSITION_DATE
+    layout_unverified: false
+    synthetic: true
+
+  - filename: final_block_page_break_cp.txt
+    court_type: Common Pleas
+    scenario: 32.2 page-break span — Final event line at the bottom of one page,
+      charge rows on the next after repeated column-header furniture; rows still
+      date from the pre-break event line (S5-02/N1-02 audit pattern)
+    expected_charge_count: 2
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: deferred_sentencing_divergence_cp.txt
+    court_type: Common Pleas
+    scenario: 32.2 date split — event-line date differs from the judge-line
+      date; disposition_date is the event date and sentence_date is the
+      judge-line Sentence Date on the same charge (S5-03 audit pattern)
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true
+
+  - filename: placeholder_99999_charges_cp.txt
+    court_type: Common Pleas
+    scenario: 32.2 C4 guard — seq-99,999 placeholder row plus its wrapped
+      continuation dropped from CHARGES (last real charge's offense stays
+      clean); disposition-section placeholder line left inert (N4-03 audit
+      pattern)
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
     synthetic: true

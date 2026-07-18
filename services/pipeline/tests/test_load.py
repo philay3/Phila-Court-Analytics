@@ -109,7 +109,7 @@ def make_envelope(
     status: str = "parsed",
     warnings: list | None = None,
     review_needed: bool = False,
-    parser_version: int = 5,
+    parser_version: int = 6,
     error: dict | None = None,
 ) -> dict:
     return {

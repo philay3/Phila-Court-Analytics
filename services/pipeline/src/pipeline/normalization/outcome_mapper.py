@@ -96,6 +96,15 @@ HELD_FOR_COURT_DISPOSITIONS: frozenset[str] = frozenset(
 # disposition_raw string -> outcome taxonomy code. Keys are BYTE-EXACT to the
 # Part A distinct-value report over the corpus; every value is a real taxonomy
 # outcome code (verified at construction against the injected TaxonomySnapshot).
+# Task 32.3 added 17 keys (dismissal-family kin, Nolo Contendere/Probation,
+# Mistrial, IC-suffix variants, Charge Changed (Lower Court)) per the
+# 2026-07-16 directional rulings, table approved in planning chat 2026-07-17;
+# keys byte-exact to the 32.3 Stage-1 sweep. Contaminated/mangled strings
+# (leading-char-loss, offense-text bleed, scheduling bleed, status-suffix) are
+# NEVER map keys — they route to the Sprint 9 parser hardening batch.
+# "Proceed to Court" is deliberately unmapped: non-terminal continuation shape,
+# deferred to Sprint 9 (no-fact design question); the unmapped fail-safe keeps
+# it non-public.
 # These keys are standardized CPCMS disposition phrases — public state
 # vocabulary, non-identifying (same class as the committed charge-description
 # vocabulary); no raw docket text, docket numbers, or defendant data.
@@ -118,6 +127,9 @@ DISPOSITION_OUTCOME_MAP: dict[str, str] = {
     "Guilty Plea - Negotiated IC": "guilty_plea",
     "Guilty Plea": "guilty_plea",
     "Nolo Contendere": "guilty_plea",
+    "Guilty Plea - Non-Negotiated IC": "guilty_plea",
+    "Guilty Plea IC": "guilty_plea",
+    "Nolo Contendere/Probation": "guilty_plea",
     # guilty_verdict — found guilty after trial
     "Guilty": "guilty_verdict",
     "Guilty IC": "guilty_verdict",
@@ -127,18 +139,34 @@ DISPOSITION_OUTCOME_MAP: dict[str, str] = {
     "Dismissed - LOE": "dismissed",
     "Dismissed - Rule 600 (Speedy": "dismissed",
     "Dismissed": "dismissed",
+    "Dismissed - LOP": "dismissed",
+    "Dismissed - Rule 1013": "dismissed",
+    "Dismissed - Rule 586": "dismissed",
+    "Dismissed - Rule 546": "dismissed",
+    "Dismissed - Abatement": "dismissed",
+    "Dismissed - De Minimis": "dismissed",
+    "Nolle Prossed IC": "dismissed",
+    "Quashed IC": "dismissed",
+    "Dismissed - Abatement IC": "dismissed",
     # acquittal — found not guilty after trial
     "Not Guilty": "acquittal",
     "Judgment of Acquittal": "acquittal",
+    "Judgment of Acquittal IC": "acquittal",
+    "Not Guilty IC": "acquittal",
     # ard — Accelerated Rehabilitative Disposition
     "ARD - County": "ard",
     # withdrawn — prosecution withdrew the charge
     "Withdrawn": "withdrawn",
+    "Withdrawn IC": "withdrawn",
     # other — recorded disposition outside the defined categories. NOTE (Task
     # 29.3): "Held for Court" is deliberately ABSENT — a bind-over is not an
     # outcome; it takes the held arm via HELD_FOR_COURT_DISPOSITIONS above.
+    # "Charge Changed (Lower Court)" is terminal-without-independent-outcome
+    # (the Transferred shape), ruled into `other` at the 32.3 table gate.
     "Transferred to Another Jurisdiction": "other",
     "Mistrial - Hung Jury": "other",
+    "Mistrial": "other",
+    "Charge Changed (Lower Court)": "other",
 }
 
 

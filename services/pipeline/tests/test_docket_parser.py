@@ -26,6 +26,7 @@ from pipeline.docket_parser import (
 )
 from pipeline.helpers import ParseError
 from pipeline.identity import assert_related_cases_clean
+from pipeline.normalization.outcome_mapper import HELD_FOR_COURT_DISPOSITIONS
 from pipeline.warning_codes import (
     SENTINEL_COLLISION,
     SUSPECT_JUDGE_LINE,
@@ -891,8 +892,10 @@ def test_non_ard_first_guard_warns_on_stranded_ard_token():
 def test_ard_progression_final_overwrites_raw_keeps_judge_and_sentence():
     """Pattern B / progression: an ARD "Status" event supplies judge + sentence;
     a later Final event carrying ONLY the disposition (no judge/sentence lines)
-    overwrites disposition_raw but leaves judge/date/sentences intact (latest-
-    valid-event-wins). Reproduces the Capstone-faithful shape."""
+    overwrites disposition_raw and (32.2 STOP ruling, option a) supplies its
+    OWN event-line disposition date — string and date come from the same
+    governing block. Judge and the ARD sentence (with its judge-line sentence
+    date) stay from the ARD event."""
     page = build_mc(
         "Status 03/10/2025 Not Final",
         "1 / Simple Assault ARD - County",
@@ -905,10 +908,11 @@ def test_ard_progression_final_overwrites_raw_keeps_judge_and_sentence():
     record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
     charge = record["charges"][0]
     assert charge["disposition_raw"] == "Nolle Prossed"  # from the Final event
-    assert charge["disposition_date"] == "2025-03-10"  # from the ARD event
+    assert charge["disposition_date"] == "2025-07-01"  # the Final event's own date
     assert charge["disposition_judge_raw"] == "Conroy, David H."  # from the ARD event
     assert len(charge["sentences"]) == 1  # the ARD sentence, not overwritten
     assert charge["sentences"][0]["sentence_type"] == "ARD"
+    assert charge["sentences"][0]["sentence_date"] == "2025-03-10"  # ARD judge line
 
 
 # --- Item 2: min_assumed annotation -----------------------------------------
@@ -1027,3 +1031,265 @@ def test_assigned_judge_fragment_substring_does_not_collide():
     record, _, warnings = parse_docket_text(DOCKET_CP, [page], salt=TEST_SALT)
     assert record["case"]["assigned_judge_raw"] == "Exampleton, Judge A."
     assert not any(w["code"] == SENTINEL_COLLISION for w in warnings)
+
+
+# --- 32.2: event-line disposition dates + seq-99,999 charge guard ------------
+
+
+def build_mc_with_charges(charge_rows: list[str], disposition_body: list[str]) -> str:
+    """An MC sheet with custom CHARGES rows plus a DISPOSITION section body."""
+    return "\n".join(
+        [
+            *_MC_HEAD[:-1],  # fixed head up to the column-header line
+            *charge_rows,
+            "DISPOSITION SENTENCING/PENALTIES",
+            *disposition_body,
+        ]
+    )
+
+
+def test_final_block_dates_rows_without_judge_lines():
+    """The core 32.2 fix: disposed rows under a dated Final Disposition event
+    carry the EVENT-line date even when no judge line prints (the formerly
+    dateless disposed class)."""
+    page = build_mc(
+        "Waiver Trial 06/09/2026 Final Disposition",
+        "1 / Simple Assault Nolle Prossed",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Nolle Prossed"
+    assert charge["disposition_date"] == "2026-06-09"
+    assert charge["disposition_judge_raw"] is None
+    assert charge["sentences"] == []
+
+
+def test_latest_final_block_wins_string_and_date_together():
+    """N1-07 pattern: a later Final block re-disposes the charge; string AND
+    date both come from the later block (same governing block)."""
+    page = build_mc(
+        "Waiver Trial 05/01/2025 Final Disposition",
+        "1 / Simple Assault Nolle Prossed",
+        "Status 05/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    assert charge["disposition_date"] == "2025-05-15"
+
+
+def test_not_final_dated_block_contributes_no_date():
+    """S5-04 pattern: an earlier Not-Final block with a disposition token and a
+    dated line is excluded; the later Final block supplies string and date."""
+    page = build_mc(
+        "Preliminary Hearing 12/12/2025 Not Final",
+        "1 / Simple Assault Dismissed - LOE",
+        "Reyes, Judge M. 12/12/2025",
+        "ARC Status 03/30/2026 Final Disposition",
+        "1 / Simple Assault Guilty Plea - Negotiated",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty Plea - Negotiated"
+    assert charge["disposition_date"] == "2026-03-30"
+    assert charge["disposition_judge_raw"] is None
+    # Disposed charge carries no held-event keys (placement sweep unchanged).
+    assert "event_date" not in charge and "event_name" not in charge
+
+
+@pytest.mark.parametrize("held_form", sorted(HELD_FOR_COURT_DISPOSITIONS))
+def test_held_form_stays_dateless_inside_dated_final_block(held_form):
+    """Requirement 4 / N2-S6-02 pattern: a held-for-court row inside a dated
+    Final block keeps its recorded form but NEVER takes the event date
+    (Mechanism A preserved; vocabulary imported, never re-listed)."""
+    page = build_mc(
+        "Preliminary Hearing 09/11/2025 Final Disposition",
+        f"1 / Simple Assault {held_form}",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == held_form
+    assert charge["disposition_date"] is None
+
+
+def test_held_sibling_dateless_while_terminal_sibling_dated():
+    """S6-02 shape: held row and terminal row in the SAME dated Final block —
+    only the terminal row takes the event date."""
+    page = build_mc_with_charges(
+        [
+            "1 1 18 § 2701 M1 Simple Assault 01/01/2025 X1234567",
+            "2 1 18 § 2702 F1 Aggravated Assault 01/01/2025 X1234567",
+        ],
+        [
+            "Preliminary Hearing 09/11/2025 Final Disposition",
+            "1 / Simple Assault Held for Court",
+            "2 / Aggravated Assault Dismissed - LOE",
+        ],
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    held, terminal = record["charges"]
+    assert held["disposition_raw"] == "Held for Court"
+    assert held["disposition_date"] is None
+    assert terminal["disposition_raw"] == "Dismissed - LOE"
+    assert terminal["disposition_date"] == "2025-09-11"
+
+
+def test_ard_governing_block_keeps_judge_line_dating():
+    """Decision 4 (as restated by the STOP ruling): a charge whose GOVERNING
+    block is the ARD-routed Not-Final event keeps judge-line dating unchanged —
+    even when the judge-line date differs from the event-line date."""
+    page = build_mc(
+        "Status 03/10/2025 Not Final",
+        "1 / Simple Assault ARD - County",
+        "Conroy, David H. 04/15/2025",
+        "ARD",
+        "Max of 6.00 Months",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "ARD - County"
+    assert charge["disposition_date"] == "2025-04-15"  # judge line, NOT event line
+    assert charge["sentences"][0]["sentence_date"] == "2025-04-15"
+
+
+def test_unparseable_final_event_date_leaves_row_dateless():
+    """Decision 7 failure mode: the event regex matches but the date fails
+    parse_date -> the row stays dateless (surfaced downstream by the existing
+    MISSING_DISPOSITION_DATE envelope warning); no new warning code."""
+    page = build_mc(
+        "Waiver Trial 99/99/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    assert charge["disposition_date"] is None
+
+
+def test_empty_token_row_takes_no_event_date():
+    """Q5 guard: a charge line with no disposition token stays string-less AND
+    dateless — the date-without-string row shape must never exist."""
+    page = build_mc(
+        "Waiver Trial 05/01/2025 Final Disposition",
+        "1 / Simple Assault",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None
+    assert charge["disposition_date"] is None
+
+
+def test_deferred_sentencing_divergence_dates_split():
+    """S5-03 pattern: event date != judge-line date -> disposition_date is the
+    event-line date, sentence_date is the judge-line (Sentence Date column)
+    date, on the same charge."""
+    page = build_mc(
+        "Pretrial Bring Back 01/29/2026 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Conroy, David H. 05/21/2026",
+        "Confinement",
+        "Min of 3.00 Months Max of 12.00 Months",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_date"] == "2026-01-29"
+    assert charge["disposition_judge_raw"] == "Conroy, David H."
+    assert charge["sentences"][0]["sentence_date"] == "2026-05-21"
+
+
+def test_sentence_dates_ride_their_own_blocks_judge_line():
+    """D-C parity shape (the 35-row divergent class): a re-disposed charge
+    keeps each sentence component's date from ITS block's judge line, exactly
+    as pre-32.2."""
+    page = build_mc(
+        "Trial 02/01/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Reyes, Judge M. 02/01/2025",
+        "Confinement",
+        "Min of 1.00 Months Max of 2.00 Months",
+        "Status 04/01/2025 Final Disposition",
+        "1 / Simple Assault Guilty Plea - Negotiated",
+        "Conroy, David H. 04/05/2025",
+        "Probation",
+        "Max of 12.00 Months",
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty Plea - Negotiated"
+    assert charge["disposition_date"] == "2025-04-01"  # later Final event line
+    dates = [s["sentence_date"] for s in charge["sentences"]]
+    assert dates == ["2025-02-01", "2025-04-05"]  # each block's own judge line
+
+
+def test_charges_placeholder_rows_and_wrap_dropped():
+    """C4 guard: a seq-99,999 placeholder row AND its wrapped continuation line
+    are dropped — the last real charge's offense/statute/grade stay clean."""
+    page = build_mc_with_charges(
+        [
+            "1 1 18 § 2701 M1 Simple Assault 01/01/2025 X1234567",
+            "99,999 1 0 § 0 Disposed at Lower Court 02/13/2020",
+            "wrapped placeholder continuation text",
+        ],
+        [
+            "Waiver Trial 06/09/2026 Final Disposition",
+            "1 / Simple Assault Nolle Prossed",
+        ],
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    assert len(record["charges"]) == 1
+    charge = record["charges"][0]
+    assert charge["offense"] == "Simple Assault"
+    assert charge["statute"] == "18 § 2701 M1"
+
+
+def test_placeholder_state_resets_at_next_real_charge_row():
+    """Required fix 2: a real charge row after a placeholder block resets the
+    wrap state and parses normally — nothing is dropped beyond the placeholder
+    block itself."""
+    page = build_mc_with_charges(
+        [
+            "1 1 18 § 2701 M1 Simple Assault 01/01/2025 X1234567",
+            "99,999 1 0 § 0 Disposed at Lower Court 02/13/2020",
+            "wrapped placeholder continuation text",
+            "2 1 18 § 2702 F1 Aggravated Assault 01/01/2025 X1234567",
+        ],
+        [
+            "Waiver Trial 06/09/2026 Final Disposition",
+            "1 / Simple Assault Nolle Prossed",
+            "2 / Aggravated Assault Nolle Prossed",
+        ],
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    assert [c["sequence"] for c in record["charges"]] == [1, 2]
+    first, second = record["charges"]
+    assert first["offense"] == "Simple Assault"
+    assert second["offense"] == "Aggravated Assault"
+    assert second["statute"] == "18 § 2702 F1"
+    assert second["disposition_date"] == "2026-06-09"
+
+
+def test_disposition_section_placeholder_lines_stay_inert():
+    """Regression lock: seq-99,999 lines in the DISPOSITION section are NOT
+    guarded (proven inert on the audit sheets) — the parse is byte-identical
+    with or without them."""
+    body = [
+        "Waiver Trial 06/09/2026 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Reyes, Judge M. 06/09/2026",
+        "Confinement",
+        "Min of 1.00 Months Max of 2.00 Months",
+    ]
+    placeholder_lines = [
+        "99,999 Disposed at Lower Court 02/13/2020 Withdrawn",
+        "99,999 Disposed at Lower Court 02/13/2020 Withdrawn",
+    ]
+    with_lines, _, _ = parse_docket_text(
+        DOCKET_MC, [build_mc(*body, *placeholder_lines)], salt=TEST_SALT
+    )
+    without_lines, _, _ = parse_docket_text(
+        DOCKET_MC, [build_mc(*body)], salt=TEST_SALT
+    )
+    with_lines.pop("parsed_at")
+    without_lines.pop("parsed_at")
+    assert with_lines == without_lines

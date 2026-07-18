@@ -2,7 +2,7 @@
   "error": null,
   "record": {
     "case": {
-      "assigned_judge_raw": "Reyes, Judge M.",
+      "assigned_judge_raw": "Torres, Judge A.",
       "case_status": "Closed",
       "county": "Philadelphia",
       "court_type": "Common Pleas",
@@ -14,33 +14,22 @@
     },
     "charges": [
       {
-        "disposition_date": "2025-07-01",
-        "disposition_judge_raw": "Meehan, Judge W.",
-        "disposition_raw": "Nolle Prossed",
+        "disposition_date": "2025-03-10",
+        "disposition_judge_raw": "Torres, Judge A.",
+        "disposition_raw": "Guilty",
         "grade": null,
-        "offense": "Receiving Stolen Property",
+        "offense": "Theft",
         "sentences": [
           {
-            "max_days": 720,
-            "min_assumed": true,
-            "min_days": 720,
-            "program": "ARD",
-            "raw_text": "ARD, Max of 24.00 Months",
+            "max_days": 360,
+            "min_days": 180,
+            "program": "Probation",
+            "raw_text": "Probation, Min of 6.00 Months Max of 12.00 Months",
             "sentence_date": "2025-03-10",
-            "sentence_type": "ARD"
+            "sentence_type": "Probation"
           }
         ],
         "sequence": 1,
-        "statute": "18 \u00a7 3925 F3"
-      },
-      {
-        "disposition_date": "2025-03-10",
-        "disposition_judge_raw": "Nguyen, Judge B.",
-        "disposition_raw": "Withdrawn",
-        "grade": null,
-        "offense": "Theft By Unlawful Taking",
-        "sentences": [],
-        "sequence": 2,
         "statute": "18 \u00a7 3921 M1"
       }
     ],

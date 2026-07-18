@@ -111,15 +111,16 @@ describe('static public copy sources', () => {
   });
 
   it('the dismissal disclosure appears verbatim-identical in both of its homes', () => {
-    // Final copy pass (framing-gate approved 2026-07-16): the dismissal
-    // disclosure is ONE sentence with two homes — the methodology limitations
-    // body and the data-coverage known-limitations list. This pins the two in
-    // lockstep so neither copy can drift without the other.
+    // Re-tuned copy (task 32.4, framing-gate approved 2026-07-17): the
+    // dismissal disclosure is ONE sentence with two homes — the methodology
+    // limitations body and the data-coverage known-limitations list. This pins
+    // the two in lockstep so neither copy can drift without the other.
     const dismissalDisclosure =
       'At this stage, dismissals are underrepresented in the figures: ' +
       'dismissals tend to take longer to resolve than convictions, and ' +
-      'records without a recorded event date are excluded until one is ' +
-      'recorded, so dismissal figures fill in more slowly than other outcomes.';
+      'records from cases still awaiting a final outcome are not counted ' +
+      'until one is recorded, so dismissal figures fill in more slowly than ' +
+      'other outcomes.';
     expect(METHODOLOGY_CONTENT.sections.limitations.body).toContain(dismissalDisclosure);
     expect(DATA_COVERAGE_KNOWN_LIMITATIONS).toContain(dismissalDisclosure);
   });

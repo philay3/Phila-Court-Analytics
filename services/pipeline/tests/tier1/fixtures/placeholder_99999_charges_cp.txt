@@ -1,0 +1,26 @@
+COURT OF COMMON PLEAS OF PHILADELPHIA COUNTY
+DOCKET
+Docket Number: CP-51-CR-0000000-2025
+CASE INFORMATION
+Judge Assigned: Torres, Judge A. Date Filed: 02/03/2025
+OTN: X 7654321-1
+STATUS INFORMATION
+Case Status: Closed
+DEFENDANT INFORMATION
+Date Of Birth: 05/05/1985
+CASE PARTICIPANTS
+Participant Type Name
+Defendant Sample, Dana
+CHARGES
+Seq. Statute Grade Description
+1 1 18 § 3921 M1 Theft 02/01/2025 X7654321
+99,999 1 0 § 0 Disposed at Lower Court 02/13/2020
+Lower Court Case Reference
+DISPOSITION SENTENCING/PENALTIES
+Trial
+03/10/2025 Final Disposition
+1 / Theft Guilty
+Torres, Judge A. 03/10/2025
+Probation
+Min of 6.00 Months Max of 12.00 Months
+99,999 Disposed at Lower Court 02/13/2020 Withdrawn

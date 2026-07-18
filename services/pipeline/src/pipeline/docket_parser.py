@@ -10,8 +10,14 @@ identifying sentinel (SENTINEL_COLLISION). Output VALUES deliberately diverge
 from the Capstone baseline for the hardened cases, and 18.3 adds two conditional
 record fields (``event_date``/``event_name`` on non-terminal charges,
 ``min_assumed`` on filled sentences) — the first record-SCHEMA change since the
-port, so the record's internal ``parser_version`` is 2. See tasks/worklog.md for
-the defect inventory and the declared per-task delta classes.
+port, so the record's internal ``parser_version`` is 2. Task 32.2 moves
+``disposition_date`` to the Final Disposition EVENT-line date (the judge-line
+date is the sheet's Sentence Date column and now feeds sentence components
+only, except under an ARD-routed Not-Final event) and drops seq-99,999
+placeholder rows in the CHARGES section — parse-behavior changes, no schema
+change (envelope 5 -> 6, record ``parser_version`` stays 2). See
+tasks/worklog.md for the defect inventory and the declared per-task delta
+classes.
 
 The hardening items emit structural-only warnings (18.1 vocabulary; 18.3 adds
 SENTINEL_COLLISION with plan approval) surfaced as the third element of
@@ -36,6 +42,11 @@ from pipeline.identity import (
     collides_with_sentinels,
     hash_defendant,
 )
+
+# 32.2: the held-form vocabulary is the 29.3 SINGLE authority — imported, never
+# re-listed (F2 discipline). ``outcome_mapper`` is pure (stdlib only), so this
+# import adds no DB or pdfplumber path to the parser.
+from pipeline.normalization.outcome_mapper import HELD_FOR_COURT_DISPOSITIONS
 from pipeline.warning_codes import (
     SENTINEL_COLLISION,
     SUSPECT_JUDGE_LINE,
@@ -585,6 +596,11 @@ def parse_docket_text(
     # Parse Charges
     parsed_charges = {}
     active_charge = None
+    # 32.2 seq-99,999 guard state: True while inside a CPCMS placeholder charge
+    # row (printed sequence literal "99,999"), so the row AND its wrapped
+    # continuation lines are dropped instead of appending to the last real
+    # charge's offense (the C4 leak). Reset by the next real charge row.
+    in_placeholder_charge = False
 
     for line in sections.get("CHARGES", []):
         line_str = line.strip()
@@ -593,8 +609,20 @@ def parse_docket_text(
         if "Seq." in line_str and "Statute" in line_str:
             continue
 
+        # 32.2 seq-99,999 guard: trailing placeholder rows print the literal
+        # sequence "99,999" (comma included), which the real-sequence regex
+        # below rejects — so their text used to fall into the offense-
+        # continuation append. Byte-exact prefix match on the printed literal
+        # plus its following space (18.2 exact-match discipline; false-negative
+        # bias — any other placeholder rendering is left alone and surfaces in
+        # corpus review, never guessed at).
+        if line_str.startswith("99,999 "):
+            in_placeholder_charge = True
+            continue
+
         m_seq = re.match(r"^(\d+)\s+(\d+)\s+(.*)$", line_str)
         if m_seq:
+            in_placeholder_charge = False
             seq = int(m_seq.group(1))
             rest = m_seq.group(3).strip()
 
@@ -666,6 +694,11 @@ def parse_docket_text(
             # OTN). Drop it so it never pollutes the prior charge's offense.
             if "Unknown Statute" in line_str:
                 continue
+            # 32.2: a wrapped continuation line of a dropped 99,999 placeholder
+            # row belongs to that row, not to the last real charge (observed on
+            # the N4-03 audit sheet) — drop it with its parent.
+            if in_placeholder_charge:
+                continue
             if active_charge:
                 if active_charge["offense"]:
                     active_charge["offense"] = active_charge["offense"] + " " + line_str
@@ -689,6 +722,12 @@ def parse_docket_text(
     in_not_final_event = False
     current_event_name = ""
     current_event_date = None
+    # 32.2: the judge-line date is the sheet's "Sentence Date" column, kept in
+    # this parse-local transient (keyed by charge sequence) as the sentence-
+    # component date source. It is written at exactly the same stream events
+    # that used to write disposition_date, so component dates are byte-
+    # identical to pre-32.2 behavior (Option B, D-C hard zero).
+    judge_line_dates: dict[int, object] = {}
 
     def save_current_sentence():
         nonlocal current_sentence_comp
@@ -843,6 +882,21 @@ def parse_docket_text(
             expecting_judge_line = True
             if seq in parsed_charges:
                 parsed_charges[seq]["disposition_raw"] = token if token else None
+                # 32.2: the disposition date is the Final Disposition EVENT-line
+                # date (already captured above), assigned here so the string and
+                # the date always come from the SAME block. Guards: Final blocks
+                # only (an ARD-routed Not-Final event keeps judge-line dating —
+                # decision 4); a non-empty token only (a string-less row must
+                # not become disposed-by-date — the date-without-string class is
+                # empty and stays empty); a held-for-court form never dates
+                # (requirement 4 — don't assign, NEVER clear; a dated held-form
+                # row would be a STOP-class rerun finding, not a parser repair).
+                if (
+                    not in_not_final_event
+                    and token
+                    and token not in HELD_FOR_COURT_DISPOSITIONS
+                ):
+                    parsed_charges[seq]["disposition_date"] = current_event_date
             continue
 
         if current_charge_seq is not None and expecting_judge_line:
@@ -857,8 +911,8 @@ def parse_docket_text(
                         # third-party name guard: a name-shaped capture that
                         # whole-token-collides with an identifying sentinel is
                         # nulled and flagged SENTINEL_COLLISION. Only the judge
-                        # field is affected — the disposition_date on this line is
-                        # still recorded and control flow is unchanged.
+                        # field is affected — the date on this line is still
+                        # recorded and control flow is unchanged.
                         if _is_junk_judge(judge_name):
                             warnings.append(
                                 make_warning(
@@ -879,9 +933,17 @@ def parse_docket_text(
                             parsed_charges[current_charge_seq][
                                 "disposition_judge_raw"
                             ] = judge_name
-                        parsed_charges[current_charge_seq]["disposition_date"] = (
-                            disp_date
-                        )
+                        # 32.2: the judge-line date is the Sentence Date column.
+                        # It always feeds the sentence-component transient; it
+                        # supplies disposition_date ONLY under an ARD-routed
+                        # Not-Final event (decision 4 carve-out — today's
+                        # behavior, unchanged). Final blocks took the event-line
+                        # date at the charge line above.
+                        judge_line_dates[current_charge_seq] = disp_date
+                        if in_not_final_event:
+                            parsed_charges[current_charge_seq]["disposition_date"] = (
+                                disp_date
+                            )
                     expecting_judge_line = False
                     continue
             else:
@@ -918,11 +980,15 @@ def parse_docket_text(
 
             if matched_type:
                 save_current_sentence()
-                charge = parsed_charges[current_charge_seq]
+                # 32.2: the component date comes from the judge-line transient
+                # (the Sentence Date column), not from disposition_date — which
+                # is now the event-line date. The transient holds exactly what
+                # disposition_date held here pre-32.2, so component dates are
+                # byte-identical (Option B).
                 current_sentence_comp = {
                     "sentence_type": matched_type,
                     "program": line_str,
-                    "sentence_date": charge["disposition_date"],
+                    "sentence_date": judge_line_dates.get(current_charge_seq),
                     "raw_text_parts": [line_str],
                 }
             elif current_sentence_comp:

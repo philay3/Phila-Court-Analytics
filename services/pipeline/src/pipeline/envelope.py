@@ -8,8 +8,9 @@ envelope is the exact object ``parse_docket_text`` returns — nothing inside it
 added, removed, renamed, or reformatted (criterion 5).
 
 Two version numbers, deliberately distinct (decision 4 + decision 7): the
-ENVELOPE carries ``parser_version = 5`` (bumped 4 -> 5 in 18.4 for the single-line
-event-header capture fix — a parse-BEHAVIOR change), while the wrapped record
+ENVELOPE carries ``parser_version = 6`` (bumped 4 -> 5 in 18.4 for the single-line
+event-header capture fix, 5 -> 6 in 32.2 for the event-line disposition-date
+capture + seq-99,999 charge guard — parse-BEHAVIOR changes), while the wrapped record
 carries its own internal ``parser_version = 2`` (bumped 1 -> 2 in 18.3, the first
 record-SCHEMA change since the port: the conditional
 ``event_date``/``event_name``/``min_assumed`` fields; unchanged by 18.4, which
@@ -65,8 +66,10 @@ logger = logging.getLogger("pipeline.envelope")
 # The envelope format / parse-pipeline version (decision 4). Distinct from the
 # wrapped record's internal parser_version, which is 2 as of 18.3 (decision 7).
 # Bumped 3 -> 4 in 18.3 for the hardened parse pipeline; 4 -> 5 in 18.4 for the
-# single-line event-header capture fix (parse-behavior change, no schema change).
-ENVELOPE_PARSER_VERSION = 5
+# single-line event-header capture fix (parse-behavior change, no schema change);
+# 5 -> 6 in 32.2 for the event-line disposition-date capture + seq-99,999
+# charge guard (parse-behavior changes, no schema change).
+ENVELOPE_PARSER_VERSION = 6
 
 # Parse status vocabulary (decision 4/5): exactly one per envelope.
 PARSE_STATUS_PARSED = "parsed"

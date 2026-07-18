@@ -83,7 +83,7 @@ INDEX_PATH = TIER1_DIR / "fixture-index.yaml"
 #   source_sha256        the PDF's content hash — identifies the source file,
 #                        not parse output (empty/placeholder for tier-1 text
 #                        fixtures, which have no source PDF).
-#   parser_version       the ENVELOPE wrapper's own format version (currently 5).
+#   parser_version       the ENVELOPE wrapper's own format version (currently 6).
 #                        DISTINCT from record["parser_version"] (currently 2, the
 #                        record-schema axis), which is NOT dropped and stays
 #                        visible in the golden as a regression signal.

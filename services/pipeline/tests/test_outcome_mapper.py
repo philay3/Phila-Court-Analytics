@@ -60,16 +60,43 @@ EXPECTED_CATEGORIES = {
     "other",
 }
 
-# The six real corpus values that are NOT in the table (malformed/garbage
-# captures) — each must route to unknown + one review item.
+# Real corpus values that are NOT in the table — each must route to unknown +
+# one review item. "Nolo Contendere/Probation" left this list when Task 32.3
+# mapped it; the contaminated forms (never map keys, ruling 5) and the deferred
+# "Proceed to Court" (non-terminal continuation shape, Sprint 9) stay.
 UNMAPPED_VALUES = [
     "DUI: High Rte of Alc (Bac.10 - <.16) 1st Off Guilty Plea - Negotiated M 75 § 3802 §§ B*",  # noqa: E501
     "26/2024",
     "DUI: Highest Rte of Alc (BAC .16+) 1st Off Guilty M 75 § 3802 §§ C*",
-    "Nolo Contendere/Probation",
+    "Proceed to Court",
     "Permitting Violation - Accident Involving Damage Guilty S 75 § 3743 §§ A-P",
     "RD - County",
+    "ismissed - LOE",
+    "ARD - County Open",
 ]
+
+# The Task 32.3 additions, pinned LITERALLY (independent of the map object) so
+# the approved table cannot drift without this test noticing. Approved in
+# planning chat 2026-07-17 per the 2026-07-16 directional rulings.
+TASK_32_3_ADDITIONS: dict[str, str] = {
+    "Dismissed - LOP": "dismissed",
+    "Dismissed - Rule 1013": "dismissed",
+    "Dismissed - Rule 586": "dismissed",
+    "Dismissed - Rule 546": "dismissed",
+    "Dismissed - Abatement": "dismissed",
+    "Dismissed - De Minimis": "dismissed",
+    "Nolo Contendere/Probation": "guilty_plea",
+    "Mistrial": "other",
+    "Guilty Plea - Non-Negotiated IC": "guilty_plea",
+    "Guilty Plea IC": "guilty_plea",
+    "Nolle Prossed IC": "dismissed",
+    "Quashed IC": "dismissed",
+    "Dismissed - Abatement IC": "dismissed",
+    "Withdrawn IC": "withdrawn",
+    "Judgment of Acquittal IC": "acquittal",
+    "Not Guilty IC": "acquittal",
+    "Charge Changed (Lower Court)": "other",
+}
 
 
 @pytest.fixture
@@ -116,6 +143,30 @@ def test_each_expected_category_is_reachable(mapper: OutcomeMapper) -> None:
         assert result is not None
         produced.add(result.outcome_code)
     assert produced == EXPECTED_CATEGORIES
+
+
+@pytest.mark.parametrize(("raw", "code"), sorted(TASK_32_3_ADDITIONS.items()))
+def test_32_3_addition_maps_to_its_approved_category(
+    mapper: OutcomeMapper, raw: str, code: str
+) -> None:
+    # Each 32.3 key is present and maps to the category the table gate approved.
+    assert DISPOSITION_OUTCOME_MAP.get(raw) == code
+    result = mapper.map(raw)
+    assert result is not None
+    assert result.mapped is True
+    assert result.review_needed is False
+    assert result.outcome_code == code
+    assert result.public_eligible is True
+
+
+def test_32_3_additions_count_is_exactly_seventeen() -> None:
+    assert len(TASK_32_3_ADDITIONS) == 17
+
+
+def test_32_3_additions_introduced_no_new_categories() -> None:
+    # Additive-only guarantee at the category level: the 32.3 keys land entirely
+    # inside the pre-existing seven mapped categories (no taxonomy bump).
+    assert set(TASK_32_3_ADDITIONS.values()) <= EXPECTED_CATEGORIES
 
 
 def test_mapped_result_builds_no_review_item(mapper: OutcomeMapper) -> None:

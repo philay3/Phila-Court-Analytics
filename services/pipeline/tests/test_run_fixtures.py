@@ -51,7 +51,7 @@ def _envelope(
     projection is supposed to drop."""
     return {
         "source_sha256": "placeholder",
-        "parser_version": 5,  # envelope wrapper version — dropped
+        "parser_version": 6,  # envelope wrapper version — dropped
         "extraction_artifact": {"artifact_id": "x", "text_hash": None},  # dropped
         "record": _record() if record is _DEFAULT_RECORD else record,
         "warnings": warnings or [],
