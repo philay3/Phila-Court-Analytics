@@ -19,9 +19,14 @@
  * neutral, non-comparative framing (verified by the direct scan test).
  */
 export const RESULT_DISPLAY_COPY = {
-  // Table captions — name each distribution (acceptance criterion 6).
+  // Table captions — name each distribution (acceptance criterion 6). The
+  // sentencing caption carries the conditional framing (task 33.2 pinned
+  // decision 1): sentencing leads only where data exists, and the caption is
+  // the honesty device stating the conviction-conditional scope. It is a
+  // caption, not a heading — hierarchy is untouched.
   outcomeCaption: 'Historical outcome distribution',
-  sentencingCaption: 'Historical sentencing distribution',
+  sentencingCaption:
+    'Historical sentencing distribution — when cases like this ended in conviction',
 
   // Column headers. The category column is named per kind; count and
   // percentage are always shown together.

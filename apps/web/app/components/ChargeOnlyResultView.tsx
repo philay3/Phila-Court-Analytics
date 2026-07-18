@@ -9,8 +9,15 @@
  * single-column, mobile-first layout — no CSS `order`. Each top-level block
  * carries a `data-testid="section-*"` so the order is asserted directly:
  *   result summary → responsible-use notice → thin-data callout (when either
- *   distribution is thin) → outcome distribution → sentencing distribution →
- *   definitions/methodology links → judge-filter entry point.
+ *   distribution is thin) → the two distributions → definitions/methodology
+ *   links → judge-filter entry point.
+ *
+ * Distribution order is CONDITIONAL on the API `sentencing.available` flag
+ * (task 33.2 pinned decision 4): where sentencing data exists the sentencing
+ * block leads and the outcome block is demoted below it; on the
+ * sentencing-unavailable arm the outcome block leads and the sentencing slot
+ * below renders the existing callout. The branch consumes the API boolean
+ * only — no counts or thresholds are evaluated here.
  *
  * Every count, percentage, sample size, date, and label renders through the
  * 11.4 formatters (pinned decision 7); the page computes no analytics.
@@ -40,6 +47,31 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
   // precise thin-data badge inside DistributionSection.
   const showThinDataCallout = outcomes.thinData || (sentencing.available && sentencing.thinData);
 
+  const outcomeBlock = (
+    <div data-testid="section-outcome" className="overflow-x-auto">
+      <DistributionSection
+        kind="outcome"
+        rows={outcomes.rows}
+        sampleSize={outcomes.sampleSize}
+        thinData={outcomes.thinData}
+      />
+    </div>
+  );
+  const sentencingBlock = (
+    <div data-testid="section-sentencing" className="overflow-x-auto">
+      {sentencing.available ? (
+        <DistributionSection
+          kind="sentencing"
+          rows={sentencing.rows}
+          sampleSize={sentencing.sampleSize}
+          thinData={sentencing.thinData}
+        />
+      ) : (
+        <SentencingUnavailableNotice methodologyHref={links.methodology} />
+      )}
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-8">
       <section data-testid="section-summary" className="space-y-2">
@@ -62,27 +94,17 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
         </div>
       )}
 
-      <div data-testid="section-outcome" className="overflow-x-auto">
-        <DistributionSection
-          kind="outcome"
-          rows={outcomes.rows}
-          sampleSize={outcomes.sampleSize}
-          thinData={outcomes.thinData}
-        />
-      </div>
-
-      <div data-testid="section-sentencing" className="overflow-x-auto">
-        {sentencing.available ? (
-          <DistributionSection
-            kind="sentencing"
-            rows={sentencing.rows}
-            sampleSize={sentencing.sampleSize}
-            thinData={sentencing.thinData}
-          />
-        ) : (
-          <SentencingUnavailableNotice methodologyHref={links.methodology} />
-        )}
-      </div>
+      {sentencing.available ? (
+        <>
+          {sentencingBlock}
+          {outcomeBlock}
+        </>
+      ) : (
+        <>
+          {outcomeBlock}
+          {sentencingBlock}
+        </>
+      )}
 
       <p data-testid="section-links" className="flex flex-wrap gap-4">
         <Link href={links.methodology} className={LINK_CLASS}>
