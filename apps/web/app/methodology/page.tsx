@@ -34,9 +34,19 @@ export const dynamic = 'force-dynamic';
 export default async function MethodologyPage() {
   const result = await getMethodology();
 
+  // DP-3: content routes render as a 760px article inside the 1200px shell
+  // (bglad §12.1); the shell itself lives in the root layout.
   if (!result.ok) {
-    return <MethodologyErrorState message={methodologyFailureMessage(result.error)} />;
+    return (
+      <div className="mx-auto w-full max-w-article">
+        <MethodologyErrorState message={methodologyFailureMessage(result.error)} />
+      </div>
+    );
   }
 
-  return <MethodologyView data={result.data} />;
+  return (
+    <div className="mx-auto w-full max-w-article">
+      <MethodologyView data={result.data} />
+    </div>
+  );
 }

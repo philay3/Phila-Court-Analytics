@@ -55,21 +55,31 @@ export default async function JudgeResultPage({ params }: JudgeResultPageProps) 
     // never surfaces this message or any request detail.
     throw new Error('The judge-specific result could not be loaded.');
   }
+  // DP-3: the success view manages its own two-column layout inside the
+  // 1200px shell; every non-success state stays a single 760px article.
   if (state.kind === 'not-found') {
     return (
-      <ResultNotFoundView
-        message={state.reason === 'judge' ? JUDGE_NOT_FOUND_MESSAGE : CHARGE_NOT_FOUND_MESSAGE}
-      />
+      <div className="mx-auto w-full max-w-article">
+        <ResultNotFoundView
+          message={state.reason === 'judge' ? JUDGE_NOT_FOUND_MESSAGE : CHARGE_NOT_FOUND_MESSAGE}
+        />
+      </div>
     );
   }
   if (state.kind === 'charge-unavailable') {
     // Designed friendly state for a charge with no publishable aggregate,
     // handled before the generic throw above catches truly unexpected responses.
-    return <JudgeChargeUnavailableView />;
+    return (
+      <div className="mx-auto w-full max-w-article">
+        <JudgeChargeUnavailableView />
+      </div>
+    );
   }
   return state.kind === 'success' ? (
     <JudgeSpecificResultView data={state.data} />
   ) : (
-    <JudgeUnavailableView data={state.data} />
+    <div className="mx-auto w-full max-w-article">
+      <JudgeUnavailableView data={state.data} />
+    </div>
   );
 }

@@ -10,17 +10,17 @@ import { SLUGS } from '../support/constants';
 
 // The pinned mobile content order for a NON-thin, sentencing-available charge
 // (retail-theft has no thin-data callout and carries sentencing data): summary
-// → responsible-use → sentencing → outcome → links → judge-filter entry.
-// Sentencing leads per the 33.2 conditional order (sentencing.available →
-// sentencing first); source order in a single-column, mobile-first layout — no
-// CSS `order`.
+// → responsible-use → sentencing → outcome → metadata aside (DP-3 pinned DOM
+// order; the aside renders at its DOM position — last — below 900px, and the
+// former links/judge-filter blocks live inside it). Sentencing leads per the
+// 33.2 conditional order (sentencing.available → sentencing first); source
+// order, no CSS `order`.
 const EXPECTED_SECTION_ORDER = [
   'section-summary',
   'section-responsible-use',
   'section-sentencing',
   'section-outcome',
-  'section-links',
-  'section-judge-filter',
+  'section-metadata',
 ];
 
 test.use({ viewport: { width: 390, height: 844 } });
@@ -31,9 +31,16 @@ test('charge-only result at 390px: content order holds and no horizontal scroll'
   await page.goto(`/charges/${SLUGS.chargeDataBearing}`);
   await expect(page.getByTestId('section-summary')).toBeVisible();
 
-  const order = await page
-    .locator('[data-testid^="section-"]')
-    .evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-testid')));
+  // Top-level pinned order only: testids nested inside the metadata aside
+  // (the frozen section-judge-filter) are its contents, not page-level order.
+  const order = await page.locator('[data-testid^="section-"]').evaluateAll((nodes) =>
+    nodes
+      .filter((n) => {
+        const aside = n.closest('[data-testid="section-metadata"]');
+        return aside === null || aside === n;
+      })
+      .map((n) => n.getAttribute('data-testid')),
+  );
   expect(order).toEqual(EXPECTED_SECTION_ORDER);
 
   // No horizontal overflow: the document is not wider than the viewport.

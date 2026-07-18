@@ -4,7 +4,7 @@ import { HOME_COPY } from './components/home-copy';
 
 export default function HomePage() {
   return (
-    <>
+    <div className="mx-auto w-full max-w-article">
       <h1>{HOME_COPY.heading}</h1>
       <p className="text-muted">{HOME_COPY.intro}</p>
 
@@ -23,6 +23,6 @@ export default function HomePage() {
         </Link>{' '}
         ({HOME_COPY.dataCoverageLinkDescription}).
       </p>
-    </>
+    </div>
   );
 }

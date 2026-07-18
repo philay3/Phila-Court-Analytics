@@ -10,7 +10,7 @@ import { CHARGE_RESULT_COPY } from '../../components/charge-result-copy';
  */
 export default function NotFound() {
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-article space-y-4">
       <h1>{CHARGE_RESULT_COPY.notFoundHeading}</h1>
       <p className="text-muted">{CHARGE_NOT_FOUND_MESSAGE}</p>
       <Link href="/" className="text-accent hover:text-accent-hover hover:underline">

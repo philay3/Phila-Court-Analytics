@@ -39,7 +39,7 @@ function DefinitionsSection({ kind, heading, entries }: DefinitionsSectionProps)
         {entries.map((entry) => (
           <div
             key={entry.code}
-            className="space-y-1 border-b border-hairline pb-4 md:grid md:grid-cols-[185px_1fr] md:gap-x-4 md:space-y-0"
+            className="space-y-1 border-b border-hairline pb-4 tablet:grid tablet:grid-cols-[185px_1fr] tablet:gap-x-4 tablet:space-y-0"
           >
             <dt>
               <h3
@@ -63,7 +63,7 @@ interface DefinitionsViewProps {
 
 export function DefinitionsView({ data }: DefinitionsViewProps) {
   return (
-    <div className="section-counter-reset flex flex-col gap-10">
+    <div className="section-counter-reset flex flex-col gap-10 desktop:gap-12">
       <header className="space-y-3">
         <h1>{DEFINITIONS_COPY.heading}</h1>
         <p className="text-muted">{DEFINITIONS_COPY.intro}</p>

@@ -7515,3 +7515,54 @@ state incl. 390px) green locally against a migrated+seeded scratch
 approved fix). Next task should know: the AC13 product review gate and
 PR open on operator instruction; the coverage window band and all
 copy-gated bundle items remain excluded per spec.
+
+## Task DP-3 — Layout System (2026-07-18)
+
+bglad structural layer on the untouched Civic Atlas skin, branch
+`phase-dp3`, commits DP-3.1–DP-3.4. Breakpoint framework: Tailwind
+defaults retired for a closed tablet 640 / desktop 900 (principal
+switch, custom token) / wide 1200 set; `--container-content` (44rem)
+retired for `--container-shell` (1200px) + `--container-article`
+(760px) with sidebar tokens (320px wide / 288px compact); root layout
+is the shell with 16/24/28/32px tiered gutters and §5.3 vertical
+rhythm; all ten DP-2 `md:` usages migrated per the approved map
+(SearchForm grid + coverage stat cards to `desktop:`, utility rows to
+`tablet:`; h1 step-up moved 768→900). Content routes, homepage, and
+result-route non-success states render as 760px articles. Result
+success views: two-column §9.2 grid at ≥900 (minmax(0,1fr) main +
+token-width sticky aside, desktop-only stickiness, 24px offset),
+single column below with the aside DOM-last; new shared
+ResultMetadataAside carrying the relocated last-refreshed line and
+Definitions/Methodology links (byte-identical), charge-page
+sample-size pairs, judge-page remove-filter link; `section-links`
+dissolved. Judge-filter disclosure (new JudgeDisclosure): native
+button, aria-expanded/aria-controls, hidden-attribute closed state, no
+animation, CSS generated-content plus/minus glyph, wrapping
+JudgeFilterEntry (charge aside) and the homepage judge region — all
+inner ARIA/testids/strings/staged-commit logic byte-identical.
+SANCTIONED NEW STRINGS, exactly four (the ACs' "five" adjudicated a
+drafting artifact): `About this result`
+(RESULT_DISPLAY_COPY.asideHeading), `Outcomes` / `Sentencing`
+(CHARGE_RESULT_COPY.asideOutcomesLabel/asideSentencingLabel),
+`Add judge filter` (CHARGE_RESULT_COPY.judgeDisclosureTriggerText).
+Honesty apparatus unmoved: responsible-use and coverage-note positions
+pinned by the updated order tests. Tests: order arrays updated to the
+DP-3 pinned orders (helpers exclude aside-nested testids);
+mobile.spec order updated; one adjudicated STOP — the aside's
+sanctioned sample-size duplication broke two unscoped
+ChargeOnlyResultView assertions, resolved by ruling (scoped to owning
+sections + one additive aside-duplication assertion); approved
+disclosure steps added to SearchForm/home-and-search/judge-flow tests
+with every prior assertion retained; new JudgeDisclosure +
+ResultMetadataAside unit tests; new reflow.spec.ts (320px homepage
+closed+open disclosure and charge page, WCAG 1.4.10, plus 1024px
+two-column smoke). All gates green locally against a migrated+seeded
+scratch `pca_e2e` (canonical `pca` untouched). ENVIRONMENT FLAG for
+the operator: the repo-root `.env` `DATABASE_URL` currently points at
+the production Render database — E2E prerequisites were satisfied via
+explicit shell-env overrides only; nothing was migrated or seeded
+against that URL, but the value should be repointed locally before any
+tool relies on `.env`. Next task should know: the DP-3 review gate
+(Chops, four viewports) precedes the phase PR; nav fits three items at
+320px by measurement, so no hamburger; Charges nav item and homepage
+hero composition are DP-4.

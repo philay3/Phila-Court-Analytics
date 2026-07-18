@@ -4,6 +4,7 @@ import { assertPageClean } from '../support/checks';
 import { selectFromCombobox } from '../support/combobox';
 import { DISPLAY_NAMES, SLUGS } from '../support/constants';
 import { JUDGE_RESULT_COPY } from '../../apps/web/app/components/judge-result-copy';
+import { CHARGE_RESULT_COPY } from '../../apps/web/app/components/charge-result-copy';
 
 /**
  * Judge filter flows (task 15.2 scope 2): add a judge to reach the
@@ -17,6 +18,8 @@ test('add judge → judge-specific result, then remove filter → charge-only', 
   await page.goto('/');
 
   await selectFromCombobox(page, '#charge-search', 'retail', DISPLAY_NAMES.chargeDataBearing);
+  // DP-3: open the judge disclosure before driving the (unchanged) combobox.
+  await page.getByRole('button', { name: CHARGE_RESULT_COPY.judgeDisclosureTriggerText }).click();
   await selectFromCombobox(page, '#judge-search', 'testina', DISPLAY_NAMES.judgeDataBearing);
   await page.locator('form button[type="submit"]').click();
 

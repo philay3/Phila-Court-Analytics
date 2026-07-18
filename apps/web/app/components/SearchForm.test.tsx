@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ChargeSearchResult, JudgeSearchResult } from '@pca/shared';
 import { HOME_COPY } from './home-copy.js';
 import { CHARGE_SEARCH_COPY } from './charge-search-copy.js';
+import { CHARGE_RESULT_COPY } from './charge-result-copy.js';
 
 const DEBOUNCE_MS = 250;
 
@@ -131,6 +132,15 @@ describe('SearchForm judge submission matrix', () => {
     return screen.getByRole('combobox', { name: HOME_COPY.judgeLabel }) as HTMLInputElement;
   }
 
+  /** DP-3: the judge region sits behind the disclosure; open it once before
+   *  the first judge interaction (sanctioned additive step — every existing
+   *  assertion below is retained post-open). */
+  function openJudgeDisclosure(): void {
+    fireEvent.click(
+      screen.getByRole('button', { name: CHARGE_RESULT_COPY.judgeDisclosureTriggerText }),
+    );
+  }
+
   async function commitCharge(): Promise<void> {
     fireEvent.change(combobox(), { target: { value: 'alpha' } });
     await settleDebounce();
@@ -152,6 +162,7 @@ describe('SearchForm judge submission matrix', () => {
     render(<SearchForm />);
 
     await commitCharge();
+    openJudgeDisclosure();
     await commitJudge();
     submit();
 
@@ -162,6 +173,7 @@ describe('SearchForm judge submission matrix', () => {
     vi.stubGlobal('fetch', branchingFetch());
     render(<SearchForm />);
 
+    openJudgeDisclosure();
     await commitJudge();
     submit();
 
@@ -180,6 +192,7 @@ describe('SearchForm judge submission matrix', () => {
     vi.stubGlobal('fetch', branchingFetch());
     render(<SearchForm />);
 
+    openJudgeDisclosure();
     await commitJudge();
     // Edit after commit clears the judge commit (shared combobox behavior).
     fireEvent.change(judgeCombobox(), { target: { value: `${JUDGE.displayName} extra` } });

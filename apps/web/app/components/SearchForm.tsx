@@ -24,6 +24,7 @@ import type { ChargeSearchResult, JudgeSearchResult } from '@pca/shared';
 import { HOME_COPY } from './home-copy';
 import { CHARGE_SEARCH_COPY } from './charge-search-copy';
 import { ChargeSearchInput } from './ChargeSearchInput';
+import { JudgeDisclosure } from './JudgeDisclosure';
 import { JudgeSearchInput } from './JudgeSearchInput';
 
 export function SearchForm() {
@@ -69,13 +70,15 @@ export function SearchForm() {
 
       <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-4">
         {/* Civic Atlas segmented search card (task DP-2): one 2px ink card,
-            stacked on mobile, three-column grid on md+, 1px tan internal
-            separators. Labels are the frozen HOME_COPY strings, CSS-cased
-            into caps micro-headers. Region order and all ARIA wiring are
-            unchanged from the 12.x layout. */}
-        <div className="border-2 border-ink bg-card md:grid md:grid-cols-[1fr_18rem_11rem]">
+            stacked below the 900px principal layout switch, three-column grid
+            on desktop+ (DP-3; two primary controls never sit side by side
+            below it, bglad §5.4/§7.8), 1px tan internal separators. Labels are
+            the frozen HOME_COPY strings, CSS-cased into caps micro-headers.
+            Region order and all ARIA wiring are unchanged from the 12.x
+            layout. */}
+        <div className="border-2 border-ink bg-card desktop:grid desktop:grid-cols-[1fr_18rem_11rem]">
           {/* Charge region — visually PRIMARY */}
-          <div className="border-b border-rule p-5 md:border-r md:border-b-0">
+          <div className="border-b border-rule p-5 desktop:border-r desktop:border-b-0">
             <label
               htmlFor="charge-search"
               className="block text-xs font-semibold tracking-[.12em] text-ink uppercase"
@@ -95,28 +98,32 @@ export function SearchForm() {
             />
           </div>
 
-          {/* Judge region — visually SECONDARY, optional */}
-          <div className="border-b border-rule p-5 md:border-r md:border-b-0">
-            <label
-              htmlFor="judge-search"
-              className="block text-xs font-semibold tracking-[.12em] text-faint uppercase"
-            >
-              {HOME_COPY.judgeLabel}
-            </label>
-            <p id="judge-search-help" className="mt-1 text-sm text-muted">
-              {HOME_COPY.judgeHelp}
-            </p>
-            {/* Task 12.3: the disabled 12.1 placeholder is replaced by the judge
-                combobox. The id and aria-describedby wiring are preserved. */}
-            <JudgeSearchInput
-              id="judge-search"
-              describedById="judge-search-help"
-              committedJudge={committedJudge}
-              onCommitChange={handleJudgeCommitChange}
-            />
+          {/* Judge region — visually SECONDARY, optional. DP-3: the region
+              sits behind the shared JudgeDisclosure; label, help, combobox
+              wiring, and staged-commit behavior are byte-identical inside. */}
+          <div className="border-b border-rule p-5 desktop:border-r desktop:border-b-0">
+            <JudgeDisclosure>
+              <label
+                htmlFor="judge-search"
+                className="block text-xs font-semibold tracking-[.12em] text-faint uppercase"
+              >
+                {HOME_COPY.judgeLabel}
+              </label>
+              <p id="judge-search-help" className="mt-1 text-sm text-muted">
+                {HOME_COPY.judgeHelp}
+              </p>
+              {/* Task 12.3: the disabled 12.1 placeholder is replaced by the judge
+                  combobox. The id and aria-describedby wiring are preserved. */}
+              <JudgeSearchInput
+                id="judge-search"
+                describedById="judge-search-help"
+                committedJudge={committedJudge}
+                onCommitChange={handleJudgeCommitChange}
+              />
+            </JudgeDisclosure>
           </div>
 
-          <div className="flex items-stretch p-4 md:items-end">
+          <div className="flex items-stretch p-4 desktop:items-end">
             <button
               type="submit"
               className="min-h-11 w-full bg-ink px-5 py-3 text-sm font-semibold tracking-[.08em] text-card uppercase hover:bg-ink-hover"

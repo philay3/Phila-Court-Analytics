@@ -5,7 +5,16 @@
  * This @theme block is the ONLY place a hex value may appear under app/
  * (DP-2 acceptance criterion 1). Each token generates its matching
  * utility (--color-ink -> text-ink/bg-ink/border-ink, --font-serif ->
- * font-serif, --container-content -> max-w-content).
+ * font-serif, --container-shell -> max-w-shell).
+ *
+ * Layout system (task DP-3, bglad structural layer): the default Tailwind
+ * breakpoints are retired and replaced by a closed three-tier set —
+ * tablet 640px, desktop 900px (the principal layout switch), wide 1200px.
+ * Legacy sm:/md:/lg: prefixes no longer compile. Containers: the 1200px
+ * app shell and the 760px article; the sidebar widths feed the result-page
+ * two-column grid (320px at wide, 288px at compact desktop). Gutters and
+ * vertical rhythm ride standard spacing utilities on the shell in
+ * layout.tsx (16/24/28/32px gutters by tier).
  *
  * Roles:
  *   paper   — page background            card  — cards, inputs, listboxes
@@ -48,7 +57,14 @@
   --color-cat-8: #bbbbbb;
   --font-serif: var(--font-source-serif-4), Georgia, serif;
   --font-sans: var(--font-source-sans-3), system-ui, sans-serif;
-  --container-content: 44rem;
+  --breakpoint-*: initial;
+  --breakpoint-tablet: 40rem;
+  --breakpoint-desktop: 56.25rem;
+  --breakpoint-wide: 75rem;
+  --container-shell: 75rem;
+  --container-article: 47.5rem;
+  --sidebar-width: 20rem;
+  --sidebar-width-compact: 18rem;
 }
 
 @layer base {
@@ -79,7 +95,9 @@
 
   /*
    * Civic Atlas heading scale: serif display over the sans body. Mobile
-   * sizes are the base; the desktop step-up rides the md breakpoint.
+   * sizes are the base; the desktop step-up rides the 900px principal
+   * layout switch (DP-3). The h1 bottom margin is the bglad §5.3
+   * heading-to-lead gap: 12/14/16px by tier.
    * Kept in @layer base so per-component utilities still override.
    */
   h1 {
@@ -118,8 +136,15 @@
     color: var(--color-ink);
   }
 
-  @media (min-width: 48rem) {
+  @media (min-width: 40rem) {
     h1 {
+      margin-bottom: 0.875rem;
+    }
+  }
+
+  @media (min-width: 56.25rem) {
+    h1 {
+      margin-bottom: 1rem;
       font-size: 2.25rem;
       line-height: 1.1;
     }
@@ -141,6 +166,24 @@
     transparent 1px,
     transparent 10%
   );
+}
+
+/*
+ * Judge-disclosure trigger glyph (task DP-3, bglad §14.3): plus when closed,
+ * minus when open, keyed off aria-expanded so the DOM state is the single
+ * source of truth. Generated content with an empty alternative text (`/ ''`)
+ * so the glyph never reaches the accessible name — the button's name is the
+ * sanctioned trigger string alone (same pinned-decision grammar as the
+ * section counters below: glyphs are CSS generated content, never JSX string
+ * literals).
+ */
+@utility disclosure-glyph {
+  &::before {
+    content: '+ ' / '';
+  }
+  &[aria-expanded='true']::before {
+    content: '− ' / '';
+  }
 }
 
 /*

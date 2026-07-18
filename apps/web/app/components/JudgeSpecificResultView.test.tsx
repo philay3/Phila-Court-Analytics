@@ -92,9 +92,15 @@ function makeSuccess(
 }
 
 function sectionOrder(container: HTMLElement): string[] {
-  return Array.from(container.querySelectorAll('[data-testid^="section-"]')).map((element) =>
-    element.getAttribute('data-testid'),
-  ) as string[];
+  // Top-level pinned order only (DP-3): the metadata aside itself is a pinned
+  // section; testids nested inside it are its contents, not part of the
+  // page-level order (parity with the ChargeOnlyResultView helper).
+  return Array.from(container.querySelectorAll('[data-testid^="section-"]'))
+    .filter((element) => {
+      const aside = element.closest('[data-testid="section-metadata"]');
+      return aside === null || aside === element;
+    })
+    .map((element) => element.getAttribute('data-testid')) as string[];
 }
 
 describe('JudgeSpecificResultView', () => {
@@ -270,7 +276,7 @@ describe('JudgeSpecificResultView', () => {
       'section-judge-outcome',
       'section-baseline-sentencing',
       'section-baseline-outcome',
-      'section-links',
+      'section-metadata',
     ]);
   });
 
@@ -308,7 +314,7 @@ describe('JudgeSpecificResultView', () => {
       'section-judge-sentencing',
       'section-baseline-outcome',
       'section-baseline-sentencing',
-      'section-links',
+      'section-metadata',
     ]);
   });
 
@@ -326,7 +332,7 @@ describe('JudgeSpecificResultView', () => {
       'section-judge-sentencing',
       'section-baseline-sentencing',
       'section-baseline-outcome',
-      'section-links',
+      'section-metadata',
     ]);
   });
 
@@ -344,7 +350,7 @@ describe('JudgeSpecificResultView', () => {
       'section-judge-outcome',
       'section-baseline-outcome',
       'section-baseline-sentencing',
-      'section-links',
+      'section-metadata',
     ]);
   });
 });

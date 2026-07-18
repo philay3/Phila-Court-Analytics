@@ -13,14 +13,20 @@
  * when its `available === false` arm is present — a missing sentencing slot
  * never fails the page.
  *
- * Mobile content order (pinned decision 6) is DOM source order in a single
- * column, mobile-first, no CSS `order`. Leaf blocks carry `data-testid`s so the
- * order is asserted directly:
+ * Content order (pinned decision 6, DP-3 pinned DOM order) is DOM source
+ * order, no CSS `order`. Leaf blocks carry `data-testid`s so the order is
+ * asserted directly:
  *   summary → responsible-use → thin-data → judge slots → baseline slots →
- *   links.
+ *   metadata aside.
  * The two section HEADINGS ("Judge-specific result", "Philadelphia-wide
  * baseline") wrap their two slots without their own `section-*` testid, so the
- * leaf order matches the pinned mobile order one-for-one.
+ * leaf order matches the pinned order one-for-one. At ≥900px the view is a
+ * two-column grid (main column + sidebar, bglad §9.2 adapted; scope-major
+ * structure untouched per structure override 3); below 900px it is the same
+ * DOM in a single column, the aside last. The former `section-links` block
+ * dissolved into the aside (remove-filter link as the aside action); the
+ * last-refreshed line relocated there byte-identically. No aside sample sizes
+ * on this view — they stay in the scope-section headers only (DP-3).
  *
  * Slot order WITHIN each scope is conditional on that scope's API
  * `sentencing.available` flag (task 33.2 pinned decisions 3–4): available →
@@ -35,13 +41,13 @@
 import { useId } from 'react';
 import Link from 'next/link';
 import type { JudgeSpecificResultSuccess, ResultDistributions } from '@pca/shared';
-import { formatLastRefreshed, formatResultTypeLabel } from '../lib/formatters';
+import { formatResultTypeLabel } from '../lib/formatters';
 import { DateRangeLabel } from './DateRangeLabel';
 import { ResponsibleUseNotice } from './ResponsibleUseNotice';
 import { ThinDataCallout } from './ThinDataCallout';
 import { DistributionSection } from './DistributionSection';
 import { SentencingUnavailableNotice } from './SentencingUnavailableNotice';
-import { CHARGE_RESULT_COPY } from './charge-result-copy';
+import { ResultMetadataAside } from './ResultMetadataAside';
 import { JUDGE_RESULT_COPY } from './judge-result-copy';
 import { RESULT_DISPLAY_COPY } from './result-display-copy';
 
@@ -69,64 +75,68 @@ export function JudgeSpecificResultView({ data }: JudgeSpecificResultViewProps) 
 
   return (
     // section-counter-reset scopes the Roman-numeral markers the four
-    // DistributionSection captions render via CSS counters (DP-2).
-    <div className="section-counter-reset flex flex-col gap-8">
-      <section data-testid="section-summary" className="space-y-2">
-        <h1>{charge.displayName}</h1>
-        <p className="text-base font-semibold text-ink">{judge.displayName}</p>
-        <p className="text-base font-semibold text-ink">{formatResultTypeLabel(data.resultType)}</p>
-        <DateRangeLabel range={data.dateRange} />
-        <p className="text-sm text-muted">
-          {CHARGE_RESULT_COPY.lastRefreshedLabel}: {formatLastRefreshed(data.lastRefreshed)}
-        </p>
-        <p className="text-sm text-muted">{RESULT_DISPLAY_COPY.coverageNote}</p>
-      </section>
+    // DistributionSection captions render via CSS counters (DP-2). The root is
+    // a single column below 900px and the bglad §9.2 grid at desktop+ (same
+    // frame as ChargeOnlyResultView); the two-column frame simply wraps the
+    // existing scope-major structure (structure override 3).
+    <div className="section-counter-reset flex flex-col gap-7 tablet:gap-8 desktop:grid desktop:grid-cols-[minmax(0,1fr)_var(--sidebar-width-compact)] desktop:items-start desktop:gap-x-8 wide:grid-cols-[minmax(0,1fr)_var(--sidebar-width)] wide:gap-x-10">
+      <div className="flex min-w-0 flex-col gap-7 tablet:gap-8 desktop:gap-10">
+        <section data-testid="section-summary" className="space-y-2">
+          <h1>{charge.displayName}</h1>
+          <p className="text-base font-semibold text-ink">{judge.displayName}</p>
+          <p className="text-base font-semibold text-ink">
+            {formatResultTypeLabel(data.resultType)}
+          </p>
+          <DateRangeLabel range={data.dateRange} />
+          <p className="text-sm text-muted">{RESULT_DISPLAY_COPY.coverageNote}</p>
+        </section>
 
-      <div data-testid="section-responsible-use">
-        <ResponsibleUseNotice />
+        <div data-testid="section-responsible-use">
+          <ResponsibleUseNotice />
+        </div>
+
+        {showThinDataCallout && (
+          <div data-testid="section-thin-data">
+            <ThinDataCallout thin={showThinDataCallout} />
+          </div>
+        )}
+
+        <section aria-labelledby={judgeHeadingId} className="flex flex-col gap-6">
+          <h2 id={judgeHeadingId} className="font-serif text-lg font-semibold text-ink">
+            {JUDGE_RESULT_COPY.sectionJudgeSpecificHeading}
+          </h2>
+          <ScopeSlots
+            scope={judgeSpecific}
+            methodologyHref={links.methodology}
+            outcomeTestId="section-judge-outcome"
+            sentencingTestId="section-judge-sentencing"
+          />
+        </section>
+
+        <section aria-labelledby={baselineHeadingId} className="flex flex-col gap-6">
+          <h2 id={baselineHeadingId} className="font-serif text-lg font-semibold text-ink">
+            {JUDGE_RESULT_COPY.sectionBaselineHeading}
+          </h2>
+          <ScopeSlots
+            scope={baseline}
+            methodologyHref={links.methodology}
+            outcomeTestId="section-baseline-outcome"
+            sentencingTestId="section-baseline-sentencing"
+          />
+        </section>
       </div>
 
-      {showThinDataCallout && (
-        <div data-testid="section-thin-data">
-          <ThinDataCallout thin={showThinDataCallout} />
-        </div>
-      )}
-
-      <section aria-labelledby={judgeHeadingId} className="flex flex-col gap-6">
-        <h2 id={judgeHeadingId} className="font-serif text-lg font-semibold text-ink">
-          {JUDGE_RESULT_COPY.sectionJudgeSpecificHeading}
-        </h2>
-        <ScopeSlots
-          scope={judgeSpecific}
-          methodologyHref={links.methodology}
-          outcomeTestId="section-judge-outcome"
-          sentencingTestId="section-judge-sentencing"
-        />
-      </section>
-
-      <section aria-labelledby={baselineHeadingId} className="flex flex-col gap-6">
-        <h2 id={baselineHeadingId} className="font-serif text-lg font-semibold text-ink">
-          {JUDGE_RESULT_COPY.sectionBaselineHeading}
-        </h2>
-        <ScopeSlots
-          scope={baseline}
-          methodologyHref={links.methodology}
-          outcomeTestId="section-baseline-outcome"
-          sentencingTestId="section-baseline-sentencing"
-        />
-      </section>
-
-      <p data-testid="section-links" className="flex flex-wrap gap-4">
-        <Link href={links.methodology} className={LINK_CLASS}>
-          {CHARGE_RESULT_COPY.methodologyLinkText}
-        </Link>
-        <Link href={links.definitions} className={LINK_CLASS}>
-          {CHARGE_RESULT_COPY.definitionsLinkText}
-        </Link>
-        <Link href={`/charges/${charge.slug}`} className={LINK_CLASS}>
-          {JUDGE_RESULT_COPY.removeFilterLinkText}
-        </Link>
-      </p>
+      <ResultMetadataAside
+        lastRefreshed={data.lastRefreshed}
+        links={links}
+        actions={
+          <p>
+            <Link href={`/charges/${charge.slug}`} className={LINK_CLASS}>
+              {JUDGE_RESULT_COPY.removeFilterLinkText}
+            </Link>
+          </p>
+        }
+      />
     </div>
   );
 }

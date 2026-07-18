@@ -16,7 +16,7 @@ interface ChargeErrorProps {
 
 export default function ChargeError({ reset }: ChargeErrorProps) {
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-article space-y-4">
       <h1>{CHARGE_RESULT_COPY.errorHeading}</h1>
       <p className="text-muted">{CHARGE_RESULT_COPY.errorBody}</p>
       <button

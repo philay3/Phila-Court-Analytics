@@ -71,9 +71,15 @@ function makeSuccess(overrides: Partial<ChargeOnlyResultSuccess> = {}): ChargeOn
 }
 
 function sectionOrder(container: HTMLElement): string[] {
-  return Array.from(container.querySelectorAll('[data-testid^="section-"]')).map((element) =>
-    element.getAttribute('data-testid'),
-  ) as string[];
+  // Top-level pinned order only (DP-3): the metadata aside itself is a pinned
+  // section, but testids nested INSIDE it (the frozen section-judge-filter)
+  // are its contents, not part of the page-level order.
+  return Array.from(container.querySelectorAll('[data-testid^="section-"]'))
+    .filter((element) => {
+      const aside = element.closest('[data-testid="section-metadata"]');
+      return aside === null || aside === element;
+    })
+    .map((element) => element.getAttribute('data-testid')) as string[];
 }
 
 describe('ChargeOnlyResultView', () => {
@@ -91,17 +97,31 @@ describe('ChargeOnlyResultView', () => {
       ),
     ).toBeInTheDocument();
 
-    // Outcome distribution with its own sample size.
+    // Outcome distribution with its own sample size, scoped to its owning
+    // section (DP-3.2 STOP ruling: the aside duplicates the value by design).
     const outcomeTable = screen.getByRole('table', { name: RESULT_DISPLAY_COPY.outcomeCaption });
     expect(within(outcomeTable).getByText('Dismissed')).toBeInTheDocument();
-    expect(screen.getByText(formatSampleSize(OUTCOME_SAMPLE_SIZE))).toBeInTheDocument();
+    const outcomeSection = within(screen.getByTestId('section-outcome'));
+    expect(outcomeSection.getByText(formatSampleSize(OUTCOME_SAMPLE_SIZE))).toBeInTheDocument();
 
-    // Sentencing distribution with its own, independent sample size.
+    // Sentencing distribution with its own, independent sample size — scoped
+    // the same way.
     const sentencingTable = screen.getByRole('table', {
       name: RESULT_DISPLAY_COPY.sentencingCaption,
     });
     expect(within(sentencingTable).getByText('Probation')).toBeInTheDocument();
-    expect(screen.getByText(formatSampleSize(SENTENCING_SAMPLE_SIZE))).toBeInTheDocument();
+    const sentencingSection = within(screen.getByTestId('section-sentencing'));
+    expect(
+      sentencingSection.getByText(formatSampleSize(SENTENCING_SAMPLE_SIZE)),
+    ).toBeInTheDocument();
+
+    // The metadata aside pins the sanctioned duplication (DP-3.2 STOP ruling):
+    // both context labels and both formatted sample-size values.
+    const aside = within(screen.getByTestId('section-metadata'));
+    expect(aside.getByText(CHARGE_RESULT_COPY.asideOutcomesLabel)).toBeInTheDocument();
+    expect(aside.getByText(CHARGE_RESULT_COPY.asideSentencingLabel)).toBeInTheDocument();
+    expect(aside.getByText(formatSampleSize(OUTCOME_SAMPLE_SIZE))).toBeInTheDocument();
+    expect(aside.getByText(formatSampleSize(SENTENCING_SAMPLE_SIZE))).toBeInTheDocument();
 
     // Coverage note, responsible-use notice + both links.
     expect(screen.getByText(RESULT_DISPLAY_COPY.coverageNote)).toBeInTheDocument();
@@ -161,8 +181,7 @@ describe('ChargeOnlyResultView', () => {
       'section-thin-data',
       'section-sentencing',
       'section-outcome',
-      'section-links',
-      'section-judge-filter',
+      'section-metadata',
     ]);
   });
 
@@ -180,8 +199,7 @@ describe('ChargeOnlyResultView', () => {
       'section-responsible-use',
       'section-outcome',
       'section-sentencing',
-      'section-links',
-      'section-judge-filter',
+      'section-metadata',
     ]);
   });
 });
