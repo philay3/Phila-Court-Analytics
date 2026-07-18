@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Source_Serif_4, Source_Sans_3 } from 'next/font/google';
 import type { ReactNode } from 'react';
+import { SiteNav } from './components/SiteNav';
 import './globals.css';
 
 /*
@@ -22,9 +23,13 @@ const sourceSans = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
+  // Brand per the DP-2 plan-approval amendment (Chops, 2026-07-18): the site
+  // brand is 'Phila Court Outcomes' — the one sanctioned copy change of DP-2.
+  // Exactly three surfaces carry it: this title pair, the masthead brand,
+  // and the footer lockup. All other self-references stay frozen.
   title: {
-    default: 'Philadelphia Court Outcomes',
-    template: '%s — Philadelphia Court Outcomes',
+    default: 'Phila Court Outcomes',
+    template: '%s — Phila Court Outcomes',
   },
   description: 'Historical aggregate outcomes in Philadelphia criminal court cases.',
   // Deliberate site-wide noindex: per the front-end spec, indexing is opt-in
@@ -35,38 +40,51 @@ export const metadata: Metadata = {
   },
 };
 
-const NAV_LINKS = [
-  { href: '/', label: 'Home' },
-  { href: '/methodology', label: 'Methodology' },
+/*
+ * Footer link row (pinned decision A5): exactly About · Definitions ·
+ * Data Coverage. These three labels and hrefs relocated verbatim from the
+ * pre-restyle nav; Home and Methodology live in <SiteNav>.
+ */
+const FOOTER_LINKS = [
+  { href: '/about', label: 'About' },
   { href: '/definitions', label: 'Definitions' },
   { href: '/data-coverage', label: 'Data Coverage' },
-  { href: '/about', label: 'About' },
 ] as const;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${sourceSerif.variable} ${sourceSans.variable}`}>
       <body>
-        <header className="border-b border-line bg-surface px-6 py-4">
-          <p className="mb-2 text-lg font-semibold text-ink">Philadelphia Court Outcomes</p>
-          <nav aria-label="Main navigation">
-            <ul className="flex flex-wrap gap-4">
-              {NAV_LINKS.map((link) => (
+        <header className="border-t border-ink bg-paper">
+          {/* Masthead lockup between the 1px top rule and the 3px double rule;
+              CSS-uppercased — the source brand string stays title case. */}
+          <div className="border-b-3 border-double border-ink px-6 py-5 text-center">
+            <p className="font-serif text-xl font-semibold tracking-[.14em] text-ink uppercase md:text-2xl">
+              Phila Court Outcomes
+            </p>
+          </div>
+          <SiteNav />
+        </header>
+        <main className="mx-auto w-full max-w-content flex-1 px-6 py-8">{children}</main>
+        <footer className="border-t-3 border-double border-ink bg-band px-6 py-6 text-sm">
+          <div className="mx-auto flex w-full max-w-content flex-col gap-3 md:flex-row md:items-baseline md:justify-between">
+            <p className="font-serif font-semibold tracking-[.14em] text-ink uppercase">
+              Phila Court Outcomes
+            </p>
+            <ul className="flex flex-wrap gap-x-5">
+              {FOOTER_LINKS.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="text-accent hover:underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    className="inline-block py-3 text-accent hover:text-accent-hover hover:underline md:py-1"
                   >
                     {link.label}
                   </Link>
                 </li>
               ))}
             </ul>
-          </nav>
-        </header>
-        <main className="mx-auto w-full max-w-content flex-1 px-6 py-8">{children}</main>
-        <footer className="border-t border-line bg-surface px-6 py-4 text-sm text-muted">
-          <p>
+          </div>
+          <p className="mx-auto mt-2 w-full max-w-content text-muted">
             Historical data about past court outcomes. Not legal advice, and not a prediction of any
             future result.
           </p>
