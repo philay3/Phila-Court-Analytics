@@ -26,6 +26,12 @@ export const CHARGE_RESULT_COPY = {
   methodologyLinkText: 'Read the methodology',
   definitionsLinkText: 'See the definitions',
 
+  // Metadata-aside sample-size context labels (task DP-3, sanctioned strings
+  // 2–3 of 4). One-word labels over the existing SampleSizeLabel value line;
+  // charge-page aside only.
+  asideOutcomesLabel: 'Outcomes',
+  asideSentencingLabel: 'Sentencing',
+
   // Judge-filter entry point (pinned decision 5). The help copy states the
   // availability caveat in guard-passing language.
   judgeFilterHeading: 'View this charge for a specific judge',

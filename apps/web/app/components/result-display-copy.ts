@@ -54,6 +54,10 @@ export const RESULT_DISPLAY_COPY = {
   coverageNote:
     "These figures summarize criminal cases filed on or after January 1, 2025 in Philadelphia's Municipal Court and Court of Common Pleas, with disposition or sentencing events on or after that date. Only charges with a recorded final outcome are included, and collection is ongoing: the figures reflect records collected so far, not every Philadelphia criminal case.",
 
+  // Metadata-aside heading (task DP-3, sanctioned string 1 of 4). Shared by
+  // both result views via ResultMetadataAside.
+  asideHeading: 'About this result',
+
   // ResponsibleUseNotice — the four required statements, in order.
   responsibleUseHistorical: 'These figures are historical aggregates.',
   responsibleUseNotLegalAdvice: 'They are not legal advice.',

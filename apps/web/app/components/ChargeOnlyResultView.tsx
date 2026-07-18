@@ -5,12 +5,18 @@
  * component (page.tsx) fetches and branches; this component is fully testable
  * under jsdom.
  *
- * Mobile content order (pinned decision 6) is achieved by DOM source order in a
- * single-column, mobile-first layout — no CSS `order`. Each top-level block
- * carries a `data-testid="section-*"` so the order is asserted directly:
+ * Content order (pinned decision 6, DP-3 pinned DOM order) is achieved by DOM
+ * source order — no CSS `order`. Each top-level block carries a
+ * `data-testid="section-*"` so the order is asserted directly:
  *   result summary → responsible-use notice → thin-data callout (when either
- *   distribution is thin) → the two distributions → definitions/methodology
- *   links → judge-filter entry point.
+ *   distribution is thin) → the two distributions → metadata aside.
+ * At ≥900px the view is a two-column grid (main column + sidebar, bglad §9.2
+ * adapted); below 900px it is the same DOM in a single column, the aside last.
+ * The former `section-links` block and the judge-filter entry now live inside
+ * the aside (DP-3); the last-refreshed line relocated there byte-identically,
+ * leaving the summary with h1 → result-type → date range → coverage note
+ * (honesty-apparatus overrides 1–2: responsible-use and coverage-note
+ * positions are unchanged).
  *
  * Distribution order is CONDITIONAL on the API `sentencing.available` flag
  * (task 33.2 pinned decision 4): where sentencing data exists the sentencing
@@ -22,23 +28,22 @@
  * Every count, percentage, sample size, date, and label renders through the
  * 11.4 formatters (pinned decision 7); the page computes no analytics.
  */
-import Link from 'next/link';
 import type { ChargeOnlyResultSuccess } from '@pca/shared';
-import { formatLastRefreshed, formatResultTypeLabel } from '../lib/formatters';
+import { formatResultTypeLabel } from '../lib/formatters';
 import { DateRangeLabel } from './DateRangeLabel';
 import { ResponsibleUseNotice } from './ResponsibleUseNotice';
 import { ThinDataCallout } from './ThinDataCallout';
 import { DistributionSection } from './DistributionSection';
 import { SentencingUnavailableNotice } from './SentencingUnavailableNotice';
 import { JudgeFilterEntry } from './JudgeFilterEntry';
+import { ResultMetadataAside } from './ResultMetadataAside';
+import { SampleSizeLabel } from './SampleSizeLabel';
 import { CHARGE_RESULT_COPY } from './charge-result-copy';
 import { RESULT_DISPLAY_COPY } from './result-display-copy';
 
 interface ChargeOnlyResultViewProps {
   data: ChargeOnlyResultSuccess;
 }
-
-const LINK_CLASS = 'text-accent hover:text-accent-hover hover:underline';
 
 export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
   const { charge, outcomes, sentencing, links } = data;
@@ -73,50 +78,74 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
 
   return (
     // section-counter-reset scopes the Roman-numeral markers the two
-    // DistributionSection captions render via CSS counters (DP-2).
-    <div className="section-counter-reset flex flex-col gap-8">
-      <section data-testid="section-summary" className="space-y-2">
-        <h1>{charge.displayName}</h1>
-        <p className="text-base font-semibold text-ink">{formatResultTypeLabel(data.resultType)}</p>
-        <DateRangeLabel range={data.dateRange} />
-        <p className="text-sm text-muted">
-          {CHARGE_RESULT_COPY.lastRefreshedLabel}: {formatLastRefreshed(data.lastRefreshed)}
-        </p>
-        <p className="text-sm text-muted">{RESULT_DISPLAY_COPY.coverageNote}</p>
-      </section>
+    // DistributionSection captions render via CSS counters (DP-2). The root is
+    // a single column below 900px and the bglad §9.2 grid at desktop+: main
+    // column against a 288px sidebar (320px at wide), 32px column gap (40px at
+    // wide), items-start so the sticky aside doesn't stretch.
+    <div className="section-counter-reset flex flex-col gap-7 tablet:gap-8 desktop:grid desktop:grid-cols-[minmax(0,1fr)_var(--sidebar-width-compact)] desktop:items-start desktop:gap-x-8 wide:grid-cols-[minmax(0,1fr)_var(--sidebar-width)] wide:gap-x-10">
+      <div className="flex min-w-0 flex-col gap-7 tablet:gap-8 desktop:gap-10">
+        <section data-testid="section-summary" className="space-y-2">
+          <h1>{charge.displayName}</h1>
+          <p className="text-base font-semibold text-ink">
+            {formatResultTypeLabel(data.resultType)}
+          </p>
+          <DateRangeLabel range={data.dateRange} />
+          <p className="text-sm text-muted">{RESULT_DISPLAY_COPY.coverageNote}</p>
+        </section>
 
-      <div data-testid="section-responsible-use">
-        <ResponsibleUseNotice />
+        <div data-testid="section-responsible-use">
+          <ResponsibleUseNotice />
+        </div>
+
+        {showThinDataCallout && (
+          <div data-testid="section-thin-data">
+            <ThinDataCallout thin={showThinDataCallout} />
+          </div>
+        )}
+
+        {sentencing.available ? (
+          <>
+            {sentencingBlock}
+            {outcomeBlock}
+          </>
+        ) : (
+          <>
+            {outcomeBlock}
+            {sentencingBlock}
+          </>
+        )}
       </div>
 
-      {showThinDataCallout && (
-        <div data-testid="section-thin-data">
-          <ThinDataCallout thin={showThinDataCallout} />
-        </div>
-      )}
-
-      {sentencing.available ? (
-        <>
-          {sentencingBlock}
-          {outcomeBlock}
-        </>
-      ) : (
-        <>
-          {outcomeBlock}
-          {sentencingBlock}
-        </>
-      )}
-
-      <p data-testid="section-links" className="flex flex-wrap gap-4">
-        <Link href={links.methodology} className={LINK_CLASS}>
-          {CHARGE_RESULT_COPY.methodologyLinkText}
-        </Link>
-        <Link href={links.definitions} className={LINK_CLASS}>
-          {CHARGE_RESULT_COPY.definitionsLinkText}
-        </Link>
-      </p>
-
-      <JudgeFilterEntry chargeSlug={charge.slug} />
+      <ResultMetadataAside
+        lastRefreshed={data.lastRefreshed}
+        links={links}
+        actions={<JudgeFilterEntry chargeSlug={charge.slug} />}
+      >
+        {/* Sample-size pairs per available distribution (bglad §14.4 pair
+            grammar): one-word context label over the existing SampleSizeLabel
+            value line. Real content in both places by design — the section
+            headers keep their own labels; nothing is aria-hidden. */}
+        <dl className="flex flex-col gap-4">
+          <div>
+            <dt className="text-xs font-semibold tracking-[.10em] text-faint uppercase">
+              {CHARGE_RESULT_COPY.asideOutcomesLabel}
+            </dt>
+            <dd className="mt-1">
+              <SampleSizeLabel sampleSize={outcomes.sampleSize} />
+            </dd>
+          </div>
+          {sentencing.available && (
+            <div>
+              <dt className="text-xs font-semibold tracking-[.10em] text-faint uppercase">
+                {CHARGE_RESULT_COPY.asideSentencingLabel}
+              </dt>
+              <dd className="mt-1">
+                <SampleSizeLabel sampleSize={sentencing.sampleSize} />
+              </dd>
+            </div>
+          )}
+        </dl>
+      </ResultMetadataAside>
     </div>
   );
 }
