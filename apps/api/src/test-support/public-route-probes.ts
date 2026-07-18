@@ -27,6 +27,12 @@ export interface PublicRouteProbe {
 // no 404/unavailable arms, so their error coverage is the 400
 // validation-error arm (central error handler output must be scanned too).
 export const PROBE_REGISTRY: Readonly<Record<string, readonly PublicRouteProbe[]>> = {
+  [`${PUBLIC_ROUTE_PREFIX}/charges`]: [
+    // The unavailable arm requires invalidating the seeded run, which probes
+    // never do (no-mutation rule above); it is scanned by the DP-4 route
+    // suite's rollback-isolated test instead.
+    { name: 'success', path: `${PUBLIC_ROUTE_PREFIX}/charges`, expectedStatus: 200 },
+  ],
   [`${PUBLIC_ROUTE_PREFIX}/charges/search`]: [
     { name: 'success', path: `${PUBLIC_ROUTE_PREFIX}/charges/search?q=theft`, expectedStatus: 200 },
     {

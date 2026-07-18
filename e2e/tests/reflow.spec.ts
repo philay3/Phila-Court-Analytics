@@ -2,15 +2,18 @@ import { expect, test, type Page } from '@playwright/test';
 import { assertPageClean } from '../support/checks';
 import { SLUGS } from '../support/constants';
 import { CHARGE_RESULT_COPY } from '../../apps/web/app/components/charge-result-copy';
+import { CHARGES_COPY } from '../../apps/web/app/charges/charges-copy';
 
 /**
- * DP-3 reflow checks (pre-authorized E2E additions).
+ * DP-3 reflow checks (pre-authorized E2E additions); DP-4 adds the charges
+ * directory to both tiers.
  *
  * 320px (WCAG 1.4.10 reflow): the homepage — with the judge disclosure both
- * closed and open — and the charge result page must not scroll horizontally
- * at the narrowest supported viewport. 1024px (compact desktop, 900–1199
- * tier): the charge result page renders the two-column grid — metadata aside
- * beside the main column, not below it — still with no horizontal scroll.
+ * closed and open — the charge result page, and the charges directory must
+ * not scroll horizontally at the narrowest supported viewport. 1024px
+ * (compact desktop, 900–1199 tier): the charge result page renders the
+ * two-column grid — metadata aside beside the main column, not below it —
+ * still with no horizontal scroll.
  */
 
 function horizontalOverflow(page: Page): Promise<number> {
@@ -52,6 +55,20 @@ test.describe('320px reflow (WCAG 1.4.10)', () => {
 
     await assertPageClean(page, 'charge-only result (320px)');
   });
+
+  test('charges directory at 320px: no horizontal scroll, three-item nav fits', async ({
+    page,
+  }) => {
+    await page.goto('/charges');
+    await expect(page.getByRole('heading', { level: 1, name: CHARGES_COPY.heading })).toBeVisible();
+
+    // AC 6: the 320px fit re-proven with the live third nav item.
+    const nav = page.getByRole('navigation', { name: 'Main navigation' });
+    await expect(nav.getByRole('link')).toHaveText(['Home', 'Charges', 'Methodology']);
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+
+    await assertPageClean(page, 'charges directory (320px)');
+  });
 });
 
 test.describe('1024px compact desktop smoke (900–1199 tier)', () => {
@@ -75,5 +92,14 @@ test.describe('1024px compact desktop smoke (900–1199 tier)', () => {
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
 
     await assertPageClean(page, 'charge-only result (1024px compact desktop)');
+  });
+
+  test('charges directory at 1024px: no horizontal scroll', async ({ page }) => {
+    await page.goto('/charges');
+    await expect(page.getByRole('heading', { level: 1, name: CHARGES_COPY.heading })).toBeVisible();
+
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+
+    await assertPageClean(page, 'charges directory (1024px compact desktop)');
   });
 });

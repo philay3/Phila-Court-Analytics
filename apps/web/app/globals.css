@@ -187,6 +187,19 @@
 }
 
 /*
+ * Directory row action glyph (task DP-4, bglad §8.2): the arrow after
+ * "View results" is CSS generated content with an empty alternative text
+ * (`/ ''`) so it never reaches the accessible name — same pinned-decision
+ * grammar as the disclosure glyph above: glyphs are CSS generated content,
+ * never JSX string literals.
+ */
+@utility row-action-arrow {
+  &::after {
+    content: ' →' / '';
+  }
+}
+
+/*
  * Roman-numeral section markers (pinned decision: CSS counter generated
  * content only, never string literals in JSX — ordinal markers, not copy).
  * Reset on a page/view wrapper; increment on each marked heading/caption.
