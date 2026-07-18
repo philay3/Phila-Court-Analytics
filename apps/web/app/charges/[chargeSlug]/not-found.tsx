@@ -13,10 +13,7 @@ export default function NotFound() {
     <div className="space-y-4">
       <h1>{CHARGE_RESULT_COPY.notFoundHeading}</h1>
       <p className="text-muted">{CHARGE_NOT_FOUND_MESSAGE}</p>
-      <Link
-        href="/"
-        className="text-accent hover:underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-      >
+      <Link href="/" className="text-accent hover:text-accent-hover hover:underline">
         {CHARGE_RESULT_COPY.notFoundHomeLinkText}
       </Link>
     </div>

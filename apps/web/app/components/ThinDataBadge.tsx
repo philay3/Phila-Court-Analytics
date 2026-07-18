@@ -22,7 +22,7 @@ export function ThinDataBadge({ thin }: ThinDataBadgeProps) {
     return null;
   }
   return (
-    <span className="inline-block rounded-md border border-line bg-surface px-2 py-0.5 text-sm text-muted">
+    <span className="inline-block border border-ink px-2 py-0.5 text-xs font-semibold text-ink">
       {label}
     </span>
   );

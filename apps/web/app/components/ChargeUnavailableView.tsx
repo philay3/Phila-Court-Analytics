@@ -17,8 +17,7 @@ interface ChargeUnavailableViewProps {
   data: ChargeOnlyResultUnavailable;
 }
 
-const LINK_CLASS =
-  'text-accent hover:underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+const LINK_CLASS = 'text-accent hover:text-accent-hover hover:underline';
 
 export function ChargeUnavailableView({ data }: ChargeUnavailableViewProps) {
   return (

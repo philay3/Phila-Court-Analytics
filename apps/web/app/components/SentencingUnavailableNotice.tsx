@@ -19,12 +19,9 @@ interface SentencingUnavailableNoticeProps {
 
 export function SentencingUnavailableNotice({ methodologyHref }: SentencingUnavailableNoticeProps) {
   return (
-    <div role="note" className="space-y-2 rounded-md border border-line bg-surface p-4 text-sm">
-      <p className="text-ink">{CHARGE_SENTENCING_UNAVAILABLE_MESSAGE}</p>
-      <Link
-        href={methodologyHref}
-        className="text-accent hover:underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-      >
+    <div role="note" className="space-y-2 border border-rule bg-card p-4 text-sm">
+      <p className="text-body">{CHARGE_SENTENCING_UNAVAILABLE_MESSAGE}</p>
+      <Link href={methodologyHref} className="text-accent hover:text-accent-hover hover:underline">
         {CHARGE_RESULT_COPY.methodologyLinkText}
       </Link>
     </div>

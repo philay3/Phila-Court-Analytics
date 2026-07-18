@@ -36,13 +36,28 @@ import { DATA_COVERAGE_COPY } from './data-coverage-copy';
 interface LabeledRowProps {
   label: string;
   value: string;
+  /**
+   * Presentational only (DP-2): 'stat' renders the row as a bordered
+   * Civic Atlas stat card (caps label over a large serif figure); 'row'
+   * is the register-row default. Strings and values are untouched either
+   * way, and DOM order inside the <dl> is unchanged.
+   */
+  variant?: 'row' | 'stat';
 }
 
-function LabeledRow({ label, value }: LabeledRowProps) {
+function LabeledRow({ label, value, variant = 'row' }: LabeledRowProps) {
+  if (variant === 'stat') {
+    return (
+      <div className="border-2 border-ink bg-card p-4">
+        <dt className="text-xs font-semibold tracking-[.10em] text-faint uppercase">{label}</dt>
+        <dd className="mt-1 font-serif text-3xl font-semibold text-ink">{value}</dd>
+      </div>
+    );
+  }
   return (
-    <div className="space-y-1">
+    <div className="space-y-1 border-b border-hairline pb-3 md:col-span-3 md:grid md:grid-cols-[185px_1fr] md:gap-x-4 md:space-y-0">
       <dt className="text-sm font-semibold text-ink">{label}</dt>
-      <dd className="text-muted">{value}</dd>
+      <dd className="text-body">{value}</dd>
     </div>
   );
 }
@@ -55,7 +70,7 @@ export function DataCoverageView({ data }: DataCoverageViewProps) {
   const { coverage } = data;
 
   return (
-    <div className="flex flex-col gap-10">
+    <div className="section-counter-reset flex flex-col gap-10">
       <header>
         <h1>{DATA_COVERAGE_COPY.heading}</h1>
       </header>
@@ -73,10 +88,10 @@ export function DataCoverageView({ data }: DataCoverageViewProps) {
 
       {coverage.available ? (
         <section className="space-y-4">
-          <h2 className="text-xl font-semibold text-ink">
+          <h2 className="section-counter border-t-3 border-double border-ink pt-2 text-sm font-semibold tracking-[.12em] text-ink uppercase">
             {DATA_COVERAGE_COPY.currentCoverageHeading}
           </h2>
-          <dl className="space-y-4">
+          <dl className="space-y-4 md:grid md:grid-cols-3 md:gap-4 md:space-y-0">
             <LabeledRow
               label={DATA_COVERAGE_COPY.dataWindowLabel}
               value={formatDateRange({ start: coverage.dataStart, end: coverage.dataEnd })}
@@ -94,14 +109,17 @@ export function DataCoverageView({ data }: DataCoverageViewProps) {
               value={coverage.taxonomyVersion}
             />
             <LabeledRow
+              variant="stat"
               label={DATA_COVERAGE_COPY.chargesWithOutcomeAggregatesLabel}
               value={formatCount(coverage.counts.chargesWithOutcomeAggregates)}
             />
             <LabeledRow
+              variant="stat"
               label={DATA_COVERAGE_COPY.chargesWithSentencingAggregatesLabel}
               value={formatCount(coverage.counts.chargesWithSentencingAggregates)}
             />
             <LabeledRow
+              variant="stat"
               label={DATA_COVERAGE_COPY.judgeChargePairsLabel}
               value={formatCount(coverage.counts.judgeChargePairs)}
             />
@@ -116,10 +134,13 @@ export function DataCoverageView({ data }: DataCoverageViewProps) {
       )}
 
       <section className="space-y-4">
-        <h2 className="text-xl font-semibold text-ink">
+        <h2 className="section-counter border-t-3 border-double border-ink pt-2 text-sm font-semibold tracking-[.12em] text-ink uppercase">
           {DATA_COVERAGE_COPY.knownLimitationsHeading}
         </h2>
-        <ul data-testid="known-limitations" className="list-disc space-y-2 pl-5 text-muted">
+        <ul
+          data-testid="known-limitations"
+          className="list-decimal space-y-2 pl-5 leading-relaxed text-body marker:font-semibold marker:text-faint"
+        >
           {data.knownLimitations.map((limitation, index) => (
             // Served strings are the content; index keys are acceptable because
             // the list is render-once and never reordered client-side.

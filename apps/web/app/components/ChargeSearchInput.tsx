@@ -75,7 +75,7 @@ export function ChargeSearchInput({
         value={query}
         onChange={(event) => handleChange(event.target.value)}
         onKeyDown={handleKeyDown}
-        className="mt-3 w-full rounded-md border border-line bg-canvas px-4 py-3 text-base text-ink placeholder:text-muted"
+        className="mt-3 min-h-11 w-full bg-card px-1 py-2 font-serif text-lg text-ink placeholder:text-muted"
       />
 
       <span id={instructionsId} className="sr-only">
@@ -86,7 +86,7 @@ export function ChargeSearchInput({
         <ul
           id={listboxId}
           role="listbox"
-          className="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-line bg-surface shadow-lg"
+          className="absolute z-10 mt-1 w-full overflow-hidden border border-ink bg-card"
         >
           {results.map((charge, index) => (
             <li
@@ -96,7 +96,7 @@ export function ChargeSearchInput({
               aria-selected={index === activeIndex}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => commit(charge)}
-              className={`cursor-pointer px-4 py-2.5 ${index === activeIndex ? 'bg-canvas' : ''}`}
+              className={`min-h-11 cursor-pointer px-4 py-2.5 ${index === activeIndex ? 'bg-band' : ''}`}
             >
               <span className="block text-base text-ink">{charge.displayName}</span>
               {charge.statuteCode !== undefined && (

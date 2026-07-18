@@ -67,41 +67,63 @@ export function SearchForm() {
         {HOME_COPY.searchHeading}
       </h2>
 
-      <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-6">
-        {/* Charge region — visually PRIMARY */}
-        <div className="rounded-lg border border-line bg-surface p-5">
-          <label htmlFor="charge-search" className="block text-lg font-semibold text-ink">
-            {HOME_COPY.chargeLabel}
-          </label>
-          <p id="charge-search-help" className="mt-1 text-sm text-muted">
-            {HOME_COPY.chargeHelp}
-          </p>
-          {/* Task 12.2: the disabled 12.1 placeholder is replaced by the charge
-              combobox. The id and aria-describedby wiring are preserved. */}
-          <ChargeSearchInput
-            id="charge-search"
-            describedById="charge-search-help"
-            committedCharge={committedCharge}
-            onCommitChange={handleChargeCommitChange}
-          />
-        </div>
+      <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {/* Civic Atlas segmented search card (task DP-2): one 2px ink card,
+            stacked on mobile, three-column grid on md+, 1px tan internal
+            separators. Labels are the frozen HOME_COPY strings, CSS-cased
+            into caps micro-headers. Region order and all ARIA wiring are
+            unchanged from the 12.x layout. */}
+        <div className="border-2 border-ink bg-card md:grid md:grid-cols-[1fr_18rem_11rem]">
+          {/* Charge region — visually PRIMARY */}
+          <div className="border-b border-rule p-5 md:border-r md:border-b-0">
+            <label
+              htmlFor="charge-search"
+              className="block text-xs font-semibold tracking-[.12em] text-ink uppercase"
+            >
+              {HOME_COPY.chargeLabel}
+            </label>
+            <p id="charge-search-help" className="mt-1 text-sm text-muted">
+              {HOME_COPY.chargeHelp}
+            </p>
+            {/* Task 12.2: the disabled 12.1 placeholder is replaced by the charge
+                combobox. The id and aria-describedby wiring are preserved. */}
+            <ChargeSearchInput
+              id="charge-search"
+              describedById="charge-search-help"
+              committedCharge={committedCharge}
+              onCommitChange={handleChargeCommitChange}
+            />
+          </div>
 
-        {/* Judge region — visually SECONDARY, optional */}
-        <div className="rounded-lg border border-line p-4">
-          <label htmlFor="judge-search" className="block text-base font-medium text-ink">
-            {HOME_COPY.judgeLabel}
-          </label>
-          <p id="judge-search-help" className="mt-1 text-sm text-muted">
-            {HOME_COPY.judgeHelp}
-          </p>
-          {/* Task 12.3: the disabled 12.1 placeholder is replaced by the judge
-              combobox. The id and aria-describedby wiring are preserved. */}
-          <JudgeSearchInput
-            id="judge-search"
-            describedById="judge-search-help"
-            committedJudge={committedJudge}
-            onCommitChange={handleJudgeCommitChange}
-          />
+          {/* Judge region — visually SECONDARY, optional */}
+          <div className="border-b border-rule p-5 md:border-r md:border-b-0">
+            <label
+              htmlFor="judge-search"
+              className="block text-xs font-semibold tracking-[.12em] text-faint uppercase"
+            >
+              {HOME_COPY.judgeLabel}
+            </label>
+            <p id="judge-search-help" className="mt-1 text-sm text-muted">
+              {HOME_COPY.judgeHelp}
+            </p>
+            {/* Task 12.3: the disabled 12.1 placeholder is replaced by the judge
+                combobox. The id and aria-describedby wiring are preserved. */}
+            <JudgeSearchInput
+              id="judge-search"
+              describedById="judge-search-help"
+              committedJudge={committedJudge}
+              onCommitChange={handleJudgeCommitChange}
+            />
+          </div>
+
+          <div className="flex items-stretch p-4 md:items-end">
+            <button
+              type="submit"
+              className="min-h-11 w-full bg-ink px-5 py-3 text-sm font-semibold tracking-[.08em] text-card uppercase hover:bg-ink-hover"
+            >
+              {CHARGE_SEARCH_COPY.submitButton}
+            </button>
+          </div>
         </div>
 
         {showHint && (
@@ -109,13 +131,6 @@ export function SearchForm() {
             {CHARGE_SEARCH_COPY.submitHint}
           </p>
         )}
-
-        <button
-          type="submit"
-          className="rounded-md bg-accent px-5 py-3 text-base font-semibold text-canvas hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
-          {CHARGE_SEARCH_COPY.submitButton}
-        </button>
       </form>
     </section>
   );

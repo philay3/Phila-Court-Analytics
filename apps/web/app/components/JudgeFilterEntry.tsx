@@ -40,12 +40,15 @@ export function JudgeFilterEntry({ chargeSlug }: JudgeFilterEntryProps) {
     <section
       aria-labelledby="judge-filter-heading"
       data-testid="section-judge-filter"
-      className="rounded-lg border border-line p-4"
+      className="border border-rule bg-card p-4"
     >
-      <h2 id="judge-filter-heading" className="text-base font-medium text-ink">
+      <h2 id="judge-filter-heading" className="font-serif text-base font-semibold text-ink">
         {CHARGE_RESULT_COPY.judgeFilterHeading}
       </h2>
-      <label htmlFor="judge-filter-input" className="mt-2 block text-sm font-medium text-ink">
+      <label
+        htmlFor="judge-filter-input"
+        className="mt-2 block text-xs font-semibold tracking-[.12em] text-faint uppercase"
+      >
         {CHARGE_RESULT_COPY.judgeFilterLabel}
       </label>
       <p id="judge-filter-help" className="mt-1 text-sm text-muted">
@@ -56,6 +59,7 @@ export function JudgeFilterEntry({ chargeSlug }: JudgeFilterEntryProps) {
         describedById="judge-filter-help"
         committedJudge={committedJudge}
         onCommitChange={handleCommitChange}
+        bordered
       />
     </section>
   );

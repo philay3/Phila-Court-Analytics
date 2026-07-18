@@ -21,8 +21,7 @@ export const metadata: Metadata = {
   title: 'About this site',
 };
 
-const LINK_CLASS =
-  'text-accent hover:underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+const LINK_CLASS = 'text-accent hover:text-accent-hover hover:underline';
 
 export default function AboutPage() {
   return (
@@ -32,8 +31,8 @@ export default function AboutPage() {
       </header>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-ink">What this site is</h2>
-        <p className="text-muted">
+        <h2 className="font-serif text-xl font-semibold text-ink">What this site is</h2>
+        <p className="leading-relaxed text-body">
           This site presents historical aggregate outcomes from Philadelphia criminal court cases.
           Users can search by criminal charge and, optionally, filter by judge to see how cases
           involving that charge have historically been resolved — including outcome distributions
@@ -42,8 +41,8 @@ export default function AboutPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-ink">Where the data comes from</h2>
-        <p className="text-muted">
+        <h2 className="font-serif text-xl font-semibold text-ink">Where the data comes from</h2>
+        <p className="leading-relaxed text-body">
           The underlying information comes from public court docket sheets published by the
           Pennsylvania Unified Judicial System. Docket information is parsed, normalized, and
           aggregated before anything appears on this site; records that cannot be read reliably are
@@ -54,8 +53,8 @@ export default function AboutPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-ink">How to read the numbers</h2>
-        <p className="text-muted">
+        <h2 className="font-serif text-xl font-semibold text-ink">How to read the numbers</h2>
+        <p className="leading-relaxed text-body">
           Every figure on this site shows its sample size and date range. Small samples are flagged
           so they are not over-read. Results are historical distributions of past cases — they
           describe what has happened, not what will happen in any individual case. See the
@@ -65,9 +64,9 @@ export default function AboutPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-ink">Responsible use</h2>
+        <h2 className="font-serif text-xl font-semibold text-ink">Responsible use</h2>
         <ResponsibleUseNotice />
-        <p className="text-muted">
+        <p className="leading-relaxed text-body">
           If you are facing criminal charges, consult a licensed attorney about your specific
           situation.
         </p>

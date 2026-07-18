@@ -25,7 +25,7 @@ interface MethodologyViewProps {
 
 export function MethodologyView({ data }: MethodologyViewProps) {
   return (
-    <div className="flex flex-col gap-10">
+    <div className="section-counter-reset flex flex-col gap-10">
       <header>
         <h1>{METHODOLOGY_COPY.heading}</h1>
       </header>
@@ -34,8 +34,10 @@ export function MethodologyView({ data }: MethodologyViewProps) {
         const section = data.sections[key];
         return (
           <section key={key} className="space-y-3">
-            <h2 className="text-xl font-semibold text-ink">{section.heading}</h2>
-            <p className="text-muted">{section.body}</p>
+            <h2 className="section-counter border-t-3 border-double border-ink pt-2 text-sm font-semibold tracking-[.12em] text-ink uppercase">
+              {section.heading}
+            </h2>
+            <p className="leading-relaxed text-body">{section.body}</p>
           </section>
         );
       })}

@@ -30,6 +30,13 @@ interface JudgeSearchInputProps {
   committedJudge: JudgeSearchResult | null;
   /** Report a commit (judge) or a clear (null) to the parent. */
   onCommitChange: (judge: JudgeSearchResult | null) => void;
+  /**
+   * Presentational only (DP-2, pinned decision A3): standalone placements
+   * (the judge-filter entry) keep a 1px ink border as the functional
+   * boundary; inside the segmented search card the card's ink border is
+   * the boundary and the input renders borderless (the default).
+   */
+  bordered?: boolean;
 }
 
 export function JudgeSearchInput({
@@ -37,6 +44,7 @@ export function JudgeSearchInput({
   describedById,
   committedJudge,
   onCommitChange,
+  bordered = false,
 }: JudgeSearchInputProps) {
   const {
     query,
@@ -77,7 +85,9 @@ export function JudgeSearchInput({
         value={query}
         onChange={(event) => handleChange(event.target.value)}
         onKeyDown={handleKeyDown}
-        className="mt-3 w-full rounded-md border border-line bg-canvas px-4 py-2.5 text-base text-ink placeholder:text-muted"
+        className={`mt-3 min-h-11 w-full bg-card py-2 font-serif text-lg text-ink placeholder:text-muted ${
+          bordered ? 'border border-ink px-3' : 'px-1'
+        }`}
       />
 
       <span id={instructionsId} className="sr-only">
@@ -88,7 +98,7 @@ export function JudgeSearchInput({
         <ul
           id={listboxId}
           role="listbox"
-          className="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-line bg-surface shadow-lg"
+          className="absolute z-10 mt-1 w-full overflow-hidden border border-ink bg-card"
         >
           {results.map((judge, index) => (
             <li
@@ -98,7 +108,7 @@ export function JudgeSearchInput({
               aria-selected={index === activeIndex}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => commit(judge)}
-              className={`cursor-pointer px-4 py-2.5 ${index === activeIndex ? 'bg-canvas' : ''}`}
+              className={`min-h-11 cursor-pointer px-4 py-2.5 ${index === activeIndex ? 'bg-band' : ''}`}
             >
               <span className="block text-base text-ink">{judge.displayName}</span>
               {judge.matchedAlias !== undefined && (

@@ -19,8 +19,7 @@ import Link from 'next/link';
 import { CHARGE_RESULT_UNAVAILABLE_MESSAGE } from '@pca/shared';
 import { CHARGE_RESULT_COPY } from './charge-result-copy';
 
-const LINK_CLASS =
-  'text-accent hover:underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+const LINK_CLASS = 'text-accent hover:text-accent-hover hover:underline';
 
 export function JudgeChargeUnavailableView() {
   return (

@@ -32,19 +32,24 @@ interface DefinitionsSectionProps {
 function DefinitionsSection({ kind, heading, entries }: DefinitionsSectionProps) {
   return (
     <section className="space-y-6">
-      <h2 className="text-xl font-semibold text-ink">{heading}</h2>
+      <h2 className="section-counter border-t-3 border-double border-ink pt-2 text-sm font-semibold tracking-[.12em] text-ink uppercase">
+        {heading}
+      </h2>
       <dl className="space-y-6">
         {entries.map((entry) => (
-          <div key={entry.code} className="space-y-1">
+          <div
+            key={entry.code}
+            className="space-y-1 border-b border-hairline pb-4 md:grid md:grid-cols-[185px_1fr] md:gap-x-4 md:space-y-0"
+          >
             <dt>
               <h3
                 id={definitionAnchorId(kind, entry.code)}
-                className="scroll-mt-24 text-base font-semibold text-ink"
+                className="scroll-mt-24 font-serif text-base font-semibold text-ink"
               >
                 {entry.displayName}
               </h3>
             </dt>
-            <dd className="text-muted">{entry.definition}</dd>
+            <dd className="text-sm leading-relaxed text-body">{entry.definition}</dd>
           </div>
         ))}
       </dl>
@@ -58,7 +63,7 @@ interface DefinitionsViewProps {
 
 export function DefinitionsView({ data }: DefinitionsViewProps) {
   return (
-    <div className="flex flex-col gap-10">
+    <div className="section-counter-reset flex flex-col gap-10">
       <header className="space-y-3">
         <h1>{DEFINITIONS_COPY.heading}</h1>
         <p className="text-muted">{DEFINITIONS_COPY.intro}</p>
@@ -77,7 +82,7 @@ export function DefinitionsView({ data }: DefinitionsViewProps) {
       />
 
       <footer>
-        <p className="text-sm text-muted">
+        <p className="text-sm text-faint">
           {DEFINITIONS_COPY.taxonomyVersionLabel}: {data.taxonomyVersion}
         </p>
       </footer>

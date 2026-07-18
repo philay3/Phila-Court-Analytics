@@ -1,70 +1,112 @@
 @import 'tailwindcss';
 
 /*
- * Design tokens (migrated from the 4.1 :root custom properties into Tailwind
- * v4's CSS-first @theme). Each token also generates the matching utility, e.g.
- * --color-ink -> text-ink, --color-surface -> bg-surface, --container-content
- * -> max-w-content. Values are preserved exactly from 4.1; renames are only so
- * the generated utility reads naturally.
+ * Civic Atlas token system (task DP-2, replacing the 4.1-era palette).
+ * This @theme block is the ONLY place a hex value may appear under app/
+ * (DP-2 acceptance criterion 1). Each token generates its matching
+ * utility (--color-ink -> text-ink/bg-ink/border-ink, --font-serif ->
+ * font-serif, --container-content -> max-w-content).
+ *
+ * Roles:
+ *   paper   — page background            card  — cards, inputs, listboxes
+ *   band    — footer band                ink   — headings, strong borders, buttons
+ *   body    — body text                  muted — secondary text
+ *   faint   — kickers/captions/ticks (A3 value #706B61, not the bundle's
+ *             #8A8477, which fails WCAG AA on the paper tones)
+ *   accent  — links + focus ring         rule  — decorative tan rules ONLY,
+ *             never a functional boundary (A3); functional boundaries use ink
+ *   hairline— hairlines, table row borders (bundle's #D9D5C9 collapsed in)
+ *   track/grid — chart bar track and 10% gridlines
+ *   cat-1..cat-8 — categorical fills, Paul Tol muted scheme extended with
+ *             wine #882255 as the 8th color (colorblind-safe; avoids
+ *             red/green valence reads). Assignment is deterministic per
+ *             category code (see app/components/category-fill.ts); grey
+ *             cat-8 is pinned to the `other` category in both taxonomies.
  */
 @theme {
-  --color-ink: #1f2733;
-  --color-muted: #5b6572;
-  --color-canvas: #ffffff;
-  --color-surface: #f5f6f8;
-  --color-line: #d9dde3;
-  --color-accent: #1d4ed8;
+  --color-paper: #f5f4ef;
+  --color-card: #fdfcf9;
+  --color-band: #efede6;
+  --color-ink: #26303c;
+  --color-ink-hover: #1a222c;
+  --color-body: #39424e;
+  --color-muted: #5c6470;
+  --color-faint: #706b61;
+  --color-accent: #2f4b6e;
+  --color-accent-hover: #1d3450;
+  --color-rule: #b9b4a4;
+  --color-hairline: #e2ded0;
+  --color-track: #eae7dc;
+  --color-grid: #e0dcce;
+  --color-cat-1: #332288;
+  --color-cat-2: #88ccee;
+  --color-cat-3: #44aa99;
+  --color-cat-4: #ddcc77;
+  --color-cat-5: #aa4499;
+  --color-cat-6: #999933;
+  --color-cat-7: #882255;
+  --color-cat-8: #bbbbbb;
+  --font-serif: var(--font-source-serif-4), Georgia, serif;
+  --font-sans: var(--font-source-sans-3), system-ui, sans-serif;
   --container-content: 44rem;
 }
 
-/* Minimal base-element layer carried over from 4.1. */
-body {
-  margin: 0;
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif;
-  line-height: 1.6;
-  color: var(--color-ink);
-  background: var(--color-canvas);
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-a:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-/*
- * Base heading hierarchy. Tailwind v4 preflight resets h1-h6 to inherited
- * size/weight; without this, shell-page headings render at body size. Kept in
- * @layer base so Phase 12-14 utility classes still override. Restrained
- * civic scale — modest steps, no dramatic jumps. h4-h6 inherit body size but
- * stay semibold so they remain distinguishable.
- */
 @layer base {
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    /* Bundle rule: all numerals tabular. Global so tables, stat lines,
+       sample sizes, dates, and axis ticks align without per-surface opt-ins. */
+    font-variant-numeric: tabular-nums;
+    color: var(--color-body);
+    background: var(--color-paper);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  /*
+   * Site-wide focus ring (DP-2 acceptance criterion 10): 3px accent,
+   * offset 2px, on every focusable element. The single source of truth —
+   * components no longer carry per-element focus-visible utilities.
+   */
+  :focus-visible {
+    outline: 3px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /*
+   * Civic Atlas heading scale: serif display over the sans body. Mobile
+   * sizes are the base; the desktop step-up rides the md breakpoint.
+   * Kept in @layer base so per-component utilities still override.
+   */
   h1 {
     margin: 0 0 0.75rem;
+    font-family: var(--font-serif);
     font-size: 1.75rem;
     font-weight: 600;
-    line-height: 1.25;
+    line-height: 1.15;
+    color: var(--color-ink);
   }
 
   h2 {
     margin: 1.75rem 0 0.5rem;
-    font-size: 1.375rem;
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
     font-weight: 600;
     line-height: 1.3;
+    color: var(--color-ink);
   }
 
   h3 {
     margin: 1.5rem 0 0.5rem;
-    font-size: 1.125rem;
+    font-family: var(--font-serif);
+    font-size: 1rem;
     font-weight: 600;
     line-height: 1.4;
+    color: var(--color-ink);
   }
 
   h4,
@@ -73,5 +115,46 @@ a:focus-visible {
     margin: 1.25rem 0 0.5rem;
     font-weight: 600;
     line-height: 1.4;
+    color: var(--color-ink);
+  }
+
+  @media (min-width: 48rem) {
+    h1 {
+      font-size: 2.25rem;
+      line-height: 1.1;
+    }
+  }
+}
+
+/*
+ * Chart track: bar background with a 1px gridline at each 10% of the
+ * axis width (Civic Atlas chart grammar; pinned decision A2 — fixed
+ * 0-100 axis, gridlines each 10%). Token-only; lives here because the
+ * gradient cannot be expressed as a plain theme utility.
+ */
+@utility chart-track {
+  background-color: var(--color-track);
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--color-grid) 0,
+    var(--color-grid) 1px,
+    transparent 1px,
+    transparent 10%
+  );
+}
+
+/*
+ * Roman-numeral section markers (pinned decision: CSS counter generated
+ * content only, never string literals in JSX — ordinal markers, not copy).
+ * Reset on a page/view wrapper; increment on each marked heading/caption.
+ */
+@utility section-counter-reset {
+  counter-reset: civic-section;
+}
+
+@utility section-counter {
+  &::before {
+    counter-increment: civic-section;
+    content: counter(civic-section, upper-roman) '. ';
   }
 }

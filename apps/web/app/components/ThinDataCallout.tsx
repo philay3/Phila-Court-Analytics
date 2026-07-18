@@ -20,7 +20,7 @@ export function ThinDataCallout({ thin }: ThinDataCalloutProps) {
     return null;
   }
   return (
-    <div role="note" className="rounded-md border border-line bg-surface p-4 text-sm text-ink">
+    <div role="note" className="border border-rule bg-card p-4 text-sm text-body">
       {RESULT_DISPLAY_COPY.thinDataCalloutBody}
     </div>
   );

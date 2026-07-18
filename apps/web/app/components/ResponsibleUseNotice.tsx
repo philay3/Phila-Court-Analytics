@@ -15,7 +15,7 @@ const STATEMENTS = [
 
 export function ResponsibleUseNotice() {
   return (
-    <aside className="text-sm text-muted">
+    <aside className="border border-rule bg-card p-4 text-sm text-body">
       <ul className="list-disc space-y-1 pl-5">
         {STATEMENTS.map((statement) => (
           <li key={statement}>{statement}</li>
