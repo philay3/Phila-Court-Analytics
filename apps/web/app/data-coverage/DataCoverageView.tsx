@@ -55,7 +55,7 @@ function LabeledRow({ label, value, variant = 'row' }: LabeledRowProps) {
     );
   }
   return (
-    <div className="space-y-1 border-b border-hairline pb-3 md:col-span-3 md:grid md:grid-cols-[185px_1fr] md:gap-x-4 md:space-y-0">
+    <div className="space-y-1 border-b border-hairline pb-3 tablet:col-span-3 tablet:grid tablet:grid-cols-[185px_1fr] tablet:gap-x-4 tablet:space-y-0">
       <dt className="text-sm font-semibold text-ink">{label}</dt>
       <dd className="text-body">{value}</dd>
     </div>
@@ -70,7 +70,7 @@ export function DataCoverageView({ data }: DataCoverageViewProps) {
   const { coverage } = data;
 
   return (
-    <div className="section-counter-reset flex flex-col gap-10">
+    <div className="section-counter-reset flex flex-col gap-10 desktop:gap-12">
       <header>
         <h1>{DATA_COVERAGE_COPY.heading}</h1>
       </header>
@@ -91,7 +91,9 @@ export function DataCoverageView({ data }: DataCoverageViewProps) {
           <h2 className="section-counter border-t-3 border-double border-ink pt-2 text-sm font-semibold tracking-[.12em] text-ink uppercase">
             {DATA_COVERAGE_COPY.currentCoverageHeading}
           </h2>
-          <dl className="space-y-4 md:grid md:grid-cols-3 md:gap-4 md:space-y-0">
+          {/* 3-across is a layout, not a utility row: it engages at the 900px
+              principal switch, not at tablet (DP-3 migration ruling). */}
+          <dl className="space-y-4 desktop:grid desktop:grid-cols-3 desktop:gap-4 desktop:space-y-0">
             <LabeledRow
               label={DATA_COVERAGE_COPY.dataWindowLabel}
               value={formatDateRange({ start: coverage.dataStart, end: coverage.dataEnd })}

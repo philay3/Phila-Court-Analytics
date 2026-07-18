@@ -32,9 +32,19 @@ export const dynamic = 'force-dynamic';
 export default async function DefinitionsPage() {
   const result = await getDefinitions();
 
+  // DP-3: content routes render as a 760px article inside the 1200px shell
+  // (bglad §12.1); the shell itself lives in the root layout.
   if (!result.ok) {
-    return <DefinitionsErrorState message={definitionsFailureMessage(result.error)} />;
+    return (
+      <div className="mx-auto w-full max-w-article">
+        <DefinitionsErrorState message={definitionsFailureMessage(result.error)} />
+      </div>
+    );
   }
 
-  return <DefinitionsView data={result.data} />;
+  return (
+    <div className="mx-auto w-full max-w-article">
+      <DefinitionsView data={result.data} />
+    </div>
+  );
 }

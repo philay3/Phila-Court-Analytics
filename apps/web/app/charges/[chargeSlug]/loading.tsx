@@ -6,7 +6,7 @@ import { CHARGE_RESULT_COPY } from '../../components/charge-result-copy';
  */
 export default function Loading() {
   return (
-    <p role="status" className="text-muted">
+    <p role="status" className="mx-auto w-full max-w-article text-muted">
       {CHARGE_RESULT_COPY.loadingMessage}
     </p>
   );

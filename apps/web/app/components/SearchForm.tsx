@@ -69,13 +69,15 @@ export function SearchForm() {
 
       <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-4">
         {/* Civic Atlas segmented search card (task DP-2): one 2px ink card,
-            stacked on mobile, three-column grid on md+, 1px tan internal
-            separators. Labels are the frozen HOME_COPY strings, CSS-cased
-            into caps micro-headers. Region order and all ARIA wiring are
-            unchanged from the 12.x layout. */}
-        <div className="border-2 border-ink bg-card md:grid md:grid-cols-[1fr_18rem_11rem]">
+            stacked below the 900px principal layout switch, three-column grid
+            on desktop+ (DP-3; two primary controls never sit side by side
+            below it, bglad §5.4/§7.8), 1px tan internal separators. Labels are
+            the frozen HOME_COPY strings, CSS-cased into caps micro-headers.
+            Region order and all ARIA wiring are unchanged from the 12.x
+            layout. */}
+        <div className="border-2 border-ink bg-card desktop:grid desktop:grid-cols-[1fr_18rem_11rem]">
           {/* Charge region — visually PRIMARY */}
-          <div className="border-b border-rule p-5 md:border-r md:border-b-0">
+          <div className="border-b border-rule p-5 desktop:border-r desktop:border-b-0">
             <label
               htmlFor="charge-search"
               className="block text-xs font-semibold tracking-[.12em] text-ink uppercase"
@@ -96,7 +98,7 @@ export function SearchForm() {
           </div>
 
           {/* Judge region — visually SECONDARY, optional */}
-          <div className="border-b border-rule p-5 md:border-r md:border-b-0">
+          <div className="border-b border-rule p-5 desktop:border-r desktop:border-b-0">
             <label
               htmlFor="judge-search"
               className="block text-xs font-semibold tracking-[.12em] text-faint uppercase"
@@ -116,7 +118,7 @@ export function SearchForm() {
             />
           </div>
 
-          <div className="flex items-stretch p-4 md:items-end">
+          <div className="flex items-stretch p-4 desktop:items-end">
             <button
               type="submit"
               className="min-h-11 w-full bg-ink px-5 py-3 text-sm font-semibold tracking-[.08em] text-card uppercase hover:bg-ink-hover"

@@ -48,9 +48,13 @@ export default async function ChargeResultPage({ params }: ChargeResultPageProps
     // never surfaces this message or any request detail.
     throw new Error('The charge result could not be loaded.');
   }
+  // DP-3: the success view manages its own two-column layout inside the
+  // 1200px shell; the unavailable state stays a single 760px article.
   return state.kind === 'success' ? (
     <ChargeOnlyResultView data={state.data} />
   ) : (
-    <ChargeUnavailableView data={state.data} />
+    <div className="mx-auto w-full max-w-article">
+      <ChargeUnavailableView data={state.data} />
+    </div>
   );
 }

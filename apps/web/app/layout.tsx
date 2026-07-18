@@ -59,15 +59,21 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           {/* Masthead lockup between the 1px top rule and the 3px double rule;
               CSS-uppercased — the source brand string stays title case. */}
           <div className="border-b-3 border-double border-ink px-6 py-5 text-center">
-            <p className="font-serif text-xl font-semibold tracking-[.14em] text-ink uppercase md:text-2xl">
+            <p className="font-serif text-xl font-semibold tracking-[.14em] text-ink uppercase tablet:text-2xl">
               Phila Court Outcomes
             </p>
           </div>
           <SiteNav />
         </header>
-        <main className="mx-auto w-full max-w-content flex-1 px-6 py-8">{children}</main>
+        {/* 1200px app shell (DP-3): gutters 16/24/28/32px and page top/bottom
+            padding 32-56/48-80px step by tier per bglad §5.2/§5.3. Routes
+            constrain themselves inside it (article pages via max-w-article,
+            result pages via the two-column grid). */}
+        <main className="mx-auto w-full max-w-shell flex-1 px-4 pt-8 pb-12 tablet:px-6 tablet:pt-11 tablet:pb-16 desktop:px-7 desktop:pt-14 desktop:pb-20 wide:px-8">
+          {children}
+        </main>
         <footer className="border-t-3 border-double border-ink bg-band px-6 py-6 text-sm">
-          <div className="mx-auto flex w-full max-w-content flex-col gap-3 md:flex-row md:items-baseline md:justify-between">
+          <div className="mx-auto flex w-full max-w-shell flex-col gap-3 tablet:flex-row tablet:items-baseline tablet:justify-between">
             <p className="font-serif font-semibold tracking-[.14em] text-ink uppercase">
               Phila Court Outcomes
             </p>
@@ -76,7 +82,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="inline-block py-3 text-accent hover:text-accent-hover hover:underline md:py-1"
+                    className="inline-block py-3 text-accent hover:text-accent-hover hover:underline tablet:py-1"
                   >
                     {link.label}
                   </Link>
@@ -84,7 +90,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               ))}
             </ul>
           </div>
-          <p className="mx-auto mt-2 w-full max-w-content text-muted">
+          <p className="mx-auto mt-2 w-full max-w-shell text-muted">
             Historical data about past court outcomes. Not legal advice, and not a prediction of any
             future result.
           </p>

@@ -25,7 +25,7 @@ const LINK_CLASS = 'text-accent hover:text-accent-hover hover:underline';
 
 export default function AboutPage() {
   return (
-    <div className="flex flex-col gap-10">
+    <div className="mx-auto flex w-full max-w-article flex-col gap-10 desktop:gap-12">
       <header>
         <h1>About this site</h1>
       </header>

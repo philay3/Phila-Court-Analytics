@@ -25,7 +25,7 @@ interface MethodologyViewProps {
 
 export function MethodologyView({ data }: MethodologyViewProps) {
   return (
-    <div className="section-counter-reset flex flex-col gap-10">
+    <div className="section-counter-reset flex flex-col gap-10 desktop:gap-12">
       <header>
         <h1>{METHODOLOGY_COPY.heading}</h1>
       </header>
