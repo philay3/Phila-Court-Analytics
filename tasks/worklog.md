@@ -7566,3 +7566,62 @@ tool relies on `.env`. Next task should know: the DP-3 review gate
 (Chops, four viewports) precedes the phase PR; nav fits three items at
 320px by measurement, so no hamburger; Charges nav item and homepage
 hero composition are DP-4.
+
+## Task DP-4 — Charges Directory + List Endpoint (2026-07-18)
+
+First DP construction phase, branch `phase-dp4`, commits DP-4.1–DP-4.4.
+API: `GET /api/v1/public/charges` per the R1 conventions — new
+`@pca/shared` charge-directory contract (boolean-discriminant
+availability union, data-coverage precedent; both arms HTTP 200), rows
+`{slug, displayName, statuteCode? (omit-when-null), hasSentencing,
+outcomeSampleSize}` with the sample size payload-only (pinned), pinned
+unavailable literal `No charges have published results yet.`; repository
+reads DISTINCT charges off `analytics.charge_outcome_aggregates` scoped
+by the single `findActivePublishedRun` resolver — the same source as
+data-coverage's `chargesWithOutcomeAggregates`, so the AC-3 cross-check
+holds by construction (and an API test proves endpoint-to-endpoint
+equality); sentencing availability via per-charge EXISTS in the same
+query (R5 confirmed, no new aggregate work); server sort
+`lower(display_name)` with slug tie-break. R3 surface: only
+INTERNAL_ERROR (exercised via poison-DB 500) and RATE_LIMITED
+(structurally justified — shared global bucket) are reachable; no new
+codes. Route joined the 10.1/10.2 PROBE_REGISTRY (success arm) — the
+two-directional registry↔route-table guard requires it; flagged as the
+one touch outside the DP-4 file list. Web: `/charges` route per the R4
+pattern (thin force-dynamic page → presentational view; fetch failure
+throws detail-free into a new error.tsx that reuses
+CHARGE_RESULT_COPY.errorHeading/errorRetryText byte-identically around
+the sanctioned directory body), loading.tsx, `charges-copy.ts`
+(sanctioned set; count-line formatter rendering exactly `1 available
+charge` / `{count} available charges`), ChargesDirectoryView: bordered
+register surface (2px ink card, hairline separators, no radius/shadow),
+bglad §8.2/8.3 structural values (88px/104px row minimums, stacked
+mobile action), client-side filter over display name + statute code,
+polite live-region count, no-match + clear-with-refocus (refocus only
+via the clear control), empty-publication rendered from the shared
+constant for both the unavailable arm and an available-but-empty list.
+ROW-LINK RULING (review-gate required fix): each row carries exactly one
+anchor — on the charge name, stretched over the row via a generated-
+content overlay — so every row link's accessible name is its charge
+name; `View results` stays visible alongside (arrow via CSS generated
+content with empty alt text, new `row-action-arrow` utility), no
+aria-label replacement; unit assertion pins the accessible name. Nav:
+Home · Charges · Methodology, active-state treatment unchanged;
+320px three-item fit re-proven live in reflow.spec. SANCTIONED-SET
+AMENDMENT (adjudicated): loading message is `Loading charges…` — the
+ellipsis convention beats the draft's bare form. Tests: API suite
+(derived-expectation available arm restated through independent
+ungrouped queries, sort invariant, named fixture probes, rollback-
+isolated unavailable arm per the standing isolation pattern — no exact
+totals against the shared DB), view/copy/client/error/loading unit
+tests incl. AC-8 render-absence of sample sizes, new
+charges-directory.spec.ts (load/filter/no-match/clear/navigation/nav
+active state, axe-gated default + no-match, 390px + 1440px overflow),
+`/charges` added to the 320px and 1024px reflow blocks. E2E ran against
+the scratch `pca_e2e` via explicit shell override (canonical `pca`
+untouched); NOTE: root `.env` now points at local Docker 5433/pca — the
+DP-3 production-URL environment flag is resolved. Next task should
+know: the Chops review gate (directory browse at desktop + 390px,
+no-match and filter flows) precedes the phase PR; homepage untouched;
+directory v2 (row statistics/preview strips), sort controls, and
+pagination remain out of scope.

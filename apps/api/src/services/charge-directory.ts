@@ -27,14 +27,12 @@ export async function getChargeDirectory(
   const rows = await listChargesWithOutcomeAggregates(db, run.id);
   return {
     available: true,
-    charges: rows.map(
-      (row): ChargeDirectoryEntry => ({
-        slug: row.slug,
-        displayName: row.display_name,
-        ...(row.statute_code !== null ? { statuteCode: row.statute_code } : {}),
-        hasSentencing: row.has_sentencing,
-        outcomeSampleSize: row.sample_size,
-      }),
-    ),
+    charges: rows.map((row): ChargeDirectoryEntry => ({
+      slug: row.slug,
+      displayName: row.display_name,
+      ...(row.statute_code !== null ? { statuteCode: row.statute_code } : {}),
+      hasSentencing: row.has_sentencing,
+      outcomeSampleSize: row.sample_size,
+    })),
   };
 }
