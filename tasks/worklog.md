@@ -7356,3 +7356,13 @@ the EXPECTED state; `sd15_negative_lag_count`=50 fully attributed). The 3
 new `ambiguous_charge` review items are in Chops's queue. Demo staleness
 re-walk (Chops) pending at entry-write time; findings land in planning
 chat.
+
+**32.4 addendum (CI-red incident, adjudicated).** PR #60's first CI run
+failed one DB-backed test: 32.2 had updated the lifecycle test's assertion
+to envelope 6 but left both seed INSERTs at 5 (production path unaffected —
+run `82b6cc99` recorded 6 correctly). Fix (this commit): seeds now
+reference the imported `ENVELOPE_PARSER_VERSION` constant (assertion stays
+a deliberate literal pin). Gate hole closed NOW per ruling: the pytest gate
+runs with `PIPELINE_TEST_DATABASE_URL` pinned to `pca_pipeline_test`
+(CLAUDE.md amended in this commit); expected skip count drops to ~1, and a
+`74 skipped` gate line is henceforth a red flag, not noise.

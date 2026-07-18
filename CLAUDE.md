@@ -86,7 +86,13 @@ that is three separate gates:
 
   .venv/bin/ruff check src tests
   .venv/bin/ruff format --check .
-  .venv/bin/python -m pytest -q
+  PIPELINE_TEST_DATABASE_URL=<local pca_pipeline_test URL> .venv/bin/python -m pytest -q
+
+The pytest gate MUST run with PIPELINE_TEST_DATABASE_URL set (pinned to the
+local `pca_pipeline_test` database, same convention as `pca_test` for the API
+suite) — without it the DB-backed suite silently skips (~74 tests CI runs),
+and a green local gate can hide a red CI (the 32.4/PR-60 incident). A pytest
+gate line showing dozens of skips is a red flag, not noise.
 
 Lint passing does not imply format passing; they are independent checks.
 If CI gains a new gate, this list gains it in the same task.

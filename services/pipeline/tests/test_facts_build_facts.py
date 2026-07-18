@@ -22,6 +22,7 @@ import pytest
 from psycopg.rows import dict_row
 
 import pipeline.facts.build_facts as build_facts_mod
+from pipeline.envelope import ENVELOPE_PARSER_VERSION
 from pipeline.fact_review_vocab import (
     CHARGE_NOT_NORMALIZED,
     DISPOSITION_DATE_BEFORE_MVP_WINDOW,
@@ -137,7 +138,7 @@ def _seed(conn: psycopg.Connection) -> None:
                 source_document_id,
                 "CP-51-CR-0000000-2025",
                 2,
-                5,
+                ENVELOPE_PARSER_VERSION,
                 datetime.now(UTC),
                 "Philadelphia",
                 "0" * 64,
@@ -276,7 +277,7 @@ def _seed_floor_docket(cur, *, file_hash, docket_number, filed_date, seq) -> Non
             source_document_id,
             docket_number,
             2,
-            5,
+            ENVELOPE_PARSER_VERSION,
             datetime.now(UTC),
             "Philadelphia",
             "0" * 64,
