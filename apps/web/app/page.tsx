@@ -16,14 +16,14 @@ export default function HomePage() {
         {HOME_COPY.linksIntro}{' '}
         <Link
           href="/methodology"
-          className="text-accent underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="text-accent underline hover:text-accent-hover"
         >
           {HOME_COPY.methodologyLinkText}
         </Link>{' '}
         ({HOME_COPY.methodologyLinkDescription}) ·{' '}
         <Link
           href="/data-coverage"
-          className="text-accent underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="text-accent underline hover:text-accent-hover"
         >
           {HOME_COPY.dataCoverageLinkText}
         </Link>{' '}

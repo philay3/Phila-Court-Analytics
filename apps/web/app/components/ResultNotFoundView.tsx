@@ -28,7 +28,7 @@ export function ResultNotFoundView({ message }: ResultNotFoundViewProps) {
       <p className="text-muted">{message}</p>
       <Link
         href="/"
-        className="text-accent hover:underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className="text-accent hover:text-accent-hover hover:underline"
       >
         {CHARGE_RESULT_COPY.notFoundHomeLinkText}
       </Link>

@@ -50,7 +50,7 @@ interface JudgeSpecificResultViewProps {
 }
 
 const LINK_CLASS =
-  'text-accent hover:underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+  'text-accent hover:text-accent-hover hover:underline';
 
 export function JudgeSpecificResultView({ data }: JudgeSpecificResultViewProps) {
   const { charge, judge, judgeSpecific, baseline, links } = data;

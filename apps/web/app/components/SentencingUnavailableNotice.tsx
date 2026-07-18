@@ -23,7 +23,7 @@ export function SentencingUnavailableNotice({ methodologyHref }: SentencingUnava
       <p className="text-ink">{CHARGE_SENTENCING_UNAVAILABLE_MESSAGE}</p>
       <Link
         href={methodologyHref}
-        className="text-accent hover:underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className="text-accent hover:text-accent-hover hover:underline"
       >
         {CHARGE_RESULT_COPY.methodologyLinkText}
       </Link>

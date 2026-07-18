@@ -22,7 +22,7 @@ interface JudgeUnavailableViewProps {
 }
 
 const LINK_CLASS =
-  'text-accent hover:underline focus-visible:rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+  'text-accent hover:text-accent-hover hover:underline';
 
 export function JudgeUnavailableView({ data }: JudgeUnavailableViewProps) {
   const { charge, judge } = data;
