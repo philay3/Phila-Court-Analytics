@@ -7411,3 +7411,44 @@ the imported constant.
 pages to be judged against live post-32.4 pages with Chops before the
 phase-33 PR opens. Human framing review of the conditional caption (task
 AC 6) also lands in planning chat.
+
+## Sprint 8 Close Record — Phase 33 (2026-07-18)
+
+Sprint 8 Definition of Done, items 1–6 (per docs/planning/sprint-8-plan.md;
+item 7 — sprint closed in the planning chat — is the operator's act and
+follows this record):
+
+1. **Event-line disposition dates live.** Delivered in task 32.2 (parser
+   date-source fix); sentence dates byte-identical to pre-fix; rerun and
+   rebuild diffs attributed through the 32.4 rebuild reconciliation; the
+   one STOP exercised during the phase (ARD progression) was adjudicated
+   in planning chat. No unadjudicated STOPs at close.
+2. **99,999 guard live.** Delivered in task 32.2; suppressed
+   normalization matched recovered-and-measured expectations (32.4
+   verification, C4 band ruling recorded in the 32.4 entry).
+3. **Ruled map additions live.** Delivered in task 32.3 (table-approved
+   key set); `unknown` movement per the approved per-form expectations,
+   reconciled in the 32.4 rebuild.
+4. **Publish cycle complete.** Task 32.4: rebuild → validate → publish of
+   aggregate run `82b6cc99-d988-46a4-8268-3862492ec526`, counts restated
+   in that entry (not repeated here), copy re-tuned through both gates,
+   demo staleness re-walk completed per the planning-chat record.
+5. **Charge pages lead with sentencing.** Task 33.2: both result page
+   types lead with the sentencing block wherever the API reports
+   sentencing available (per scope on the judge page), under the
+   conditional caption adjudicated at 33.1-R7 (caption, not a heading —
+   the plan's "conditional headers" phrasing resolved to the table
+   caption; hierarchy untouched). Both copy gates green (web copy guard +
+   module scans; API 10.2 static/live scans untouched and green in CI);
+   a11y/E2E green — full Playwright suite 15/15 with axe WCAG 2.2 AA and
+   both rendered-text scans on every visited state.
+6. **Record discipline.** This worklog carries the §6.13 date-audit
+   verdict and an entry for every Sprint 8 task (32.1–32.4 incl. the COL
+   intake, 33.1 recon rode this phase's report, 33.2); phases merged per
+   the phase model (phase-32 → PR #60; phase-33 → this PR); CI green
+   throughout; no real-docket content in the repo tree (hash-prefix
+   convention held; staging-completeness gates passed on every commit).
+
+Phase-33 review gate (rendered pages vs live post-32.4) and the 33.2 AC6
+framing review are adjudicated in planning chat; PR opened on operator
+instruction. Sprint 9 opens on the post-32.4 data per the plan's handoff.
