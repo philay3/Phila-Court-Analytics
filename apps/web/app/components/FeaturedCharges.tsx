@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { BROWSE_ALL_CHARGES_LINK_TEXT, FEATURED_CHARGES_HEADING } from '@pca/shared';
 import type { ChargeDirectoryEntry } from '@pca/shared';
 import { availabilityText } from '../charges/charges-copy';
-import { formatSampleSize } from '../lib/formatters';
+import { formatRecordedOutcomes } from '../lib/formatters';
 
 /**
  * Homepage featured-charges section (task DP-5, pins 4–5). Purely
@@ -10,7 +10,8 @@ import { formatSampleSize } from '../lib/formatters';
  * served order (already sliced; zero rows never reach here — the page omits
  * the section entirely). Card contents mirror directory rows exactly — name,
  * the availability line (shared availabilityText helper), the pinned
- * `Sample size: N` line — and nothing else; no other statistic renders.
+ * `Recorded outcomes: N` line (Amendment A) — and nothing else; no other
+ * statistic renders.
  *
  * Link mechanism is the directory-row ruling reused: each card carries
  * exactly ONE anchor — on the charge name, stretched over the card via an
@@ -42,7 +43,9 @@ export function FeaturedCharges({ charges }: FeaturedChargesProps) {
               {charge.displayName}
             </Link>
             <p className="mt-1.5 text-sm text-muted">{availabilityText(charge.hasSentencing)}</p>
-            <p className="mt-1 text-sm text-faint">{formatSampleSize(charge.outcomeSampleSize)}</p>
+            <p className="mt-1 text-sm text-faint">
+              {formatRecordedOutcomes(charge.outcomeSampleSize)}
+            </p>
           </li>
         ))}
       </ul>

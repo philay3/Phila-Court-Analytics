@@ -7693,3 +7693,30 @@ directory order) precedes the phase PR; the 7/5 hero, preview strips,
 coverage band, Contact, and A–Z toggle remain named out-of-scope
 landings; Sprint 9 ops items (provenance line, thin-data constant
 reconciliation, local DATABASE_URL guard) are untouched.
+
+### DP-5 Amendment 1 — review-gate copy changes (2026-07-18)
+
+Chops review-gate feedback, adjudicated in planning chat, applied as an
+amendment commit (DP-5.4) before the PR. Amendment A: the rendered
+sample-size label on /charges rows and homepage featured cards is now
+`Recorded outcomes: N` — new pinned prefix
+`RECORDED_OUTCOMES_LABEL_PREFIX` (`Recorded outcomes: `) homed in
+@pca/shared charge-directory.ts, rendered via the new surface-scoped
+`formatRecordedOutcomes` in apps/web formatters (same en-US grouping
+path). SURFACE-SCOPED DECISION: exactly those two surfaces; the result
+pages' `Sample size:` convention (SAMPLE_SIZE_LABEL_PREFIX,
+formatSampleSize, SampleSizeLabel) is byte-identical and guarded —
+formatters.test.ts "locks the noun-free Sample size: N format" pins it,
+and the row/card suites now assert `Sample size:` never leaks onto the
+amended surfaces. Rationale on record: N counts disposed charge
+outcomes, one per outcome fact; "charges" would read as the filed
+universe, "facts" is internal vocabulary. Site-wide label
+reconciliation (result pages, methodology definition, sentencing-unit
+noun) is a NAMED SPRINT 9 COPY ITEM. Amendment B:
+`FEATURED_CHARGES_HEADING` is now `Find your charge` (sanctioned at
+amendment dispatch; no override paste received); heading level and
+placement unchanged; `Browse all charges` unchanged. The DP-5
+sanctioned-string enumeration above is amended accordingly: the
+featured heading reads `Find your charge`, and `Recorded outcomes: `
+joins the enumeration. Judge-disclosure layout balance is banked to
+the homepage copy-heavy phase per the amendment's for-the-record note.

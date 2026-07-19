@@ -61,11 +61,11 @@ test('featured charges: top-4 seed cards in sample-size order, card and browse-a
   const cards = section.getByRole('listitem');
   await expect(cards).toHaveCount(4);
   await expect(cards.first().getByRole('link')).toHaveText('DUI: General Impairment');
-  await expect(cards.first().getByText('Sample size: 1,500')).toBeVisible();
-  // Every card carries the availability line and the pinned sample-size line.
+  await expect(cards.first().getByText('Recorded outcomes: 1,500')).toBeVisible();
+  // Every card carries the availability line and the pinned Amendment A line.
   for (let i = 0; i < 4; i += 1) {
     await expect(cards.nth(i).getByText(/^Historical outcome/)).toBeVisible();
-    await expect(cards.nth(i).getByText(/^Sample size: /)).toBeVisible();
+    await expect(cards.nth(i).getByText(/^Recorded outcomes: /)).toBeVisible();
   }
   await expect(section.getByText('Criminal Trespass')).toHaveCount(0);
 

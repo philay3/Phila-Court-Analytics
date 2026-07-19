@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useId, useRef, useState } from 'react';
 import { CHARGE_DIRECTORY_UNAVAILABLE_MESSAGE, type ChargeDirectoryResponse } from '@pca/shared';
-import { formatSampleSize } from '../lib/formatters';
+import { formatRecordedOutcomes } from '../lib/formatters';
 import { CHARGES_COPY, availabilityText, formatChargeCountLine } from './charges-copy';
 
 /**
@@ -11,7 +11,8 @@ import { CHARGES_COPY, availabilityText, formatChargeCountLine } from './charges
  * list → states (bglad §8 structure, Civic Atlas register skin — one bordered
  * surface, hairline row separators, no cards-per-row, no radius, no shadow).
  * DP-5: rows are served sorted by outcome sample size descending and carry
- * the pinned `Sample size: N` line — the only statistic a row renders.
+ * the pinned `Recorded outcomes: N` line (Amendment A) — the only statistic
+ * a row renders.
  *
  * Filter (bglad §8.4): client-side over the loaded list — case-insensitive
  * substring against display name and statute code. The count line is a
@@ -119,10 +120,11 @@ export function ChargesDirectoryView({ data }: ChargesDirectoryViewProps) {
                 {charge.displayName}
               </Link>
               <p className="mt-1.5 text-sm text-muted">{availabilityText(charge.hasSentencing)}</p>
-              {/* DP-5 pin 3: the sample-size line is the ONLY statistic rows
-                  carry, rendered through the pinned formatter convention. */}
+              {/* DP-5 pin 3 (Amendment A label): the sample-size line is the
+                  ONLY statistic rows carry, rendered through the
+                  surface-scoped formatter. */}
               <p className="mt-1 text-sm text-faint">
-                {formatSampleSize(charge.outcomeSampleSize)}
+                {formatRecordedOutcomes(charge.outcomeSampleSize)}
               </p>
               <span className="row-action-arrow mt-3 self-start text-[0.9375rem] font-semibold text-accent group-hover:underline desktop:absolute desktop:top-[1.125rem] desktop:right-6 desktop:mt-0">
                 {CHARGES_COPY.rowAction}

@@ -89,21 +89,21 @@ describe('ChargesDirectoryView', () => {
     expect(screen.getByText(formatChargeCountLine(1))).toBeInTheDocument();
   });
 
-  it('renders the pinned sample-size line on every row and no other statistic (DP-5 AC5)', () => {
+  it('renders the pinned recorded-outcomes line on every row and no other statistic (DP-5 AC5)', () => {
     const { container } = render(<ChargesDirectoryView data={ROWS} />);
-    // Present direction: each row carries exactly the pinned noun-free line,
-    // formatted through the 11.4 formatter (en-US grouping).
+    // Present direction: each row carries exactly the pinned Amendment A
+    // line, formatted through the surface-scoped formatter (en-US grouping).
     const items = within(screen.getByRole('list')).getAllByRole('listitem');
-    expect(items.map((item) => within(item).getByText(/^Sample size: /).textContent)).toEqual([
-      'Sample size: 8,412',
-      'Sample size: 517',
-      'Sample size: 1,206',
-    ]);
+    expect(items.map((item) => within(item).getByText(/^Recorded outcomes: /).textContent)).toEqual(
+      ['Recorded outcomes: 8,412', 'Recorded outcomes: 517', 'Recorded outcomes: 1,206'],
+    );
+    // The result-page label never leaks onto this surface (Amendment A scope).
+    expect(container.textContent).not.toContain('Sample size:');
     // Absent direction: no outcome/sentencing statistic renders — no
-    // percentages, no counts outside the sample-size lines. Stripping the
-    // sample-size lines leaves no digits from the payload values.
+    // percentages, no counts outside the recorded-outcomes lines. Stripping
+    // the recorded-outcomes lines leaves no digits from the payload values.
     const text = (container.textContent ?? '')
-      .replace(/Sample size: [\d,]+/g, '')
+      .replace(/Recorded outcomes: [\d,]+/g, '')
       .replace(/%/g, 'PERCENT');
     expect(text).not.toContain('PERCENT');
     for (const sampleSize of ['8,412', '8412', '517', '1,206', '1206']) {

@@ -82,16 +82,20 @@ describe('FeaturedCharges', () => {
     expect(screen.getAllByText(CHARGES_COPY.availabilityOutcomesOnly)).toHaveLength(2);
   });
 
-  it('renders the pinned sample-size line on every card and no other statistic', () => {
+  it('renders the pinned recorded-outcomes line on every card and no other statistic', () => {
     const { container } = render(<FeaturedCharges charges={FEATURED} />);
     const items = within(screen.getByRole('list')).getAllByRole('listitem');
-    expect(items.map((item) => within(item).getByText(/^Sample size: /).textContent)).toEqual([
-      'Sample size: 9,317',
-      'Sample size: 4,206',
-      'Sample size: 815',
-      'Sample size: 42',
-    ]);
-    const text = (container.textContent ?? '').replace(/Sample size: [\d,]+/g, '');
+    expect(items.map((item) => within(item).getByText(/^Recorded outcomes: /).textContent)).toEqual(
+      [
+        'Recorded outcomes: 9,317',
+        'Recorded outcomes: 4,206',
+        'Recorded outcomes: 815',
+        'Recorded outcomes: 42',
+      ],
+    );
+    // The result-page label never leaks onto this surface (Amendment A scope).
+    expect(container.textContent).not.toContain('Sample size:');
+    const text = (container.textContent ?? '').replace(/Recorded outcomes: [\d,]+/g, '');
     expect(text).not.toContain('%');
     for (const value of ['9,317', '9317', '4,206', '4206', '815', '42']) {
       expect(text).not.toContain(value);
