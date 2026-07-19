@@ -155,8 +155,7 @@ upgraded to index rates with the fuller breakdown below.
   derivation drill-down (which uses the persisted build-run id).
 - **Collection cadence + republish rhythm** — a scheduling decision,
   not a build.
-- **Raw-PDF retention decision** — the last ADR 0002-era open item;
-  a decision record, kept offline with the compliance materials.
+- **Raw-PDF retention decision** — the last open source-access policy item; a decision record, kept offline with the other source-access records.
 
 ---
 
