@@ -7955,3 +7955,64 @@ the homepage copy-heavy phase per the amendment's for-the-record note.
   the judge cell. `pca_e2e` scratch-DB convention exercised as established
   — formal promotion recorded at phase close. Drop the review clone after
   the Chops review: `DROP DATABASE pca_35_3_review`.
+
+## Task 34.0 — Phase 34 Pipeline-Hardening Recon (2026-07-19, adjudicated summary)
+
+- **What was done:** Read-only recon over code, DB, and audited sheets for
+  the four Phase 34 hardening classes; no repo or DB writes. Full report:
+  `~/court-data/reports/phase34-recon-20260719/report.md` (+ SQL/console
+  artifacts alongside).
+- **Findings (per class):** R2 Rule 600 — the 18.2 Item-2 line-wrap class;
+  truncated capture `Dismissed - Rule 600 (Speedy` (28 bytes), 76 rows /
+  12 CP dockets, all post-32.2; fix = repair-table entry + map key swap;
+  routing-list token must survive (pre-repair stream). R3 fragment — 4
+  victims absorbed by the charge-line regex on slash-date condition lines
+  (not the sentence-continuation heuristic). R4 concat — `§`-bearing
+  tokens, 28 rows / 25 dockets. R5 MC missing-caption — 5 docs, blank-DOB
+  caption layout; identity-basis decision flagged for adjudication.
+- **Cross-cutting:** docket-grain overlap between classes is zero on all
+  pairs; per-class row-grain delta signatures defined for single-rerun
+  attribution (anything unattributed = STOP). Version implications: one
+  envelope bump 6→7 for the whole batch, record parser_version stays 2,
+  `ACCEPTED_ENVELOPE_VERSIONS` → {7} with the bump. Ruled build order:
+  Rule 600 → fragment guard → concat reject → MC caption; bump rides the
+  final change. Tier-1 sketch: 4 additive fixture/golden pairs, no
+  existing fixture or golden changes.
+
+## Task 34.1 — Rule 600 Truncation Repair + Map-Key Reconciliation (2026-07-19)
+
+- **What was built:** (1) `_TRUNCATED_DISPOSITION_REPAIRS` gains its second
+  corpus-evidenced entry: `Dismissed - Rule 600 (Speedy` (28 bytes) →
+  `Dismissed - Rule 600 (Speedy Trial)` (35 bytes); existing post-parse
+  exact-match sweep, no mechanism change, silent (no warning/annotation —
+  current behavior, unchanged). (2) `DISPOSITION_OUTCOME_MAP` key swap:
+  truncated key retired, full form added → `dismissed` (category
+  invariant; 22.4 fresh-map principle). The truncated token STAYS in
+  `NON_TERMINAL_DISPOSITIONS` with an in-code comment naming the reason
+  (routing consumes pre-repair stream tokens; not a map key; deliberate
+  22.4 carve-out). (3) Tier-1 additive pair `rule600_truncation_cp.txt` +
+  golden (polluted-continuation shape proving no continuation read) +
+  index entry (42 → 43). (4) Unit tests: repair applied
+  (`test_truncated_rule600_disposition_repaired`), routing unchanged
+  (`test_rule600_token_routing_unchanged`), truncated key absent + full
+  key → `dismissed` (`test_truncated_rule600_key_absent`, replacing the
+  now-obsolete 22.4 verbatim-mapping test).
+- **Golden write:** `pipeline run-fixtures --update-goldens` wrote the ONE
+  new tier-1 golden `rule600_truncation_cp.json`
+  (`tier1: match=42 diverged=0 updated=0 new=1 missing=0`) — no existing
+  golden touched.
+- **Files touched:** `services/pipeline/src/pipeline/docket_parser.py`,
+  `src/pipeline/normalization/outcome_mapper.py`,
+  `tests/test_docket_parser.py`, `tests/test_outcome_mapper.py`,
+  `tests/tier1/fixtures/rule600_truncation_cp.txt`,
+  `tests/tier1/goldens/rule600_truncation_cp.json`,
+  `tests/tier1/fixture-index.yaml`, `tasks/worklog.md`.
+- **Deviations from plan:** none in code. One plan-text correction ruled at
+  the gate: the full form is 35 bytes, not 36 (plan arithmetic error, not
+  an observation).
+- **Notes for next task (34.2–34.4):** envelope bump placement RULED at the
+  34.1 plan gate: 6→7 + `ACCEPTED_ENVELOPE_VERSIONS` → {7} ride 34.4, so
+  the acceptance set stays {6} until then — now a sequencing INVARIANT:
+  no corpus tooling runs between 34.1 and the batch rerun (34.5 follows
+  34.4 in the ruled order). Expected 34.1 delta class at the rerun:
+  raw-string change only on exactly the 76 truncation-class rows.

@@ -396,3 +396,13 @@ fixtures:
     expected_warnings: []
     layout_unverified: false
     synthetic: true
+
+  - filename: rule600_truncation_cp.txt
+    court_type: Common Pleas
+    scenario: 34.1 truncation repair — Rule 600 disposition wraps mid-phrase to
+      the truncated capture, continuation line polluted with a charge-name wrap;
+      repaired to the full form reading no continuation line (18.2 Item-2 class)
+    expected_charge_count: 1
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true

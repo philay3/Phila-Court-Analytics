@@ -109,17 +109,13 @@ HELD_FOR_COURT_DISPOSITIONS: frozenset[str] = frozenset(
 # vocabulary, non-identifying (same class as the committed charge-description
 # vocabulary); no raw docket text, docket numbers, or defendant data.
 #
-# AC-5 hygiene: the table carries ONLY the full "Transferred to Another
-# Jurisdiction"; the truncated capture "Transferred to Another" is absent —
-# the 18.2 Class E repair (16 rows) rewrites the truncated form to its full
-# string before mapping, so a truncated key would be unreachable. A test asserts
-# the truncated key's absence.
-#
-# NOTE (future parser-repair candidate, NOT this task): "Dismissed - Rule 600
-# (Speedy" is a known mid-phrase parser truncation of "...(Speedy Trial)". It is
-# mapped verbatim to `dismissed` here; the durable fix belongs in the parser's
-# truncated-disposition repair table (same class as the 18.2 Transferred repair)
-# and is logged to the worklog — the parser is out of scope for 22.4.
+# AC-5 hygiene: the table carries ONLY full repaired forms — "Transferred to
+# Another Jurisdiction" (18.2 Class E, 16 rows) and "Dismissed - Rule 600
+# (Speedy Trial)" (Task 34.1, same repair class); the truncated captures
+# "Transferred to Another" and "Dismissed - Rule 600 (Speedy" are absent —
+# the parser's truncated-disposition repair table rewrites each truncated form
+# to its full string before mapping, so a truncated key would be unreachable.
+# Tests assert both truncated keys' absence.
 DISPOSITION_OUTCOME_MAP: dict[str, str] = {
     # guilty_plea — plea of guilty / no contest resulting in a conviction
     "Guilty Plea - Negotiated": "guilty_plea",
@@ -137,7 +133,7 @@ DISPOSITION_OUTCOME_MAP: dict[str, str] = {
     "Nolle Prossed": "dismissed",
     "Quashed": "dismissed",
     "Dismissed - LOE": "dismissed",
-    "Dismissed - Rule 600 (Speedy": "dismissed",
+    "Dismissed - Rule 600 (Speedy Trial)": "dismissed",
     "Dismissed": "dismissed",
     "Dismissed - LOP": "dismissed",
     "Dismissed - Rule 1013": "dismissed",

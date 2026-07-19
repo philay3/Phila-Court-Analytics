@@ -548,6 +548,27 @@ def test_truncated_disposition_repaired_ignoring_polluted_continuation():
     assert not any(w["code"] == SUSPECTED_AMENDED_CHARGE for w in warnings)
 
 
+def test_truncated_rule600_disposition_repaired():
+    """The Rule 600 wrap capture ("Dismissed - Rule 600 (Speedy") is repaired to
+    the full string (Task 34.1, same Item-2 class as Transferred). The
+    continuation line carrying the tail is polluted with a charge-name wrap;
+    the repair reads no continuation line, so the pollution never leaks, the
+    judge line is still read, and the event-line date is kept."""
+    page = build_mc(
+        "Trial",
+        "01/15/2025 Final Disposition",
+        "1 / Simple Assault Dismissed - Rule 600 (Speedy",
+        "Manufacture or Deliver Trial)",
+        "Smith, Judge A. 01/15/2025",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Dismissed - Rule 600 (Speedy Trial)"
+    assert charge["disposition_judge_raw"] == "Smith, Judge A."
+    assert charge["disposition_date"] == "2025-01-15"
+    assert warnings == []
+
+
 def test_charge_description_wrap_not_appended():
     """A charge-description wrap after an ordinary disposition is NOT appended;
     the ordinary disposition (not a repair-table key) is left untouched."""
@@ -823,6 +844,23 @@ def test_wrap_token_proceed_to_court_ard_stays_non_terminal():
     charge = record["charges"][0]
     assert charge["disposition_raw"] is None
     assert charge["event_name"] == "Violation of Probation"
+    assert not any(w["code"] == UNKNOWN_NOT_FINAL_DISPOSITION for w in warnings)
+
+
+def test_rule600_token_routing_unchanged():
+    """Routing consumes PRE-repair stream tokens, so the truncated Rule 600 wrap
+    token stays in NON_TERMINAL_DISPOSITIONS despite the Task 34.1 repair: a
+    first-line "Dismissed - Rule 600 (Speedy" under a Not-Final event does not
+    route (charge stays held) and warns nothing — known vocabulary."""
+    page = build_mc(
+        "Status 03/10/2025 Not Final",
+        "1 / Simple Assault Dismissed - Rule 600 (Speedy",
+        "Trial)",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None
+    assert charge["event_name"] == "Status"
     assert not any(w["code"] == UNKNOWN_NOT_FINAL_DISPOSITION for w in warnings)
 
 

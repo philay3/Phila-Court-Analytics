@@ -363,11 +363,15 @@ def test_truncated_transferred_key_absent() -> None:
     assert DISPOSITION_OUTCOME_MAP["Transferred to Another Jurisdiction"] == "other"
 
 
-def test_truncated_rule600_key_is_mapped_verbatim(mapper: OutcomeMapper) -> None:
-    # A known UNREPAIRED parser truncation, mapped verbatim (future parser fix).
-    result = mapper.map("Dismissed - Rule 600 (Speedy")
-    assert result is not None
-    assert result.outcome_code == "dismissed"
+def test_truncated_rule600_key_absent() -> None:
+    # The Task 34.1 repair rewrites "Dismissed - Rule 600 (Speedy" to its full
+    # form before mapping, so the truncated key is unreachable and must NOT be
+    # present (22.4 fresh-map principle; same class as the Transferred repair).
+    # Category invariance: the full form maps to `dismissed`, exactly as the
+    # truncated key did before its retirement.
+    assert "Dismissed - Rule 600 (Speedy" not in DISPOSITION_OUTCOME_MAP
+    assert "Dismissed - Rule 600 (Speedy Trial)" in DISPOSITION_OUTCOME_MAP
+    assert DISPOSITION_OUTCOME_MAP["Dismissed - Rule 600 (Speedy Trial)"] == "dismissed"
 
 
 # --- taxonomy-version stamping (AC 2) -----------------------------------------

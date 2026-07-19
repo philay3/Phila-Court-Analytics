@@ -147,6 +147,7 @@ def _is_junk_judge(value: str) -> bool:
 # downstream map (false-negative bias, deliberate).
 _TRUNCATED_DISPOSITION_REPAIRS = {
     "Transferred to Another": "Transferred to Another Jurisdiction",
+    "Dismissed - Rule 600 (Speedy": "Dismissed - Rule 600 (Speedy Trial)",
 }
 
 
@@ -221,6 +222,12 @@ NON_TERMINAL_DISPOSITIONS = frozenset(
         "DUI: Highest Rte of Alc (BAC .16+) 1st Off Held for Court M 75 § 3802 §§ C*",  # noqa: E501
         "DUI: Highest Rte of Alc (BAC .16+) 1st Off Proceed to Court M 75 § 3802 §§ C*",  # noqa: E501
         "Dismissed - LOE",
+        # Stays despite the Task 34.1 truncation repair: routing consumes
+        # PRE-repair stream tokens (the repair sweep runs after event routing),
+        # so a wrapped Rule 600 row under a Not-Final event still presents this
+        # truncated token at the decision point — removing it would newly emit
+        # UNKNOWN_NOT_FINAL_DISPOSITION. Not a map key; deliberate carve-out
+        # from the 22.4 fresh-map retirement, which reaches only the outcome map.
         "Dismissed - Rule 600 (Speedy",
         "Guilty",
         "Guilty Plea - Negotiated",
