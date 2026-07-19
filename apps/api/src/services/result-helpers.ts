@@ -2,11 +2,22 @@ import {
   CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
   PUBLIC_ERROR_CODES,
   type ChargeSentencing,
+  type ChargeSentencingIndex,
+  type ConvictionGradeRow,
+  type JudgeSentencingIndex,
   type SentencingCategoryCode,
+  type SentencingIndexCategoryRow,
+  type SentencingIndexSummary,
 } from '@pca/shared';
 import { publicError } from '../public-error.js';
 import { resolvePublicCategory, type CategoryKind } from '../taxonomy.js';
-import type { ChargeSentencingAggregateRow } from '../repositories/charge-result.js';
+import type {
+  ChargeSentencingAggregateRow,
+  ConvictionGradeAggregateRow,
+  SentencingIndexCategoryAggregateRow,
+  SentencingIndexSummaryAggregateRow,
+} from '../repositories/charge-result.js';
+import { daysToMonths } from './months.js';
 
 /**
  * Shared machinery of the public result endpoints (8.1 charge-only, 8.2
@@ -100,4 +111,103 @@ export function buildSentencing(rows: readonly ChargeSentencingAggregateRow[]): 
           rows.map((row) => row.sentencing_sample_size),
         ),
       };
+}
+
+// ---------------------------------------------------------------------------
+// Task 35.2: conviction-grain sentencing-index assembly. Serves what 35.1
+// stored — the only derivation is representational (day medians → months via
+// daysToMonths, numeric strings → JSON numbers). The summary row is the
+// servable anchor: its absence IS the absent arm, decided by the services
+// before any row fetch.
+// ---------------------------------------------------------------------------
+
+function buildIndexSummary(row: SentencingIndexSummaryAggregateRow): SentencingIndexSummary {
+  return {
+    convictions: row.convictions,
+    sentencedConvictions: row.sentenced_convictions,
+    wedgeCount: row.wedge_count,
+    wedgePercentage: Number(row.wedge_percentage),
+    thinData: row.is_thin_data,
+    dateRange: { start: row.date_range_start, end: row.date_range_end },
+  };
+}
+
+/**
+ * Maps stored category rows to public rows, ordered by taxonomy sortOrder.
+ * resolvePublicCategory both validates the code (unknown/non-public →
+ * INTERNAL_ERROR) and supplies the order; its display name is deliberately
+ * NOT served (pin 4 — stored fields only; strings are 35.3's). The duration
+ * trio is all-or-none by stored CHECK; a half-present trio can only mean
+ * corruption and is the same class of integrity failure.
+ */
+function buildIndexCategoryRows(
+  rows: readonly SentencingIndexCategoryAggregateRow[],
+): SentencingIndexCategoryRow[] {
+  const mapped = rows.map((row) => {
+    const category = resolvePublicCategory('sentencing', row.category_code);
+    const nulls = [row.median_min_days, row.median_max_days, row.min_assumed_percentage].filter(
+      (value) => value === null,
+    ).length;
+    if (nulls !== 0 && nulls !== 3) {
+      throw publicError(
+        PUBLIC_ERROR_CODES.INTERNAL_ERROR,
+        'sentencing-index category row carries a half-present duration trio',
+      );
+    }
+    return {
+      sortOrder: category.sortOrder,
+      row: {
+        // Cast: resolvePublicCategory just proved membership in the public
+        // category set, which is exactly what SentencingCategoryCode is.
+        categoryCode: row.category_code as SentencingCategoryCode,
+        convictionCount: row.conviction_count,
+        percentageOfSentenced: Number(row.percentage_of_sentenced),
+        // Casts: the trio check above proved all three columns present in
+        // this branch, so daysToMonths cannot return null here.
+        ...(row.min_assumed_percentage !== null
+          ? {
+              medianMinMonths: daysToMonths(row.median_min_days) as number,
+              medianMaxMonths: daysToMonths(row.median_max_days) as number,
+              minAssumedPercentage: Number(row.min_assumed_percentage),
+            }
+          : {}),
+      },
+    };
+  });
+  mapped.sort((a, b) => a.sortOrder - b.sortOrder);
+  return mapped.map((entry) => entry.row);
+}
+
+/** Grade rows arrive in serving order (conviction_count DESC, grade ASC). */
+function buildGradeRows(rows: readonly ConvictionGradeAggregateRow[]): ConvictionGradeRow[] {
+  return rows.map((row) => ({
+    grade: row.grade,
+    convictionCount: row.conviction_count,
+    percentageOfConvictions: Number(row.percentage_of_convictions),
+  }));
+}
+
+export function buildChargeSentencingIndex(
+  summary: SentencingIndexSummaryAggregateRow,
+  categoryRows: readonly SentencingIndexCategoryAggregateRow[],
+  gradeRows: readonly ConvictionGradeAggregateRow[],
+): ChargeSentencingIndex {
+  return {
+    available: true,
+    summary: buildIndexSummary(summary),
+    categories: buildIndexCategoryRows(categoryRows),
+    grades: buildGradeRows(gradeRows),
+  };
+}
+
+/** Judge arm: no grade mix (ruling 2) — the present arm has no grades key. */
+export function buildJudgeSentencingIndex(
+  summary: SentencingIndexSummaryAggregateRow,
+  categoryRows: readonly SentencingIndexCategoryAggregateRow[],
+): JudgeSentencingIndex {
+  return {
+    available: true,
+    summary: buildIndexSummary(summary),
+    categories: buildIndexCategoryRows(categoryRows),
+  };
 }

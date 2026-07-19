@@ -109,6 +109,111 @@ export async function getChargeOutcomeRows(
     .execute();
 }
 
+// Task 35.2 sentencing-index reads (the 35.1 conviction-grain tables). Same
+// scoping rule as the distribution reads; numerics arrive as `pg` strings and
+// are converted in the service (months for medians, Number() for
+// percentages); summary dates are cast to text so the calendar date can never
+// shift through the driver's Date/timezone handling.
+
+export interface SentencingIndexSummaryAggregateRow {
+  convictions: number;
+  sentenced_convictions: number;
+  wedge_count: number;
+  wedge_percentage: string;
+  is_thin_data: boolean;
+  date_range_start: string;
+  date_range_end: string;
+}
+
+export interface SentencingIndexCategoryAggregateRow {
+  category_code: string;
+  conviction_count: number;
+  percentage_of_sentenced: string;
+  median_min_days: string | null;
+  median_max_days: string | null;
+  min_assumed_percentage: string | null;
+}
+
+export interface ConvictionGradeAggregateRow {
+  grade: string;
+  conviction_count: number;
+  percentage_of_convictions: string;
+}
+
+const INDEX_SUMMARY_COLUMNS = [
+  'convictions',
+  'sentenced_convictions',
+  'wedge_count',
+  'wedge_percentage',
+  'is_thin_data',
+] as const;
+
+const INDEX_CATEGORY_COLUMNS = [
+  'category_code',
+  'conviction_count',
+  'percentage_of_sentenced',
+  'median_min_days',
+  'median_max_days',
+  'min_assumed_percentage',
+] as const;
+
+/**
+ * The cell's summary row — the servable anchor of the index. At most one row
+ * exists per (run, charge) by unique constraint; absence IS the absent arm
+ * (a run predating the population and a zero-conviction cell alike).
+ */
+export async function getChargeSentencingIndexSummary(
+  db: Kysely<PublicApiDatabase>,
+  runId: string,
+  chargeId: string,
+): Promise<SentencingIndexSummaryAggregateRow | undefined> {
+  return db
+    .selectFrom('analytics.charge_sentencing_index_summaries')
+    .where('aggregate_run_id', '=', runId)
+    .where('charge_id', '=', chargeId)
+    .select([
+      ...INDEX_SUMMARY_COLUMNS,
+      sql<string>`date_range_start::text`.as('date_range_start'),
+      sql<string>`date_range_end::text`.as('date_range_end'),
+    ])
+    .executeTakeFirst();
+}
+
+export async function getChargeSentencingIndexCategoryRows(
+  db: Kysely<PublicApiDatabase>,
+  runId: string,
+  chargeId: string,
+): Promise<SentencingIndexCategoryAggregateRow[]> {
+  return db
+    .selectFrom('analytics.charge_sentencing_index_aggregates')
+    .where('aggregate_run_id', '=', runId)
+    .where('charge_id', '=', chargeId)
+    .select([...INDEX_CATEGORY_COLUMNS])
+    .orderBy('category_code')
+    .execute();
+}
+
+/**
+ * Grade-mix rows, charge grain only (ruling 2). Served dominant-first:
+ * conviction_count DESC with grade ASC as the deterministic tiebreak — this
+ * IS the presentation order (grades have no taxonomy sortOrder), and the
+ * ungraded bucket rides wherever its count puts it.
+ */
+export async function getChargeConvictionGradeRows(
+  db: Kysely<PublicApiDatabase>,
+  runId: string,
+  chargeId: string,
+): Promise<ConvictionGradeAggregateRow[]> {
+  return db
+    .selectFrom('analytics.charge_conviction_grade_aggregates')
+    .where('aggregate_run_id', '=', runId)
+    .where('charge_id', '=', chargeId)
+    .select(['grade', 'conviction_count', 'percentage_of_convictions'])
+    .orderBy('conviction_count', 'desc')
+    .orderBy('grade')
+    .execute();
+}
+
 export async function getChargeSentencingRows(
   db: Kysely<PublicApiDatabase>,
   runId: string,

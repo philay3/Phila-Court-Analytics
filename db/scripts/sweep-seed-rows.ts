@@ -32,11 +32,20 @@ const AGGREGATE_TABLES = [
   'analytics.charge_sentencing_aggregates',
   'analytics.judge_outcome_aggregates',
   'analytics.judge_sentencing_aggregates',
+  // Task 35.2: the five 35.1 sentencing-index tables carry the same run FK
+  // and are seeded by the same registry runs.
+  'analytics.charge_sentencing_index_summaries',
+  'analytics.charge_sentencing_index_aggregates',
+  'analytics.charge_conviction_grade_aggregates',
+  'analytics.judge_sentencing_index_summaries',
+  'analytics.judge_sentencing_index_aggregates',
 ] as const;
 
 const JUDGE_AGGREGATE_TABLES = [
   'analytics.judge_outcome_aggregates',
   'analytics.judge_sentencing_aggregates',
+  'analytics.judge_sentencing_index_summaries',
+  'analytics.judge_sentencing_index_aggregates',
 ] as const;
 
 const FACT_TABLES = ['fact.charge_outcomes', 'fact.charge_sentences'] as const;

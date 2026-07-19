@@ -8,8 +8,10 @@ import {
   DECOY_CHARGE_OUTCOMES,
   PUBLISHED_CHARGE_OUTCOMES,
   PUBLISHED_CHARGE_SENTENCING,
+  PUBLISHED_CHARGE_SENTENCING_INDEX,
   PUBLISHED_JUDGE_OUTCOMES,
   PUBLISHED_JUDGE_SENTENCING,
+  PUBLISHED_JUDGE_SENTENCING_INDEX,
   PUBLISHED_RUN_TIMESTAMPS,
   SEED_AGGREGATE_CREATED_AT,
   SEED_PUBLISHED_RUN_ID,
@@ -19,8 +21,10 @@ import {
   type CategoryCount,
   type ChargeOutcomeDistribution,
   type ChargeSentencingDistribution,
+  type ChargeSentencingIndexSeed,
   type JudgeOutcomeDistribution,
   type JudgeSentencingDistribution,
+  type JudgeSentencingIndexSeed,
 } from './aggregate-data.js';
 import { requireId, selectIdBySlug } from './reference.js';
 
@@ -49,6 +53,13 @@ const AGGREGATE_TABLES = [
   'analytics.charge_sentencing_aggregates',
   'analytics.judge_outcome_aggregates',
   'analytics.judge_sentencing_aggregates',
+  // Task 35.2: the five 35.1 conviction-grain sentencing-index tables share
+  // the delete-and-reinsert lifecycle (immutable rows, same run scoping).
+  'analytics.charge_sentencing_index_summaries',
+  'analytics.charge_sentencing_index_aggregates',
+  'analytics.charge_conviction_grade_aggregates',
+  'analytics.judge_sentencing_index_summaries',
+  'analytics.judge_sentencing_index_aggregates',
 ] as const;
 
 type AggregateTable = (typeof AGGREGATE_TABLES)[number];
@@ -71,6 +82,11 @@ export function percentageOf(count: number, sampleSize: number): string {
   return (Math.round((count * 10_000) / sampleSize) / 100).toFixed(2);
 }
 
+/** numeric(4,1) column: the index percentages carry exactly one decimal. */
+export function percentage1Of(count: number, denominator: number): string {
+  return (Math.round((count * 1000) / denominator) / 10).toFixed(1);
+}
+
 // ---------------------------------------------------------------------------
 // Self-validation: runs in memory before any write and throws on violation.
 // ---------------------------------------------------------------------------
@@ -87,6 +103,22 @@ const EXPECTED_THIN_JUDGE_OUTCOMES = new Set(['simple-assault|judge-testina-plac
 
 /** Fully-unavailable judge: ref rows exist, aggregate rows must not. */
 const UNAVAILABLE_JUDGE_SLUG = 'judge-fakename-example';
+
+/**
+ * Task 35.2 index-scenario matrix, restated independently of the data file:
+ * thin cells, the deliberately index-absent charge (distributions exist,
+ * index rows do not — the run-predates-population shape), and the
+ * deliberately index-absent judge cell (pair outcomes exist, index absent).
+ */
+const EXPECTED_THIN_CHARGE_INDEX = new Set([
+  'possession-controlled-substance',
+  'criminal-trespass',
+]);
+const INDEX_ABSENT_CHARGE_SLUG = 'simple-assault';
+const INDEX_ABSENT_JUDGE_PAIR = 'dui-general-impairment|judge-samuel-seeddata';
+
+/** numeric(6,1) / numeric(4,1) literals as the seed files write them. */
+const NUMERIC_1DP_PATTERN = /^\d{1,5}\.\d$/;
 
 interface DistributionCheck {
   label: string;
@@ -233,13 +265,143 @@ export function validateAggregateSeeds(): void {
     }
   }
 
-  const judgeSlugs = [...PUBLISHED_JUDGE_OUTCOMES, ...PUBLISHED_JUDGE_SENTENCING].map(
-    (dist) => dist.judgeSlug,
-  );
+  const judgeSlugs = [
+    ...PUBLISHED_JUDGE_OUTCOMES,
+    ...PUBLISHED_JUDGE_SENTENCING,
+    ...PUBLISHED_JUDGE_SENTENCING_INDEX,
+  ].map((dist) => dist.judgeSlug);
   if (judgeSlugs.includes(UNAVAILABLE_JUDGE_SLUG)) {
     fail(
       'unavailable judge',
       `${UNAVAILABLE_JUDGE_SLUG} must receive no aggregate rows — its absence is the fixture`,
+    );
+  }
+
+  validateSentencingIndexSeeds();
+}
+
+function validateIndexCell(
+  label: string,
+  seed: ChargeSentencingIndexSeed | JudgeSentencingIndexSeed,
+  publicSentencing: Set<string>,
+): void {
+  const { convictions, sentencedConvictions, dateRange, categories } = seed;
+  if (!Number.isInteger(convictions) || convictions <= 0) {
+    fail(label, `convictions must be a positive integer, got ${convictions}`);
+  }
+  if (
+    !Number.isInteger(sentencedConvictions) ||
+    sentencedConvictions < 0 ||
+    sentencedConvictions > convictions
+  ) {
+    fail(label, `sentenced ${sentencedConvictions} must be an integer in [0, ${convictions}]`);
+  }
+  if (
+    dateRange.start < AGGREGATE_DATE_RANGE.start ||
+    dateRange.end > AGGREGATE_DATE_RANGE.end ||
+    dateRange.start > dateRange.end
+  ) {
+    fail(label, `cell date range ${dateRange.start}..${dateRange.end} must nest in the run range`);
+  }
+  if (sentencedConvictions === 0 && categories.length > 0) {
+    fail(label, 'a zero-sentenced cell must have no category rows');
+  }
+
+  const seen = new Set<string>();
+  for (const category of categories) {
+    if (!publicSentencing.has(category.code)) {
+      fail(label, `category "${category.code}" is not a public sentencing category`);
+    }
+    if (seen.has(category.code)) {
+      fail(label, `duplicate category "${category.code}"`);
+    }
+    seen.add(category.code);
+    if (
+      !Number.isInteger(category.convictionCount) ||
+      category.convictionCount <= 0 ||
+      category.convictionCount > sentencedConvictions
+    ) {
+      fail(
+        label,
+        `count ${category.convictionCount} for "${category.code}" must be in [1, ${sentencedConvictions}]`,
+      );
+    }
+    const trio = [category.medianMinDays, category.medianMaxDays, category.minAssumedPercentage];
+    const present = trio.filter((value) => value !== undefined).length;
+    if (present !== 0 && present !== 3) {
+      fail(label, `duration trio for "${category.code}" must be all-present or all-absent`);
+    }
+    if (present === 3) {
+      for (const value of trio) {
+        if (!NUMERIC_1DP_PATTERN.test(value as string)) {
+          fail(label, `"${value}" for "${category.code}" is not a 1-decimal numeric literal`);
+        }
+      }
+      if (Number(category.medianMinDays) > Number(category.medianMaxDays)) {
+        fail(label, `median min > max for "${category.code}"`);
+      }
+      if (Number(category.minAssumedPercentage) > 100) {
+        fail(label, `min_assumed percentage for "${category.code}" exceeds 100`);
+      }
+    }
+  }
+}
+
+function validateSentencingIndexSeeds(): void {
+  const publicSentencing = publicCodes(SENTENCING_CATEGORIES);
+
+  const indexedCharges = new Set<string>();
+  for (const seed of PUBLISHED_CHARGE_SENTENCING_INDEX) {
+    const label = `published charge sentencing index: ${seed.chargeSlug}`;
+    if (indexedCharges.has(seed.chargeSlug)) {
+      fail(label, 'duplicate charge cell');
+    }
+    indexedCharges.add(seed.chargeSlug);
+    validateIndexCell(label, seed, publicSentencing);
+    if (seed.isThinData !== EXPECTED_THIN_CHARGE_INDEX.has(seed.chargeSlug)) {
+      fail(label, `is_thin_data is ${seed.isThinData}, matrix expects the opposite`);
+    }
+
+    const gradesSeen = new Set<string>();
+    let gradeSum = 0;
+    for (const { grade, count } of seed.grades) {
+      if (gradesSeen.has(grade)) {
+        fail(label, `duplicate grade "${grade}"`);
+      }
+      gradesSeen.add(grade);
+      if (!Number.isInteger(count) || count <= 0) {
+        fail(label, `grade count for "${grade}" must be a positive integer, got ${count}`);
+      }
+      gradeSum += count;
+    }
+    if (gradeSum !== seed.convictions) {
+      fail(label, `grade counts sum to ${gradeSum}, expected convictions ${seed.convictions}`);
+    }
+  }
+  if (indexedCharges.has(INDEX_ABSENT_CHARGE_SLUG)) {
+    fail(
+      'index-absent charge',
+      `${INDEX_ABSENT_CHARGE_SLUG} must receive no index rows — its absence is the fixture`,
+    );
+  }
+
+  const indexedPairs = new Set<string>();
+  for (const seed of PUBLISHED_JUDGE_SENTENCING_INDEX) {
+    const pair = `${seed.chargeSlug}|${seed.judgeSlug}`;
+    const label = `published judge sentencing index: ${seed.chargeSlug}/${seed.judgeSlug}`;
+    if (indexedPairs.has(pair)) {
+      fail(label, 'duplicate judge cell');
+    }
+    indexedPairs.add(pair);
+    validateIndexCell(label, seed, publicSentencing);
+    if (seed.isThinData) {
+      fail(label, 'no judge index cell is in the thin matrix');
+    }
+  }
+  if (indexedPairs.has(INDEX_ABSENT_JUDGE_PAIR)) {
+    fail(
+      'index-absent judge cell',
+      `${INDEX_ABSENT_JUDGE_PAIR} must receive no index rows — its absence is the fixture`,
     );
   }
 }
@@ -273,14 +435,34 @@ async function seedPublishedRun(trx: Transaction<Database>): Promise<AggregateRu
         ...PUBLISHED_CHARGE_SENTENCING,
         ...PUBLISHED_JUDGE_OUTCOMES,
         ...PUBLISHED_JUDGE_SENTENCING,
+        ...PUBLISHED_CHARGE_SENTENCING_INDEX,
+        ...PUBLISHED_JUDGE_SENTENCING_INDEX,
       ].map((dist) => dist.chargeSlug),
     ),
   ]);
   const judgeIds = await selectIdBySlug(trx, 'ref.normalized_judges', [
     ...new Set(
-      [...PUBLISHED_JUDGE_OUTCOMES, ...PUBLISHED_JUDGE_SENTENCING].map((dist) => dist.judgeSlug),
+      [
+        ...PUBLISHED_JUDGE_OUTCOMES,
+        ...PUBLISHED_JUDGE_SENTENCING,
+        ...PUBLISHED_JUDGE_SENTENCING_INDEX,
+      ].map((dist) => dist.judgeSlug),
     ),
   ]);
+
+  const chargeIndex = await insertChargeSentencingIndex(
+    trx,
+    SEED_PUBLISHED_RUN_ID,
+    PUBLISHED_CHARGE_SENTENCING_INDEX,
+    chargeIds,
+  );
+  const judgeIndex = await insertJudgeSentencingIndex(
+    trx,
+    SEED_PUBLISHED_RUN_ID,
+    PUBLISHED_JUDGE_SENTENCING_INDEX,
+    chargeIds,
+    judgeIds,
+  );
 
   const inserted: Record<AggregateTable, number> = {
     'analytics.charge_outcome_aggregates': await insertChargeOutcomes(
@@ -309,6 +491,11 @@ async function seedPublishedRun(trx: Transaction<Database>): Promise<AggregateRu
       chargeIds,
       judgeIds,
     ),
+    'analytics.charge_sentencing_index_summaries': chargeIndex.summaries,
+    'analytics.charge_sentencing_index_aggregates': chargeIndex.categories,
+    'analytics.charge_conviction_grade_aggregates': chargeIndex.grades,
+    'analytics.judge_sentencing_index_summaries': judgeIndex.summaries,
+    'analytics.judge_sentencing_index_aggregates': judgeIndex.categories,
   };
 
   return {
@@ -497,6 +684,135 @@ async function insertJudgeOutcomes(
   );
   await trx.insertInto('analytics.judge_outcome_aggregates').values(rows).execute();
   return rows.length;
+}
+
+// Task 35.2: index-cell inserts. Wedge count/percentage are derived here so
+// the stored wedge identity (sentenced + wedge = convictions) holds by
+// construction; created_at pins to the shared constant so re-runs stay
+// content-identical (only surrogate ids regenerate).
+
+function indexSummaryValues(
+  runId: string,
+  seed: ChargeSentencingIndexSeed | JudgeSentencingIndexSeed,
+) {
+  const wedge = seed.convictions - seed.sentencedConvictions;
+  return {
+    aggregate_run_id: runId,
+    convictions: seed.convictions,
+    sentenced_convictions: seed.sentencedConvictions,
+    wedge_count: wedge,
+    wedge_percentage: percentage1Of(wedge, seed.convictions),
+    is_thin_data: seed.isThinData,
+    date_range_start: seed.dateRange.start,
+    date_range_end: seed.dateRange.end,
+    taxonomy_version: TAXONOMY_VERSION,
+    created_at: SEED_AGGREGATE_CREATED_AT,
+  };
+}
+
+function indexCategoryValues(
+  runId: string,
+  seed: ChargeSentencingIndexSeed | JudgeSentencingIndexSeed,
+) {
+  return seed.categories.map((category) => ({
+    aggregate_run_id: runId,
+    category_code: category.code,
+    conviction_count: category.convictionCount,
+    percentage_of_sentenced: percentage1Of(category.convictionCount, seed.sentencedConvictions),
+    median_min_days: category.medianMinDays ?? null,
+    median_max_days: category.medianMaxDays ?? null,
+    min_assumed_percentage: category.minAssumedPercentage ?? null,
+    taxonomy_version: TAXONOMY_VERSION,
+    created_at: SEED_AGGREGATE_CREATED_AT,
+  }));
+}
+
+async function insertChargeSentencingIndex(
+  trx: Transaction<Database>,
+  runId: string,
+  seeds: readonly ChargeSentencingIndexSeed[],
+  chargeIds: Map<string, string>,
+): Promise<{ summaries: number; categories: number; grades: number }> {
+  const summaryRows = seeds.map((seed) => ({
+    charge_id: requireId(chargeIds, seed.chargeSlug),
+    ...indexSummaryValues(runId, seed),
+  }));
+  const categoryRows = seeds.flatMap((seed) =>
+    indexCategoryValues(runId, seed).map((row) => ({
+      charge_id: requireId(chargeIds, seed.chargeSlug),
+      ...row,
+    })),
+  );
+  const gradeRows = seeds.flatMap((seed) =>
+    seed.grades.map(({ grade, count }) => ({
+      aggregate_run_id: runId,
+      charge_id: requireId(chargeIds, seed.chargeSlug),
+      grade,
+      conviction_count: count,
+      percentage_of_convictions: percentage1Of(count, seed.convictions),
+      taxonomy_version: TAXONOMY_VERSION,
+      created_at: SEED_AGGREGATE_CREATED_AT,
+    })),
+  );
+
+  if (summaryRows.length > 0) {
+    await trx
+      .insertInto('analytics.charge_sentencing_index_summaries')
+      .values(summaryRows)
+      .execute();
+  }
+  if (categoryRows.length > 0) {
+    await trx
+      .insertInto('analytics.charge_sentencing_index_aggregates')
+      .values(categoryRows)
+      .execute();
+  }
+  if (gradeRows.length > 0) {
+    await trx
+      .insertInto('analytics.charge_conviction_grade_aggregates')
+      .values(gradeRows)
+      .execute();
+  }
+  return {
+    summaries: summaryRows.length,
+    categories: categoryRows.length,
+    grades: gradeRows.length,
+  };
+}
+
+async function insertJudgeSentencingIndex(
+  trx: Transaction<Database>,
+  runId: string,
+  seeds: readonly JudgeSentencingIndexSeed[],
+  chargeIds: Map<string, string>,
+  judgeIds: Map<string, string>,
+): Promise<{ summaries: number; categories: number }> {
+  const summaryRows = seeds.map((seed) => ({
+    charge_id: requireId(chargeIds, seed.chargeSlug),
+    judge_id: requireId(judgeIds, seed.judgeSlug),
+    ...indexSummaryValues(runId, seed),
+  }));
+  const categoryRows = seeds.flatMap((seed) =>
+    indexCategoryValues(runId, seed).map((row) => ({
+      charge_id: requireId(chargeIds, seed.chargeSlug),
+      judge_id: requireId(judgeIds, seed.judgeSlug),
+      ...row,
+    })),
+  );
+
+  if (summaryRows.length > 0) {
+    await trx
+      .insertInto('analytics.judge_sentencing_index_summaries')
+      .values(summaryRows)
+      .execute();
+  }
+  if (categoryRows.length > 0) {
+    await trx
+      .insertInto('analytics.judge_sentencing_index_aggregates')
+      .values(categoryRows)
+      .execute();
+  }
+  return { summaries: summaryRows.length, categories: categoryRows.length };
 }
 
 async function insertJudgeSentencing(

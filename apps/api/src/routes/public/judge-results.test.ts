@@ -400,6 +400,23 @@ describe.skipIf(!hasDb)(
         'code',
         'fallback',
         'chargeOnlyResultPath',
+        // Task 35.2 sentencing-index section (success arm only, judge
+        // grain). Deliberately NOT allowed: 'grades' and
+        // 'percentageOfConvictions' — the judge arm carries no grade mix
+        // (ruling 2), so those keys appearing here is a contract breach the
+        // sweep must catch. Months-named median keys only.
+        'sentencingIndex',
+        'summary',
+        'convictions',
+        'sentencedConvictions',
+        'wedgeCount',
+        'wedgePercentage',
+        'categories',
+        'convictionCount',
+        'percentageOfSentenced',
+        'medianMinMonths',
+        'medianMaxMonths',
+        'minAssumedPercentage',
       ]);
       const collectKeys = (value: unknown, seen: string[]) => {
         if (Array.isArray(value)) {
@@ -424,6 +441,55 @@ describe.skipIf(!hasDb)(
           expect(allowedKeys.has(key), `unexpected response key: ${key}`).toBe(true);
         }
       }
+    });
+
+    describe('sentencing index section (task 35.2, judge grain)', () => {
+      it('serves the present arm for the seeded cell — summary, categories in months, NO grade mix', async () => {
+        const res = await getResult('retail-theft', 'judge-testina-placeholder');
+        expect(res.statusCode).toBe(200);
+        const body = res.json();
+        // Expected values restated by hand from db/seeds/aggregate-data.ts
+        // and the pin-3 day→month conversion (stored 60/180 days → 2/6).
+        expect(body.sentencingIndex).toEqual({
+          available: true,
+          summary: {
+            convictions: 49,
+            sentencedConvictions: 45,
+            wedgeCount: 4,
+            wedgePercentage: 8.2,
+            thinData: false,
+            dateRange: { start: '2025-02-01', end: '2026-06-10' },
+          },
+          categories: [
+            {
+              categoryCode: 'probation',
+              convictionCount: 30,
+              percentageOfSentenced: 66.7,
+              medianMinMonths: 2,
+              medianMaxMonths: 6,
+              minAssumedPercentage: 40,
+            },
+            { categoryCode: 'fine', convictionCount: 20, percentageOfSentenced: 44.4 },
+          ],
+        });
+        // Ruling 2, asserted structurally: no grades key on the judge arm.
+        expect('grades' in (body.sentencingIndex as object)).toBe(false);
+        expect(res.body).not.toMatch(/days/i);
+      });
+
+      it('serves the bare absent arm on a success payload whose cell the index does not cover', async () => {
+        // The dui/samuel pair has outcome and sentencing rows but no index
+        // rows — the exact shape production enters when the active run
+        // predates the index population.
+        const res = await getResult('dui-general-impairment', 'judge-samuel-seeddata');
+        expect(res.statusCode).toBe(200);
+        const body = res.json();
+        expect(body.resultType).toBe('judge_specific');
+        expect(body.sentencingIndex).toEqual({ available: false });
+        expect(body.judgeSpecific).toMatchObject({
+          outcomes: expect.objectContaining({ sampleSize: 210 }),
+        });
+      });
     });
   },
 );

@@ -14,6 +14,7 @@ import {
   type JudgeSpecificResultSuccess,
   type JudgeSpecificResultUnavailable,
 } from '../public/judge-result.js';
+import type { ChargeSentencingIndex, JudgeSentencingIndex } from '../public/sentencing-index.js';
 import type { ChargeSearchResponse, JudgeSearchResponse } from '../public/search.js';
 import {
   DATA_COVERAGE_COURT_SCOPE,
@@ -55,6 +56,61 @@ export function validSentencingDistribution(): SentencingDistribution {
   };
 }
 
+/**
+ * Charge-arm present index (task 35.2): categories from the taxonomy (first
+ * one duration-bearing with the all-or-none month trio, second without),
+ * grade mix with the explicit ungraded bucket, dominant-count-first.
+ */
+export function validChargeSentencingIndex(): ChargeSentencingIndex {
+  return {
+    available: true,
+    summary: {
+      convictions: 60,
+      sentencedConvictions: 58,
+      wedgeCount: 2,
+      wedgePercentage: 3.3,
+      thinData: false,
+      dateRange: { start: '2025-01-02', end: '2026-06-28' },
+    },
+    categories: publicSentencingCategories.slice(0, 2).map((category, index) => ({
+      categoryCode: category.code,
+      convictionCount: 20 - index,
+      percentageOfSentenced: 34.5 - index,
+      ...(index === 0
+        ? { medianMinMonths: 11.5, medianMaxMonths: 23, minAssumedPercentage: 10 }
+        : {}),
+    })),
+    grades: [
+      { grade: 'F3', convictionCount: 30, percentageOfConvictions: 50 },
+      { grade: 'M1', convictionCount: 20, percentageOfConvictions: 33.3 },
+      { grade: 'ungraded', convictionCount: 10, percentageOfConvictions: 16.7 },
+    ],
+  };
+}
+
+/** Judge-arm present index: no grade mix key at all (ruling 2). */
+export function validJudgeSentencingIndex(): JudgeSentencingIndex {
+  return {
+    available: true,
+    summary: {
+      convictions: 12,
+      sentencedConvictions: 9,
+      wedgeCount: 3,
+      wedgePercentage: 25,
+      thinData: true,
+      dateRange: { start: '2025-02-10', end: '2026-05-15' },
+    },
+    categories: publicSentencingCategories.slice(0, 1).map((category) => ({
+      categoryCode: category.code,
+      convictionCount: 9,
+      percentageOfSentenced: 100,
+      medianMinMonths: 0.2,
+      medianMaxMonths: 1.5,
+      minAssumedPercentage: 90.1,
+    })),
+  };
+}
+
 export function validChargeOnlyResult(): ChargeOnlyResultSuccess {
   return {
     charge: {
@@ -91,6 +147,7 @@ export function validChargeOnlyResult(): ChargeOnlyResultSuccess {
         percentage: 100 / publicSentencingCategories.length,
       })),
     },
+    sentencingIndex: validChargeSentencingIndex(),
     links: { methodology: '/methodology', definitions: '/definitions' },
   };
 }
@@ -138,6 +195,7 @@ export function validJudgeSpecificResultSuccess(): JudgeSpecificResultSuccess {
       sentencing: { ...baseSentencing, sampleSize: 9 },
     },
     baseline: { outcomes: base.outcomes, sentencing: base.sentencing },
+    sentencingIndex: validJudgeSentencingIndex(),
     links: base.links,
   };
 }

@@ -7815,3 +7815,63 @@ the homepage copy-heavy phase per the amendment's for-the-record note.
   `pca_pipeline_test` currency queue item is CLOSED: both new migrations
   applied there and the down path round-trip verified; suite runs 1097
   passed against it.
+
+## Task 35.2 — Sentencing Index API Payloads (2026-07-19)
+
+- **What was built:** (1) Shared contracts: new
+  `packages/shared/src/public/sentencing-index.ts` — summary/category/grade
+  row schemas and the two-arm section unions (`available` boolean per house
+  section convention; absent arm is bare `{ available: false }`, no message —
+  all copy is 35.3's). `sentencingIndex` added as a REQUIRED field on both
+  SUCCESS arms only (charge shape carries `grades`; judge shape has no grades
+  key — ruling 2); unavailable arms untouched. (2) Month conversion:
+  `apps/api/src/services/months.ts` — `daysToMonths` parses the numeric(6,1)
+  string to integer tenths and rounds with `floor((T+15)/30)`, exact half-up
+  with no float ties; months are the only served unit, day values never
+  leave the API. (3) Serving: five repository reads (summary anchor +
+  category rows + grade rows at charge grain; summary + categories at judge
+  grain), summary-miss short-circuits to the absent arm; assembly in
+  `result-helpers.ts` orders categories by taxonomy sortOrder via
+  `resolvePublicCategory` (validates codes; display names deliberately not
+  served) and serves grades dominant-first (`conviction_count DESC, grade
+  ASC` — adjudicated fix). (4) Seeds: index scenario matrix in
+  `db/seeds/aggregate-data.ts` + writer/self-validation in `aggregates.ts`
+  (wedge identity by construction; deliberate absences restated:
+  simple-assault charge cell, dui/samuel judge cell, fakename-example
+  everywhere). (5) Tests: shared schema suite, exhaustive month unit tests,
+  inject coverage for every arm on both endpoints, key-sweep additions (the
+  judge sweep deliberately does NOT allow `grades`/`percentageOfConvictions`).
+- **Files touched:** `packages/shared/src/public/sentencing-index.ts` (+
+  test), `charge-result.ts`, `judge-result.ts`, `index.ts`,
+  `test-support/fixtures.ts`; `apps/api/src/services/months.ts` (+ test),
+  `result-helpers.ts`, `charge-result.ts`, `judge-result.ts`,
+  `apps/api/src/repositories/charge-result.ts`, `judge-result.ts`,
+  `apps/api/src/routes/public/results.test.ts`, `judge-results.test.ts`;
+  `db/seeds/aggregate-data.ts`, `db/seeds/aggregates.ts`;
+  `tasks/worklog.md`.
+- **Adjudicated out-of-scope touches (called out):** four web test-fixture
+  one-liners (`sentencingIndex: { available: false }`, absent-arm literal
+  only, zero rendering/copy assertions) in
+  `apps/web/app/charges/[chargeSlug]/charge-result-state.test.ts`,
+  `.../judge/[judgeSlug]/judge-result-state.test.ts`,
+  `apps/web/app/components/ChargeOnlyResultView.test.tsx`,
+  `JudgeSpecificResultView.test.tsx` — type-driven only (required field on
+  the success types). Consequential ripple: `db/scripts/sweep-seed-rows.ts`
+  and `db/tests/sweep-seed-rows.test.ts` table lists extended with the five
+  index tables (the new run FKs otherwise block the registry-run delete).
+- **Deviations from plan:** the sweep-script ripple above (surfaced by the
+  @pca/db gate); none otherwise.
+- **Verification:** all four workspace suites green (@pca/shared 205,
+  @pca/api 210, @pca/web 235, @pca/db 61); live degradation captured on
+  canonical `pca` (posture line + both endpoints for real served slugs):
+  existing payload fields byte-identical, new section serving the clean
+  absent arm — run `82b6cc99` predates the index population; the 74
+  unpublished 35.1 index summary rows there belong to run `24184d68` and
+  are invisible to serving by run scoping. Nothing published.
+- **Notes for next task (35.3):** the payload makes display states
+  derivable, it does not name them — zero-sentenced is `available: true` +
+  `sentencedConvictions: 0` + empty `categories` (ruling-4 fallback line is
+  a frontend derivation); the absent arm carries no message field at all.
+  Months come pre-converted (≤1dp); the web app must convert nothing.
+  Judge payloads carry the CELL index only — no baseline index, no grade
+  mix; a judge-page baseline index would be a future additive change.

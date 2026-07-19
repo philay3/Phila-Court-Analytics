@@ -36,6 +36,8 @@ const SUCCESS: ChargeOnlyResultSuccess = {
     available: false,
     message: 'Historical sentencing data is not available for this charge yet.',
   },
+  // Task 35.2 type-compatibility only: the absent arm, rendered by 35.3.
+  sentencingIndex: { available: false },
   links: LINKS,
 };
 

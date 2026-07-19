@@ -65,6 +65,8 @@ function makeSuccess(overrides: Partial<ChargeOnlyResultSuccess> = {}): ChargeOn
       thinData: false,
       rows: SENTENCING_ROWS,
     },
+    // Task 35.2 type-compatibility only: the absent arm, rendered by 35.3.
+    sentencingIndex: { available: false },
     links: { methodology: '/methodology', definitions: '/definitions' },
     ...overrides,
   };

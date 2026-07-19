@@ -6,6 +6,7 @@ import {
   chargeSummarySchema,
 } from './charge-result.js';
 import { dateRangeSchema, taxonomyVersionSchema } from './common.js';
+import { judgeSentencingIndexSchema } from './sentencing-index.js';
 
 /**
  * Judge-specific public result contract (task 8.2):
@@ -79,6 +80,11 @@ export const judgeSpecificResultSuccessSchema = Type.Object(
     judgeSpecific: resultDistributionsSchema,
     // The Philadelphia baseline is REQUIRED on every success response.
     baseline: resultDistributionsSchema,
+    // Task 35.2: the conviction-grain index for THE CELL (charge x judge),
+    // judge grain — no grade mix (ruling 2) and no baseline index here (the
+    // charge-grain index is served by the charge-only endpoint). Success arm
+    // only.
+    sentencingIndex: judgeSentencingIndexSchema,
     links: Type.Object(
       {
         methodology: Type.Literal('/methodology'),

@@ -350,6 +350,22 @@ describe.skipIf(!hasDb)('GET /results/charge/:chargeIdOrSlug against the seeded 
       'definitions',
       // Present on the 13.2a charge-only unavailable arm only.
       'code',
+      // Task 35.2 sentencing-index section (success arm only). Months-named
+      // median keys only — a day-named key must fail this sweep.
+      'sentencingIndex',
+      'summary',
+      'convictions',
+      'sentencedConvictions',
+      'wedgeCount',
+      'wedgePercentage',
+      'categories',
+      'convictionCount',
+      'percentageOfSentenced',
+      'medianMinMonths',
+      'medianMaxMonths',
+      'minAssumedPercentage',
+      'grades',
+      'percentageOfConvictions',
     ]);
     const collectKeys = (value: unknown, seen: string[]) => {
       if (Array.isArray(value)) {
@@ -373,5 +389,128 @@ describe.skipIf(!hasDb)('GET /results/charge/:chargeIdOrSlug against the seeded 
     // Per-row keys never include a sample size — it lives on the block only
     // (asserted structurally by the row toEqual checks above and the key
     // sweep here, since rows contain no sampleSize key).
+  });
+
+  describe('sentencing index section (task 35.2)', () => {
+    // Expected values restated by hand from db/seeds/aggregate-data.ts, the
+    // taxonomy sort order, and the pin-3 day→month conversion (÷30, 1dp,
+    // half-up) — an independent copy, so a drift in either side fails here.
+    const RETAIL_THEFT_SENTENCING_INDEX = {
+      available: true,
+      summary: {
+        convictions: 600,
+        sentencedConvictions: 588,
+        wedgeCount: 12,
+        wedgePercentage: 2,
+        thinData: false,
+        dateRange: { start: '2025-01-03', end: '2026-06-27' },
+      },
+      // Taxonomy sort order; medians served in MONTHS (stored 360/540 and
+      // 10.5/90 days — 10.5 is the exact half-up tie → 0.4).
+      categories: [
+        {
+          categoryCode: 'probation',
+          convictionCount: 290,
+          percentageOfSentenced: 49.3,
+          medianMinMonths: 12,
+          medianMaxMonths: 18,
+          minAssumedPercentage: 10,
+        },
+        {
+          categoryCode: 'incarceration',
+          convictionCount: 88,
+          percentageOfSentenced: 15,
+          medianMinMonths: 0.4,
+          medianMaxMonths: 3,
+          minAssumedPercentage: 20,
+        },
+        { categoryCode: 'fine', convictionCount: 200, percentageOfSentenced: 34 },
+        { categoryCode: 'community_service', convictionCount: 60, percentageOfSentenced: 10.2 },
+        { categoryCode: 'costs_fees', convictionCount: 150, percentageOfSentenced: 25.5 },
+      ],
+      // Dominant-first: conviction_count DESC, grade ASC tiebreak (M2 before
+      // S at 60), the ungraded bucket riding at its count position.
+      grades: [
+        { grade: 'F3', convictionCount: 300, percentageOfConvictions: 50 },
+        { grade: 'M1', convictionCount: 150, percentageOfConvictions: 25 },
+        { grade: 'M2', convictionCount: 60, percentageOfConvictions: 10 },
+        { grade: 'S', convictionCount: 60, percentageOfConvictions: 10 },
+        { grade: 'ungraded', convictionCount: 30, percentageOfConvictions: 5 },
+      ],
+    };
+
+    it('serves the full present arm beside an unchanged sentencing section', async () => {
+      const res = await getResult('retail-theft');
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.sentencingIndex).toEqual(RETAIL_THEFT_SENTENCING_INDEX);
+      // The sibling section is byte-stable: same shape and values as before.
+      expect(body.sentencing).toEqual({
+        available: true,
+        sampleSize: 700,
+        thinData: false,
+        rows: RETAIL_THEFT_SENTENCING_ROWS,
+      });
+      // Months only — no day-named keys or values anywhere in the payload.
+      expect(res.body).not.toMatch(/days/i);
+    });
+
+    it('serves the zero-sentenced summary: wedge 100%, empty categories, grade mix intact', async () => {
+      const res = await getResult('possession-controlled-substance');
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.sentencingIndex).toEqual({
+        available: true,
+        summary: {
+          convictions: 323,
+          sentencedConvictions: 0,
+          wedgeCount: 323,
+          wedgePercentage: 100,
+          thinData: true,
+          dateRange: { start: '2025-01-15', end: '2026-06-20' },
+        },
+        categories: [],
+        grades: [
+          { grade: 'M1', convictionCount: 200, percentageOfConvictions: 61.9 },
+          { grade: 'ungraded', convictionCount: 123, percentageOfConvictions: 38.1 },
+        ],
+      });
+      // The component-grain sentencing union stays independently unavailable.
+      expect(body.sentencing).toEqual({
+        available: false,
+        message: CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
+      });
+    });
+
+    it('passes the thin flag through on a tiny cell', async () => {
+      const res = await getResult('criminal-trespass');
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.sentencingIndex).toMatchObject({
+        available: true,
+        summary: { convictions: 6, sentencedConvictions: 5, wedgeCount: 1, thinData: true },
+      });
+      const index = body.sentencingIndex as {
+        categories: { categoryCode: string; medianMinMonths?: number; medianMaxMonths?: number }[];
+      };
+      expect(index.categories[0]).toMatchObject({
+        categoryCode: 'probation',
+        medianMinMonths: 1,
+        medianMaxMonths: 12,
+      });
+    });
+
+    it('serves the bare absent arm on a charge the index does not cover, distributions intact', async () => {
+      // simple-assault has outcome AND sentencing rows but no index rows —
+      // the exact shape production enters when the active run predates the
+      // index population.
+      const res = await getResult('simple-assault');
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.resultType).toBe('charge_only');
+      expect(body.sentencingIndex).toEqual({ available: false });
+      expect(body.outcomes).toMatchObject({ sampleSize: 800, thinData: false });
+      expect(body.sentencing).toMatchObject({ available: true, sampleSize: 450 });
+    });
   });
 });

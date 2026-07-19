@@ -86,6 +86,8 @@ function makeSuccess(
     aggregateRunId: '00000000-0000-0000-0000-0000000000aa',
     judgeSpecific: makeScope(JUDGE_OUTCOME_N, JUDGE_SENTENCING_N),
     baseline: makeScope(BASELINE_OUTCOME_N, BASELINE_SENTENCING_N),
+    // Task 35.2 type-compatibility only: the absent arm, rendered by 35.3.
+    sentencingIndex: { available: false },
     links: { methodology: '/methodology', definitions: '/definitions' },
     ...overrides,
   };
