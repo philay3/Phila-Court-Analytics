@@ -69,8 +69,9 @@ describe('JudgeSearchInput', () => {
       vi.fn(() => Promise.resolve(jsonResponse({ results: [] }))),
     );
     render(<Harness />);
-    // The "(optional)" label lives on the form label (HOME_COPY.judgeLabel);
-    // this component's input is a non-disabled combobox that never blocks.
+    // Optionality is signaled by the disclosure trigger and the shared help
+    // line (DP-5; the label is plain HOME_COPY.judgeLabel); this component's
+    // input is a non-disabled combobox that never blocks.
     expect(combobox()).not.toBeDisabled();
   });
 

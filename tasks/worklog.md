@@ -7625,3 +7625,98 @@ know: the Chops review gate (directory browse at desktop + 390px,
 no-match and filter flows) precedes the phase PR; homepage untouched;
 directory v2 (row statistics/preview strips), sort controls, and
 pagination remain out of scope.
+
+## Task DP-5 — Design-Pass Close: Disclosure Collapse, Directory Sort + Sample Size, Featured Cards (2026-07-18)
+
+Final design-pass phase, branch `phase-dp5`, commits DP-5.1–DP-5.3.
+Item 1: the judge-disclosure help collapses on BOTH surfaces to the
+sanctioned shared line — new `JUDGE_FILTER_HELP_MESSAGE` homed in
+@pca/shared `judge-result.ts`, rendered byte-identically by the
+homepage disclosure (SearchForm) and the charge-page filter entry
+(JudgeFilterEntry); pin-6 collapse arm confirmed at plan approval
+(the retired `judgeFilterHelp` restated optionality/availability).
+Retired cleanly from their homes: `HOME_COPY.judgeHelp` and
+`CHARGE_RESULT_COPY.judgeFilterHelp`. SANCTIONED STRINGS, exactly
+three new plus two approved label changes: `Judge-specific results
+are shown where available.` (JUDGE_FILTER_HELP_MESSAGE,
+judge-result.ts), `Charges with the largest sample sizes`
+(FEATURED_CHARGES_HEADING, charge-directory.ts), `Browse all charges`
+(BROWSE_ALL_CHARGES_LINK_TEXT, charge-directory.ts); label changes
+(pin 7, approved both surfaces): `Judge (optional)` → `Judge` on
+`HOME_COPY.judgeLabel` AND `CHARGE_RESULT_COPY.judgeFilterLabel` (the
+trigger `Add judge filter` untouched). All new copy em-dash-free,
+scanned in shared suites (judge-result.test.ts, new
+charge-directory.test.ts). Item 2: directory sort is server-side
+outcome sample size DESC, then lower(display_name) ASC, then slug ASC
+(supersedes DP-4's alphabetical pin); the ORDER BY key is the
+identical max(coa.sample_size) expression that produces the served
+outcomeSampleSize (approval-required fix — verified identical, no
+STOP), so rendered values are monotonically non-increasing; rows
+render `Sample size: N` through the 11.4 formatSampleSize convention —
+the ruled exemption to B2's no-stats pin, the only row statistic;
+DP-4's render-absence test inverted for sample size only; the
+directory-total invariant vs data-coverage stays untouched and green;
+the endpoint's reachable public error surface (RATE_LIMITED,
+INTERNAL_ERROR) is unchanged; no new endpoints or query parameters.
+Item 3: homepage featured section per pins 4–5 — new server component
+FeaturedCharges (top 4 rows of the existing directory response in
+served order, sliced in page.tsx; zero new API surface), cards carry
+name + the shared availabilityText line (helper moved from
+ChargesDirectoryView to charges-copy.ts so a server component can
+import it) + the pinned sample-size line + the row-link mechanism
+(single stretched anchor named by the charge); browse-all link to
+/charges; PLACEMENT RULING: below the disclaimer and links paragraphs,
+last content block before the footer — honesty copy keeps search
+adjacency. Homepage rendering mode: static → `force-dynamic` with a
+per-request server-side fetch (15.2 precedent; AC9 verified in the
+production build route table). Fail-soft is total (approval-required
+fix): !ok, unavailable arm, zero rows, AND a thrown getCharges() all
+omit the section; the search surface renders in every arm
+(page.test.tsx exercises all six arms with the client seam mocked).
+DP-4's homepage-diff-empty AC is DELIBERATELY SUPERSEDED by this
+phase (spec pin 9). Tests: API sort-invariant rewritten to the
+three-key order plus a monotonic non-increase assertion;
+ChargesDirectoryView AC-8 assertion inverted (sample-size present,
+all other statistics absent, both directions); new
+FeaturedCharges.test.tsx and page.test.tsx; SearchForm/
+JudgeFilterEntry/JudgeSearchInput tests updated to the shared line and
+plain label; e2e home-and-search gains the open-state help-line
+assertion and a featured-section spec keyed to pca_e2e seed reality
+(five seeded aggregate-bearing charges → the top-4 arm renders: DUI
+1,500 leads, criminal-trespass fifth and absent; card + browse-all
+navigation), charges-directory.spec gains per-row sample-size lines
+and the monotonic served-order assertion. E2E against scratch
+`pca_e2e` via explicit shell override; canonical `pca` untouched.
+Next task should know: the Chops review gate (homepage featured
+section at desktop + 390px, disclosure open states on both surfaces,
+directory order) precedes the phase PR; the 7/5 hero, preview strips,
+coverage band, Contact, and A–Z toggle remain named out-of-scope
+landings; Sprint 9 ops items (provenance line, thin-data constant
+reconciliation, local DATABASE_URL guard) are untouched.
+
+### DP-5 Amendment 1 — review-gate copy changes (2026-07-18)
+
+Chops review-gate feedback, adjudicated in planning chat, applied as an
+amendment commit (DP-5.4) before the PR. Amendment A: the rendered
+sample-size label on /charges rows and homepage featured cards is now
+`Recorded outcomes: N` — new pinned prefix
+`RECORDED_OUTCOMES_LABEL_PREFIX` (`Recorded outcomes: `) homed in
+@pca/shared charge-directory.ts, rendered via the new surface-scoped
+`formatRecordedOutcomes` in apps/web formatters (same en-US grouping
+path). SURFACE-SCOPED DECISION: exactly those two surfaces; the result
+pages' `Sample size:` convention (SAMPLE_SIZE_LABEL_PREFIX,
+formatSampleSize, SampleSizeLabel) is byte-identical and guarded —
+formatters.test.ts "locks the noun-free Sample size: N format" pins it,
+and the row/card suites now assert `Sample size:` never leaks onto the
+amended surfaces. Rationale on record: N counts disposed charge
+outcomes, one per outcome fact; "charges" would read as the filed
+universe, "facts" is internal vocabulary. Site-wide label
+reconciliation (result pages, methodology definition, sentencing-unit
+noun) is a NAMED SPRINT 9 COPY ITEM. Amendment B:
+`FEATURED_CHARGES_HEADING` is now `Find your charge` (sanctioned at
+amendment dispatch; no override paste received); heading level and
+placement unchanged; `Browse all charges` unchanged. The DP-5
+sanctioned-string enumeration above is amended accordingly: the
+featured heading reads `Find your charge`, and `Recorded outcomes: `
+joins the enumeration. Judge-disclosure layout balance is banked to
+the homepage copy-heavy phase per the amendment's for-the-record note.

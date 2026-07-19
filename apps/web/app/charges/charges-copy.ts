@@ -50,3 +50,14 @@ export function formatChargeCountLine(count: number): string {
     ? CHARGES_COPY.countLineSingular
     : CHARGES_COPY.countLinePlural.replace('{count}', String(count));
 }
+
+/**
+ * The availability line, exactly two states keyed off hasSentencing. Homed
+ * here (a plain module, not 'use client') so directory rows and the DP-5
+ * homepage featured cards — a server component — render it byte-identically.
+ */
+export function availabilityText(hasSentencing: boolean): string {
+  return hasSentencing
+    ? CHARGES_COPY.availabilityWithSentencing
+    : CHARGES_COPY.availabilityOutcomesOnly;
+}

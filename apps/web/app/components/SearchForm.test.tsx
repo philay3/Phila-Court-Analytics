@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { JUDGE_FILTER_HELP_MESSAGE } from '@pca/shared';
 import type { ChargeSearchResult, JudgeSearchResult } from '@pca/shared';
 import { HOME_COPY } from './home-copy.js';
 import { CHARGE_SEARCH_COPY } from './charge-search-copy.js';
@@ -156,6 +157,19 @@ describe('SearchForm judge submission matrix', () => {
   function submit(): void {
     fireEvent.click(screen.getByRole('button', { name: CHARGE_SEARCH_COPY.submitButton }));
   }
+
+  it('the open judge region renders exactly the sanctioned shared help line (DP-5 AC1)', () => {
+    vi.stubGlobal('fetch', branchingFetch());
+    render(<SearchForm />);
+
+    openJudgeDisclosure();
+
+    expect(screen.getByText(JUDGE_FILTER_HELP_MESSAGE)).toBeInTheDocument();
+    // The collapse is total: the help paragraph carries the shared line alone.
+    expect(document.getElementById('judge-search-help')?.textContent).toBe(
+      JUDGE_FILTER_HELP_MESSAGE,
+    );
+  });
 
   it('charge + judge committed routes to /charges/[chargeSlug]/judge/[judgeSlug]', async () => {
     vi.stubGlobal('fetch', branchingFetch());

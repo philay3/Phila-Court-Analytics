@@ -1,3 +1,4 @@
+import { RECORDED_OUTCOMES_LABEL_PREFIX } from '@pca/shared';
 import type { ChargeOnlyResultSuccess, DateRange, JudgeSpecificResultSuccess } from '@pca/shared';
 
 /**
@@ -100,6 +101,19 @@ export function formatPercentage(percentage: number): string {
  */
 export function formatSampleSize(sampleSize: number): string {
   return `${SAMPLE_SIZE_LABEL_PREFIX}${formatCount(sampleSize)}`;
+}
+
+/**
+ * Surface-scoped sample-size label for EXACTLY two surfaces: /charges
+ * directory rows and the homepage featured cards (DP-5 Amendment A), e.g.
+ * "Recorded outcomes: 1,234". The prefix is the @pca/shared
+ * RECORDED_OUTCOMES_LABEL_PREFIX pinned literal; the value path is the same
+ * en-US grouping as every other count. Result surfaces keep
+ * {@link formatSampleSize} byte-identically — site-wide label reconciliation
+ * is a named Sprint 9 copy item, not this formatter's job.
+ */
+export function formatRecordedOutcomes(sampleSize: number): string {
+  return `${RECORDED_OUTCOMES_LABEL_PREFIX}${formatCount(sampleSize)}`;
 }
 
 /**

@@ -9,11 +9,12 @@
  * the route target now is intended).
  *
  * The section is purely additive: it never blocks or gates the charge-only
- * content, and its help copy states that judge-specific data is not available
- * for every charge/judge pair (guard-passing language in charge-result-copy).
+ * content, and its help copy is the sanctioned shared JUDGE_FILTER_HELP_MESSAGE
+ * (DP-5), rendered byte-identically with the homepage disclosure.
  */
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { JUDGE_FILTER_HELP_MESSAGE } from '@pca/shared';
 import type { JudgeSearchResult } from '@pca/shared';
 import { JudgeSearchInput } from './JudgeSearchInput';
 import { CHARGE_RESULT_COPY } from './charge-result-copy';
@@ -52,7 +53,7 @@ export function JudgeFilterEntry({ chargeSlug }: JudgeFilterEntryProps) {
         {CHARGE_RESULT_COPY.judgeFilterLabel}
       </label>
       <p id="judge-filter-help" className="mt-1 text-sm text-muted">
-        {CHARGE_RESULT_COPY.judgeFilterHelp}
+        {JUDGE_FILTER_HELP_MESSAGE}
       </p>
       <JudgeSearchInput
         id="judge-filter-input"

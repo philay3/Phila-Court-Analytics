@@ -3,12 +3,16 @@
 import Link from 'next/link';
 import { useId, useRef, useState } from 'react';
 import { CHARGE_DIRECTORY_UNAVAILABLE_MESSAGE, type ChargeDirectoryResponse } from '@pca/shared';
-import { CHARGES_COPY, formatChargeCountLine } from './charges-copy';
+import { formatRecordedOutcomes } from '../lib/formatters';
+import { CHARGES_COPY, availabilityText, formatChargeCountLine } from './charges-copy';
 
 /**
  * Charges directory view (task DP-4): h1 + lead → filter → count line → row
  * list → states (bglad §8 structure, Civic Atlas register skin — one bordered
  * surface, hairline row separators, no cards-per-row, no radius, no shadow).
+ * DP-5: rows are served sorted by outcome sample size descending and carry
+ * the pinned `Recorded outcomes: N` line (Amendment A) — the only statistic
+ * a row renders.
  *
  * Filter (bglad §8.4): client-side over the loaded list — case-insensitive
  * substring against display name and statute code. The count line is a
@@ -32,12 +36,6 @@ import { CHARGES_COPY, formatChargeCountLine } from './charges-copy';
  */
 interface ChargesDirectoryViewProps {
   data: ChargeDirectoryResponse;
-}
-
-function availabilityText(hasSentencing: boolean): string {
-  return hasSentencing
-    ? CHARGES_COPY.availabilityWithSentencing
-    : CHARGES_COPY.availabilityOutcomesOnly;
 }
 
 export function ChargesDirectoryView({ data }: ChargesDirectoryViewProps) {
@@ -122,6 +120,12 @@ export function ChargesDirectoryView({ data }: ChargesDirectoryViewProps) {
                 {charge.displayName}
               </Link>
               <p className="mt-1.5 text-sm text-muted">{availabilityText(charge.hasSentencing)}</p>
+              {/* DP-5 pin 3 (Amendment A label): the sample-size line is the
+                  ONLY statistic rows carry, rendered through the
+                  surface-scoped formatter. */}
+              <p className="mt-1 text-sm text-faint">
+                {formatRecordedOutcomes(charge.outcomeSampleSize)}
+              </p>
               <span className="row-action-arrow mt-3 self-start text-[0.9375rem] font-semibold text-accent group-hover:underline desktop:absolute desktop:top-[1.125rem] desktop:right-6 desktop:mt-0">
                 {CHARGES_COPY.rowAction}
               </span>

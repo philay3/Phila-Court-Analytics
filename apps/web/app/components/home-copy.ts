@@ -26,10 +26,11 @@ export const HOME_COPY = {
   chargeLabel: 'Charge',
   chargePlaceholder: 'Search by charge',
   chargeHelp: 'Start with the charge you want to look up.',
-  judgeLabel: 'Judge (optional)',
+  // DP-5 sanctioned copy change: the "(optional)" suffix is retired (the
+  // disclosure trigger is the opt-in signal) and the multi-line judge help is
+  // replaced by the shared JUDGE_FILTER_HELP_MESSAGE, imported where rendered.
+  judgeLabel: 'Judge',
   judgePlaceholder: 'Add a judge',
-  judgeHelp:
-    'Adding a judge is optional. Leave it blank for Philadelphia-wide results, or add one to see judge-specific results where available.',
   linksIntro: 'To understand these figures:',
   methodologyLinkText: 'Methodology',
   methodologyLinkDescription: 'how these figures are produced',

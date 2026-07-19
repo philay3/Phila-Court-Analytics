@@ -9,6 +9,7 @@ import {
   formatDateRange,
   formatLastRefreshed,
   formatPercentage,
+  formatRecordedOutcomes,
   formatResultTypeLabel,
   formatSampleSize,
   formatThinDataLabel,
@@ -44,12 +45,22 @@ describe('formatPercentage', () => {
 describe('formatSampleSize', () => {
   it('locks the noun-free "Sample size: N" format', () => {
     // n = 1 exists only to pin the format — there is no singular/plural noun.
+    // DP-5 Amendment A guard: result surfaces keep this output byte-identical;
+    // only directory rows and featured cards use formatRecordedOutcomes.
     expect(formatSampleSize(1)).toBe('Sample size: 1');
     expect(formatSampleSize(1234)).toBe('Sample size: 1,234');
   });
 
   it('renders a zero sample size', () => {
     expect(formatSampleSize(0)).toBe('Sample size: 0');
+  });
+});
+
+describe('formatRecordedOutcomes', () => {
+  it('locks the surface-scoped "Recorded outcomes: N" format (DP-5 Amendment A)', () => {
+    expect(formatRecordedOutcomes(1)).toBe('Recorded outcomes: 1');
+    expect(formatRecordedOutcomes(1234)).toBe('Recorded outcomes: 1,234');
+    expect(formatRecordedOutcomes(0)).toBe('Recorded outcomes: 0');
   });
 });
 

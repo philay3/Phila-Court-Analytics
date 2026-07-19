@@ -20,6 +20,7 @@
 
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { JUDGE_FILTER_HELP_MESSAGE } from '@pca/shared';
 import type { ChargeSearchResult, JudgeSearchResult } from '@pca/shared';
 import { HOME_COPY } from './home-copy';
 import { CHARGE_SEARCH_COPY } from './charge-search-copy';
@@ -99,8 +100,9 @@ export function SearchForm() {
           </div>
 
           {/* Judge region — visually SECONDARY, optional. DP-3: the region
-              sits behind the shared JudgeDisclosure; label, help, combobox
-              wiring, and staged-commit behavior are byte-identical inside. */}
+              sits behind the shared JudgeDisclosure. DP-5: the open state is
+              de-stacked to label + the single sanctioned shared help line;
+              combobox wiring and staged-commit behavior are unchanged. */}
           <div className="border-b border-rule p-5 desktop:border-r desktop:border-b-0">
             <JudgeDisclosure>
               <label
@@ -110,7 +112,7 @@ export function SearchForm() {
                 {HOME_COPY.judgeLabel}
               </label>
               <p id="judge-search-help" className="mt-1 text-sm text-muted">
-                {HOME_COPY.judgeHelp}
+                {JUDGE_FILTER_HELP_MESSAGE}
               </p>
               {/* Task 12.3: the disabled 12.1 placeholder is replaced by the judge
                   combobox. The id and aria-describedby wiring are preserved. */}

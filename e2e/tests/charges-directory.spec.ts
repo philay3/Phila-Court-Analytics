@@ -36,6 +36,22 @@ test('directory loads: rows, reconciling count line, nav active state', async ({
   // Review-gate pin, end-to-end: the row link is named by its charge.
   await expect(page.getByRole('link', { name: DISPLAY_NAMES.chargeDataBearing })).toBeVisible();
 
+  // DP-5 (Amendment A label): every row carries the pinned recorded-outcomes
+  // line, and the served order is sample-size descending — the rendered
+  // values never increase down the list (the ORDER BY key is the served
+  // outcomeSampleSize expression).
+  const sampleLines = await directoryRows(page)
+    .locator('p', { hasText: /^Recorded outcomes: / })
+    .allTextContents();
+  expect(sampleLines).toHaveLength(rowCount);
+  const values = sampleLines.map((line) =>
+    Number(line.replace('Recorded outcomes: ', '').replaceAll(',', '')),
+  );
+  for (const value of values) {
+    expect(Number.isFinite(value)).toBe(true);
+  }
+  expect(values).toEqual([...values].sort((a, b) => b - a));
+
   // Nav: Home · Charges · Methodology with the directory active — and only it.
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
   await expect(nav.getByRole('link')).toHaveText(['Home', 'Charges', 'Methodology']);

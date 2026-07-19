@@ -13,8 +13,8 @@
  * this module.
  *
  * Copy-safety: values are neutral, non-comparative framing. The judge-filter
- * help states that judge-specific data is not available for every charge/judge
- * pair without any restricted vocabulary (verified by the direct scan test).
+ * help is the shared JUDGE_FILTER_HELP_MESSAGE (DP-5), rendered verbatim from
+ * @pca/shared rather than defined here.
  */
 export const CHARGE_RESULT_COPY = {
   // Result summary chrome. The result-type label and the formatted timestamp
@@ -38,12 +38,12 @@ export const CHARGE_RESULT_COPY = {
   // generated content (disclosure-glyph utility), never part of this string.
   judgeDisclosureTriggerText: 'Add judge filter',
 
-  // Judge-filter entry point (pinned decision 5). The help copy states the
-  // availability caveat in guard-passing language.
+  // Judge-filter entry point (pinned decision 5; DP-5 sanctioned copy
+  // change: the "(optional)" suffix is retired and the multi-line help is
+  // replaced by the shared JUDGE_FILTER_HELP_MESSAGE, imported where
+  // rendered — the disclosure trigger is the opt-in signal).
   judgeFilterHeading: 'View this charge for a specific judge',
-  judgeFilterLabel: 'Judge (optional)',
-  judgeFilterHelp:
-    'Add a judge to view historical outcomes for this charge and that judge. Judge-specific data is not available for every charge and judge.',
+  judgeFilterLabel: 'Judge',
 
   // Route-level loading placeholder (pinned decision 2). Neutral: it
   // describes the fetch in progress, nothing about any outcome.
