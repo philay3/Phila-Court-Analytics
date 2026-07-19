@@ -49,6 +49,7 @@ from pipeline.identity import (
 from pipeline.normalization.outcome_mapper import HELD_FOR_COURT_DISPOSITIONS
 from pipeline.warning_codes import (
     SENTINEL_COLLISION,
+    SUSPECT_DISPOSITION_TOKEN,
     SUSPECT_JUDGE_LINE,
     SUSPECTED_AMENDED_CHARGE,
     UNKNOWN_NOT_FINAL_DISPOSITION,
@@ -909,6 +910,24 @@ def parse_docket_text(
             current_charge_seq = seq
             expecting_judge_line = True
             if seq in parsed_charges:
+                # 34.3 concatenation guard: a stripped token still carrying the
+                # statute cue is a boundary-lost whole-row capture (offense
+                # re-print + disposition + statute concatenated by column loss).
+                # Reject the capture — disposition_raw is left UNASSIGNED (never
+                # forced None, so an earlier valid event's disposition survives)
+                # and the event-line date below is never reached. Byte-level
+                # containment only, and only HERE, post-routing: the legitimate
+                # §-bearing NON_TERMINAL_DISPOSITIONS members are consulted only
+                # under unrouted Not-Final events and stay unreachable.
+                if "§" in token:
+                    warnings.append(
+                        make_warning(
+                            SUSPECT_DISPOSITION_TOKEN,
+                            section="DISPOSITION SENTENCING/PENALTIES",
+                            charge_sequence=seq,
+                        )
+                    )
+                    continue
                 parsed_charges[seq]["disposition_raw"] = token if token else None
                 # 32.2: the disposition date is the Final Disposition EVENT-line
                 # date (already captured above), assigned here so the string and

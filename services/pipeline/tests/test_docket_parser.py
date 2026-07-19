@@ -19,16 +19,23 @@ import json
 import pytest
 
 from pipeline.docket_parser import (
+    ARD_CLASS_DISPOSITIONS,
+    NON_TERMINAL_DISPOSITIONS,
     detect_court_type,
     parse_docket_checked,
     parse_docket_text,
     parse_related_cases,
 )
+from pipeline.envelope import _charge_has_disposition
 from pipeline.helpers import ParseError
 from pipeline.identity import assert_related_cases_clean
-from pipeline.normalization.outcome_mapper import HELD_FOR_COURT_DISPOSITIONS
+from pipeline.normalization.outcome_mapper import (
+    DISPOSITION_OUTCOME_MAP,
+    HELD_FOR_COURT_DISPOSITIONS,
+)
 from pipeline.warning_codes import (
     SENTINEL_COLLISION,
+    SUSPECT_DISPOSITION_TOKEN,
     SUSPECT_JUDGE_LINE,
     SUSPECTED_AMENDED_CHARGE,
     UNKNOWN_NOT_FINAL_DISPOSITION,
@@ -1510,3 +1517,144 @@ def test_rejected_fragment_in_judge_slot_leaves_judge_capture_intact():
     assert charge["disposition_raw"] == "Guilty"
     assert charge["disposition_judge_raw"] == "Reyes, Judge M."
     assert warnings == []
+
+
+# ===========================================================================
+# Task 34.3: column-concatenation guard. A boundary-lost disposition row hands
+# the charge-line strip a token that still CONTAINS its statute (offense
+# re-print + disposition phrase + statute + trailing columns concatenated by
+# column loss); pre-guard the whole row became disposition_raw and took the
+# event date. The gate rejects the capture at the routed-event assignment —
+# raw left unassigned, date never reached, SUSPECT_DISPOSITION_TOKEN emitted.
+# Placement is load-bearing: the legitimate §-bearing NON_TERMINAL vocabulary
+# is consulted only under unrouted Not-Final events and stays unreachable.
+# Synthetic text only (fictional offenses/statutes, placeholder docket).
+# ===========================================================================
+
+
+def test_concat_token_rejected_undisposed_with_warning():
+    """The C-U arm: the defect row's charge ends undisposed and dateless with
+    the structural warning; the healthy sibling in the same event is untouched
+    (containment)."""
+    page = build_mc_two_charges(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "2 / Thft By Unlwf Tkg Dismissed M2 18 § 3921 §§ A Trial Div",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    healthy, rejected = record["charges"]
+    assert healthy["disposition_raw"] == "Guilty"
+    assert healthy["disposition_date"] == "2025-01-15"
+    assert rejected["disposition_raw"] is None
+    assert rejected["disposition_date"] is None
+    [warning] = warnings
+    assert warning["code"] == SUSPECT_DISPOSITION_TOKEN
+    assert warning["charge_sequence"] == 2
+
+
+def test_concat_held_embedding_rejected_dateless_held_arm():
+    """The C-H arm: a rejected token EMBEDDING a held form ends exactly where
+    a held charge ends — null disposition, dateless, not disposed in the
+    envelope's eyes (the existing null-disposition non-terminal path; no held
+    machinery is modified, the row simply reaches it)."""
+    page = build_mc(
+        "Preliminary Hearing 09/11/2025 Final Disposition",
+        "1 / Smpl Aslt Held for Court M1 18 § 2701 §§ A Trial Div",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None
+    assert charge["disposition_date"] is None
+    assert not _charge_has_disposition(charge)
+    [warning] = warnings
+    assert warning["code"] == SUSPECT_DISPOSITION_TOKEN
+
+
+def test_concat_guard_never_overwrites_earlier_disposition():
+    """The C-U-P unmask shape: a rejected line never masks a genuine earlier
+    writer — raw is left UNASSIGNED on rejection (not forced None), so the
+    earlier valid block's string AND date both survive (contrast
+    test_latest_final_block_wins_string_and_date_together)."""
+    page = build_mc(
+        "Waiver Trial 05/01/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Status 05/15/2025 Final Disposition",
+        "1 / Smpl Aslt Nolle Prossed M1 18 § 2701 §§ A Trial Div",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    assert charge["disposition_date"] == "2025-05-01"
+    [warning] = warnings
+    assert warning["code"] == SUSPECT_DISPOSITION_TOKEN
+
+
+def test_disposition_vocabulary_never_contains_statute_cue():
+    """The false-positive boundary: no member of any vocabulary the gate can
+    see as an ACCEPTED disposition carries '§' — so no legitimate capture can
+    ever satisfy the predicate. The six §-bearing NON_TERMINAL members exist
+    (premise of the placement argument) but are routing-suppression
+    vocabulary, unreachable by the post-routing gate."""
+    for vocab in (
+        DISPOSITION_OUTCOME_MAP.keys(),
+        HELD_FOR_COURT_DISPOSITIONS,
+        ARD_CLASS_DISPOSITIONS,
+    ):
+        assert not [v for v in vocab if "§" in v]
+    assert [v for v in NON_TERMINAL_DISPOSITIONS if "§" in v]
+
+
+@pytest.mark.parametrize(
+    "member",
+    sorted(v for v in NON_TERMINAL_DISPOSITIONS if "§" in v),
+)
+def test_nonterminal_statute_tokens_unaffected_at_routing(member):
+    """Placement lock: a legitimate §-bearing NON_TERMINAL token as the FIRST
+    charge line of a Not-Final event behaves exactly as before the guard —
+    the event stays held SILENTLY (no UNKNOWN_NOT_FINAL_DISPOSITION, no
+    SUSPECT_DISPOSITION_TOKEN) and the charge keeps its held-event keys."""
+    page = build_mc(
+        "Preliminary Hearing 09/11/2025 Not Final",
+        f"1 / {member}",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None
+    assert charge["disposition_date"] is None
+    assert charge["event_name"] == "Preliminary Hearing"
+    assert warnings == []
+
+
+def test_rejected_charge_keeps_nonterminal_event_keys():
+    """18.3 event-key placement on a C-U row: a charge that ends the parse
+    undisposed because its Final-block capture was rejected KEEPS the event
+    keys recorded by an earlier non-terminal event (the placement sweep only
+    strips them from disposed charges)."""
+    page = build_mc(
+        "Preliminary Hearing 03/10/2025 Not Final",
+        "1 / Simple Assault Held for Court",
+        "Trial 05/15/2025 Final Disposition",
+        "1 / Smpl Aslt Dismissed M1 18 § 2701 §§ A Trial Div",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None
+    assert charge["event_name"] == "Preliminary Hearing"
+    assert charge["event_date"] == "2025-03-10"
+    [warning] = warnings
+    assert warning["code"] == SUSPECT_DISPOSITION_TOKEN
+
+
+def test_concat_warning_payload_structural_only():
+    """The warning carries structural context ONLY: code, section, charge
+    sequence — never text, never a captured span."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Smpl Aslt Dismissed M1 18 § 2701 §§ A Trial Div",
+    )
+    _, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    [warning] = warnings
+    assert set(warning) == {"code", "section", "charge_sequence"}
+    assert warning["code"] == SUSPECT_DISPOSITION_TOKEN
+    assert warning["section"] == "DISPOSITION SENTENCING/PENALTIES"
+    assert warning["charge_sequence"] == 1

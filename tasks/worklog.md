@@ -8082,3 +8082,94 @@ the homepage copy-heavy phase per the amendment's for-the-record note.
   docket also carries Rule 600 / concat class membership, per-diff
   attribution handles co-membership (ruled — expected handling, not
   anomaly).
+
+## Task 34.3 — Column-Concatenation Guard (2026-07-19)
+
+- **Two planning-chat gates, as ruled.** (1) Plan gate: approved with three
+  open items ruled — ARD/Not-Final judge-line corner gets NO code guard
+  (scan-proven-empty named residual; the post-guard dated-null=0 check is its
+  permanent tripwire), two-charge fixture approved, NON_TERMINAL_CASE ripple
+  accepted ex ante. Formal record correction accepted: the C-H rows land in
+  the existing NULL-disposition non-terminal path (same end state and code
+  path as C-U); recon R4's "held arm" phrasing superseded; C-H/C-U are
+  provenance labels. (2) Mandatory replica scan (r4-supplement:
+  `r4supp_concat_scan.py` + `r4supp-concat-scan-console.txt` +
+  `r4supp_priorwriter_probe.py` + probe console + `r4-supplement.md` in
+  `~/court-data/reports/phase34-recon-20260719/`): full corpus (17,619
+  artifacts, 17,614 sims, 0 fidelity mismatches), predicate coverage 28/28
+  rows on 25 dockets, zero extras, C-R EMPTY; invariants proven (post-guard
+  dated-null 0, dated-held 0 sim AND production; ard_routed co-occurrence 0);
+  MC missing-caption 5 and F-Q 4 all zero predicate lines; F-class overlap 0
+  on both grains.
+- **Scan-gate adjudications (all accepted):** A1 — discovered class C-M
+  (masked-overwrite, 10 instances / 3 CP dockets): gate warns, DB inert;
+  `e760e676` is a warning-only 26th envelope-drift docket outside the
+  25-docket production class. A2 — C-U-P prior-writer unmask sub-class
+  ratified (5 of the 25 C-U rows, 2 CP dockets): a clean same-event sibling
+  row survives rejection, raw swaps concat-string → genuine MAPPED token
+  (nolle ×4, dismissed ×1), dates kept, unknown facts → mapped facts at
+  rebuild; NOT repair — existing latest-writer semantics. A3 — warning
+  volume 38 on 26 docs supersedes 28/25. Amended ledger (r4-supplement.md)
+  is the task's ex-ante delta record per AC2: 28 DB-changed rows on 25
+  dockets = 3 C-H + 20 C-U (→ undisposed/dateless) + 5 C-U-P (→ re-disposed,
+  dates kept); 38 warnings / 26 drift dockets; tier-2 diverged expectation
+  from 34.3 alone: 26; 9 docs gain NON_TERMINAL_CASE; 28
+  unmapped_disposition items stop regenerating (close at rebuild); no new
+  review-item type.
+- **What was built:** (1) the token gate at the routed-event assignment block
+  in `docket_parser.py`: predicate `'§' in token` (byte containment ONLY —
+  never `is_statute_token`, whose digit/single-char arms would false-positive
+  on e.g. "Rule 546 - Open"), placed POST-routing so the six legitimate
+  §-bearing `NON_TERMINAL_DISPOSITIONS` members stay unreachable; rejection
+  leaves `disposition_raw` UNASSIGNED (never forced None — an earlier valid
+  event's disposition survives, the C-U-P mechanism), never reaches the 32.2
+  event-line date, emits the new warning, and leaves
+  current_charge_seq/judge/sentence flow untouched. (2)
+  `SUSPECT_DISPOSITION_TOKEN` in `warning_codes.py` (vocabulary 11 → 12,
+  severity `review`; justification: review swap — 38 warnings replace the 28
+  unmapped_disposition items that stop regenerating; `EMITTED_CODES` picks it
+  up derivationally, envelope untouched). (3) Tier-1 additive pair
+  `concat_row_reject_mc.txt` + golden (two charges: healthy Guilty
+  disposed+dated sibling; boundary-lost row with embedded mapped phrase,
+  statute cue, trailing columns → raw NULL, date NULL, judge capture intact,
+  the warning with structural payload) + index entry (44 → 45). (4) Unit
+  tests: `test_concat_token_rejected_undisposed_with_warning` (C-U arm +
+  containment), `test_concat_held_embedding_rejected_dateless_held_arm` (C-H
+  arm; `_charge_has_disposition` false), 
+  `test_concat_guard_never_overwrites_earlier_disposition` (C-U-P shape),
+  `test_disposition_vocabulary_never_contains_statute_cue` (false-positive
+  lock + six-member premise), 
+  `test_nonterminal_statute_tokens_unaffected_at_routing` (parametrized over
+  the six; placement lock, silent hold preserved),
+  `test_rejected_charge_keeps_nonterminal_event_keys` (18.3 placement),
+  `test_concat_warning_payload_structural_only`; `test_warning_codes.py`
+  vocabulary/severity updated to twelve.
+- **Lock verification (34.2 style):** with the predicate neutralized
+  in-memory (token '§' masked), the whole-row capture (46-char token) AND its
+  event-line date both reproduce; with the real parser the row is rejected +
+  warned. Verified in-session; not a committed test (no patchable seam is
+  worth adding for it).
+- **Golden write:** `pipeline run-fixtures --update-goldens` wrote the ONE
+  new tier-1 golden `concat_row_reject_mc.json`
+  (`tier1: match=44 diverged=0 updated=0 new=1 missing=0`) — no existing
+  golden touched.
+- **Files touched:** `services/pipeline/src/pipeline/docket_parser.py`,
+  `services/pipeline/src/pipeline/warning_codes.py`,
+  `services/pipeline/tests/test_docket_parser.py`,
+  `services/pipeline/tests/test_warning_codes.py`,
+  `services/pipeline/tests/tier1/fixtures/concat_row_reject_mc.txt`,
+  `services/pipeline/tests/tier1/goldens/concat_row_reject_mc.json`,
+  `services/pipeline/tests/tier1/fixture-index.yaml`, `tasks/worklog.md`.
+  (`test_warning_codes.py` was the plan-gate-adjudicated touch-set inclusion
+  beyond recon R6's R4 column.)
+- **Deviations from plan:** none in code. Ledger amendments all ruled at the
+  scan gate (A1/A2/A3 above).
+- **Notes for next tasks (34.4–34.5):** `ACCEPTED_ENVELOPE_VERSIONS` stays
+  {6}; envelope 6 → 7 rides 34.4 (single batch bump; the vocabulary addition
+  is covered by it — no separate version implication). Expected 34.3 delta at
+  the batch rerun, by row-grain signature (old raw contains '§'): exactly the
+  amended ledger — anything outside it is unattributed → STOP. Attribution
+  note: `e760e676` diffs are warning-array-only; C-U-P rows re-dispose
+  (mapped) rather than going NULL — the rerun classifier must expect BOTH
+  shapes inside the concat signature. The ARD/Not-Final corner's tripwire
+  (dated-null row) rides every future rerun.

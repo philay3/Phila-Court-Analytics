@@ -417,3 +417,16 @@ fixtures:
     expected_warnings: []
     layout_unverified: false
     synthetic: true
+
+  - filename: concat_row_reject_mc.txt
+    court_type: Municipal Court
+    scenario: 34.3 concatenation guard — a boundary-lost disposition row whose
+      stripped token still embeds the statute cue (offense re-print + mapped
+      phrase + statute + trailing columns) is rejected at the routed-event
+      assignment; the charge ends undisposed and dateless with
+      SUSPECT_DISPOSITION_TOKEN while the healthy sibling keeps its
+      disposition and event-line date
+    expected_charge_count: 2
+    expected_warnings: [SUSPECT_DISPOSITION_TOKEN]
+    layout_unverified: false
+    synthetic: true
