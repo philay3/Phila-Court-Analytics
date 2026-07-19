@@ -301,6 +301,167 @@ export const PUBLISHED_JUDGE_SENTENCING: readonly JudgeSentencingDistribution[] 
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Task 35.2: conviction-grain sentencing-index seeds (the five 35.1 tables).
+// Every number is FABRICATED and deliberately distinct from any figure a real
+// corpus run has produced. Wedge counts/percentages are derived by the writer
+// (sentenced + wedge = convictions by construction); day medians are stored
+// as numeric(6,1) literals — the API serves months, so tests exercising the
+// conversion pick day values with interesting month renderings (10.5 days is
+// the exact half-up tie → 0.4 months).
+//
+// Scenario matrix:
+// - retail-theft: full present arm — duration-bearing and duration-free
+//   categories, grade mix with the ungraded bucket and an equal-count pair
+//   (M2/S at 60) pinning the grade ASC tiebreak of the dominant-first order.
+// - possession-controlled-substance: zero-sentenced summary — convictions
+//   with sentenced 0 (wedge 100%), EMPTY categories, thin. Grade mix still
+//   present (grades key off convictions, not sentenced).
+// - criminal-trespass: thin-flag passthrough on a tiny cell.
+// - simple-assault: deliberately ABSENT from the index while its outcome and
+//   sentencing distributions exist — the exact shape production enters when
+//   the active run predates the index population. Do not "fix" it.
+// - retail-theft/judge-testina-placeholder: judge-grain present arm (no
+//   grade mix exists at this grain — ruling 2).
+// - dui-general-impairment/judge-samuel-seeddata: deliberately ABSENT judge
+//   cell whose outcome/sentencing rows exist (success payload, absent
+//   index). judge-fakename-example stays row-free in every table.
+// ---------------------------------------------------------------------------
+
+export interface SentencingIndexCategorySeed {
+  readonly code: PublicSentencingCode;
+  readonly convictionCount: number;
+  /** numeric(6,1) literals; the trio is all-or-none (stored CHECK). */
+  readonly medianMinDays?: string;
+  readonly medianMaxDays?: string;
+  readonly minAssumedPercentage?: string;
+}
+
+export interface ConvictionGradeSeed {
+  readonly grade: string;
+  readonly count: number;
+}
+
+export interface ChargeSentencingIndexSeed {
+  readonly chargeSlug: string;
+  readonly convictions: number;
+  readonly sentencedConvictions: number;
+  readonly isThinData: boolean;
+  readonly dateRange: { readonly start: string; readonly end: string };
+  readonly categories: readonly SentencingIndexCategorySeed[];
+  readonly grades: readonly ConvictionGradeSeed[];
+}
+
+export interface JudgeSentencingIndexSeed extends Omit<ChargeSentencingIndexSeed, 'grades'> {
+  readonly judgeSlug: string;
+}
+
+export const PUBLISHED_CHARGE_SENTENCING_INDEX: readonly ChargeSentencingIndexSeed[] = [
+  {
+    // Coherent with the outcome seeds above: guilty_plea 540 + guilty_verdict
+    // 60 = 600 convictions.
+    chargeSlug: 'retail-theft',
+    convictions: 600,
+    sentencedConvictions: 588,
+    isThinData: false,
+    dateRange: { start: '2025-01-03', end: '2026-06-27' },
+    categories: [
+      {
+        code: SENTENCING.probation,
+        convictionCount: 290,
+        medianMinDays: '360.0', // → 12 months
+        medianMaxDays: '540.0', // → 18 months
+        minAssumedPercentage: '10.0',
+      },
+      {
+        code: SENTENCING.incarceration,
+        convictionCount: 88,
+        medianMinDays: '10.5', // the exact half-up tie → 0.4 months
+        medianMaxDays: '90.0', // → 3 months
+        minAssumedPercentage: '20.0',
+      },
+      { code: SENTENCING.fine, convictionCount: 200 },
+      { code: SENTENCING.costs_fees, convictionCount: 150 },
+      { code: SENTENCING.community_service, convictionCount: 60 },
+    ],
+    grades: [
+      { grade: 'F3', count: 300 },
+      { grade: 'M1', count: 150 },
+      { grade: 'M2', count: 60 },
+      { grade: 'S', count: 60 },
+      { grade: 'ungraded', count: 30 },
+    ],
+  },
+  {
+    // Zero-sentenced summary: guilty_plea 285 + guilty_verdict 38 = 323
+    // convictions, none sentenced — wedge 100%, categories EMPTY, thin.
+    chargeSlug: 'possession-controlled-substance',
+    convictions: 323,
+    sentencedConvictions: 0,
+    isThinData: true,
+    dateRange: { start: '2025-01-15', end: '2026-06-20' },
+    categories: [],
+    grades: [
+      { grade: 'M1', count: 200 },
+      { grade: 'ungraded', count: 123 },
+    ],
+  },
+  {
+    // Thin passthrough: guilty_plea 5 + guilty_verdict 1 = 6 convictions.
+    chargeSlug: 'criminal-trespass',
+    convictions: 6,
+    sentencedConvictions: 5,
+    isThinData: true,
+    dateRange: { start: '2025-03-01', end: '2026-04-15' },
+    categories: [
+      {
+        code: SENTENCING.probation,
+        convictionCount: 4,
+        medianMinDays: '30.0', // → 1 month
+        medianMaxDays: '360.0', // → 12 months
+        minAssumedPercentage: '50.0',
+      },
+      { code: SENTENCING.costs_fees, convictionCount: 3 },
+    ],
+    grades: [
+      { grade: 'F3', count: 4 },
+      { grade: 'M1', count: 2 },
+    ],
+  },
+];
+
+export const PUBLISHED_JUDGE_SENTENCING_INDEX: readonly JudgeSentencingIndexSeed[] = [
+  {
+    // Coherent with the pair's outcome seeds: guilty_plea 42 + guilty_verdict
+    // 7 = 49 convictions.
+    chargeSlug: 'retail-theft',
+    judgeSlug: 'judge-testina-placeholder',
+    convictions: 49,
+    sentencedConvictions: 45,
+    isThinData: false,
+    dateRange: { start: '2025-02-01', end: '2026-06-10' },
+    categories: [
+      {
+        code: SENTENCING.probation,
+        convictionCount: 30,
+        medianMinDays: '60.0', // → 2 months
+        medianMaxDays: '180.0', // → 6 months
+        minAssumedPercentage: '40.0',
+      },
+      {
+        // Flat median pair (35.3 ruling Q5): min = max exercises the
+        // single-figure collapse (pin 4) end-to-end.
+        code: SENTENCING.incarceration,
+        convictionCount: 12,
+        medianMinDays: '90.0', // → 3 months
+        medianMaxDays: '90.0', // → 3 months (flat pair)
+        minAssumedPercentage: '25.0',
+      },
+      { code: SENTENCING.fine, convictionCount: 20 },
+    ],
+  },
+];
+
 /**
  * Unpublished decoy run: retail-theft outcomes only, with obviously-wrong
  * magnitudes (uniform 9999s). Structurally valid — counts sum to the sample

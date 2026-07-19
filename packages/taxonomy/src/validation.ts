@@ -12,7 +12,6 @@ export interface TaxonomyCategory {
 export interface SeedFiles {
   outcome: unknown;
   sentencing: unknown;
-  thinData: unknown;
   version: unknown;
 }
 
@@ -138,35 +137,6 @@ export function validateCategoryFile(
   return errors;
 }
 
-export function validateThinData(data: unknown): string[] {
-  const errors: string[] = [];
-  const fileLabel = 'thin-data.json';
-  if (!isRecord(data)) {
-    return [`${fileLabel}: expected a JSON object`];
-  }
-
-  if (data.provisional !== true) {
-    errors.push(`${fileLabel}: "provisional" must be true until thresholds are finalized`);
-  }
-  if (typeof data.comment !== 'string' || data.comment.trim().length === 0) {
-    errors.push(`${fileLabel}: "comment" must be a non-empty string`);
-  }
-
-  for (const key of ['outcomeDistribution', 'sentencingDistribution']) {
-    const section = data[key];
-    if (!isRecord(section)) {
-      errors.push(`${fileLabel}: "${key}" must be an object`);
-      continue;
-    }
-    const min = section.minSampleSize;
-    if (typeof min !== 'number' || !Number.isInteger(min) || min < 1) {
-      errors.push(`${fileLabel}: "${key}.minSampleSize" must be a positive integer`);
-    }
-  }
-
-  return errors;
-}
-
 export function validateVersion(data: unknown): string[] {
   const fileLabel = 'version.json';
   if (!isRecord(data)) {
@@ -187,7 +157,6 @@ export function validateAll(seeds: SeedFiles): string[] {
       seeds.sentencing,
       EXPECTED_SENTENCING_CODES,
     ),
-    ...validateThinData(seeds.thinData),
     ...validateVersion(seeds.version),
   ];
 }
@@ -202,7 +171,6 @@ export function loadSeeds(): SeedFiles {
   return {
     outcome: readSeed('outcome-categories.json'),
     sentencing: readSeed('sentencing-categories.json'),
-    thinData: readSeed('thin-data.json'),
     version: readSeed('version.json'),
   };
 }

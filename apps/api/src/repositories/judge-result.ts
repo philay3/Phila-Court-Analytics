@@ -1,6 +1,11 @@
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import type { PublicApiDatabase } from '../db.js';
-import type { ChargeOutcomeAggregateRow, ChargeSentencingAggregateRow } from './charge-result.js';
+import type {
+  ChargeOutcomeAggregateRow,
+  ChargeSentencingAggregateRow,
+  SentencingIndexCategoryAggregateRow,
+  SentencingIndexSummaryAggregateRow,
+} from './charge-result.js';
 
 export interface JudgeRow {
   id: string;
@@ -69,6 +74,56 @@ export async function getJudgeSentencingRows(
     .where('charge_id', '=', chargeId)
     .where('judge_id', '=', judgeId)
     .select(['category_code', 'count', 'percentage', 'sentencing_sample_size', 'is_thin_data'])
+    .orderBy('category_code')
+    .execute();
+}
+
+// Task 35.2 sentencing-index reads for the charge x judge cell, mirroring the
+// charge-grain reads (row types reused). No grade read exists at this grain —
+// ruling 2: the judge arm carries no grade mix.
+
+export async function getJudgeSentencingIndexSummary(
+  db: Kysely<PublicApiDatabase>,
+  runId: string,
+  chargeId: string,
+  judgeId: string,
+): Promise<SentencingIndexSummaryAggregateRow | undefined> {
+  return db
+    .selectFrom('analytics.judge_sentencing_index_summaries')
+    .where('aggregate_run_id', '=', runId)
+    .where('charge_id', '=', chargeId)
+    .where('judge_id', '=', judgeId)
+    .select([
+      'convictions',
+      'sentenced_convictions',
+      'wedge_count',
+      'wedge_percentage',
+      'is_thin_data',
+      sql<string>`date_range_start::text`.as('date_range_start'),
+      sql<string>`date_range_end::text`.as('date_range_end'),
+    ])
+    .executeTakeFirst();
+}
+
+export async function getJudgeSentencingIndexCategoryRows(
+  db: Kysely<PublicApiDatabase>,
+  runId: string,
+  chargeId: string,
+  judgeId: string,
+): Promise<SentencingIndexCategoryAggregateRow[]> {
+  return db
+    .selectFrom('analytics.judge_sentencing_index_aggregates')
+    .where('aggregate_run_id', '=', runId)
+    .where('charge_id', '=', chargeId)
+    .where('judge_id', '=', judgeId)
+    .select([
+      'category_code',
+      'conviction_count',
+      'percentage_of_sentenced',
+      'median_min_days',
+      'median_max_days',
+      'min_assumed_percentage',
+    ])
     .orderBy('category_code')
     .execute();
 }

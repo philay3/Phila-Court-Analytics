@@ -1,17 +1,15 @@
 /**
- * Sample-size label (task 13.1). Renders the noun-free pinned "Sample size: N"
- * format through the 11.4 formatter — never re-typed inline. Generic over both
- * the outcome and sentencing sample sizes: the caller passes whichever value
- * applies. The value is required, so nothing is invented or defaulted.
+ * Sample label (task 13.1; reconciled task 35.3). Renders a pre-formatted
+ * sample label produced by the 11.4 formatters — the caller picks the
+ * unit-naming formatter for its block (records / sentence components /
+ * sentenced convictions per pin 11), so this component stays generic and no
+ * label string is ever re-typed inline.
  */
-import type { SampleSize } from '@pca/shared';
-import { formatSampleSize } from '../lib/formatters';
-
 interface SampleSizeLabelProps {
-  /** The distribution's sample size, straight from the API block. */
-  sampleSize: SampleSize;
+  /** The fully formatted label, e.g. from `formatRecordsLabel`. */
+  label: string;
 }
 
-export function SampleSizeLabel({ sampleSize }: SampleSizeLabelProps) {
-  return <p className="text-sm text-faint">{formatSampleSize(sampleSize)}</p>;
+export function SampleSizeLabel({ label }: SampleSizeLabelProps) {
+  return <p className="text-sm text-faint">{label}</p>;
 }

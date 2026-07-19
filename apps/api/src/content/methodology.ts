@@ -17,7 +17,9 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
       body:
         'Figures are built from public docket sheets published on the Pennsylvania ' +
         'Unified Judicial System (UJS) portal. Coverage is limited to criminal cases ' +
-        'heard in the Philadelphia courts.',
+        'heard in the Philadelphia courts. Each results page also shows a data ' +
+        'release code — a short identifier naming the aggregate release its figures ' +
+        'come from; every figure on the page comes from that single release.',
     },
     dataRange: {
       heading: 'What time period is covered',
@@ -49,13 +51,17 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
         'consulting a licensed attorney about a specific situation.',
     },
     sampleSize: {
+      // Reconciled in the 35.3 label pass: the page labels name the unit each
+      // block counts (records / sentence components / sentenced convictions),
+      // and this definition names the same three units.
       heading: 'Sample size',
       body:
-        'Every figure is shown with its sample size: the number of records it ' +
-        'summarizes (charge dispositions for outcome figures, and individual ' +
-        'sentence components for sentencing figures). Figures built from more data ' +
-        'are more stable, so the sample size appears on every figure to show how ' +
-        'much data stands behind it.',
+        'Every figure is shown with the amount of data behind it, counted in the ' +
+        'unit the figure summarizes: outcome figures show the number of records ' +
+        '(charge dispositions), the sentencing detail shows the number of sentence ' +
+        'components, and the sentencing rates show the number of sentenced ' +
+        'convictions behind them. Figures built from more data are more stable, so ' +
+        'these counts appear beside every figure.',
     },
     thinData: {
       heading: 'Thin data',
@@ -85,7 +91,7 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
         'Sentencing distributions summarize the sentence types recorded for charges ' +
         'that reached sentencing. A single sentencing event can include several ' +
         'components (for example probation plus a fine), and each component is ' +
-        'counted as its own entry, so the sentencing sample size counts sentence ' +
+        'counted as its own entry, so the sentencing detail counts sentence ' +
         'components rather than sentenced charges. It is measured separately from ' +
         'the outcome sample size and can be smaller or larger: not every disposed ' +
         'charge reaches sentencing, while each charge that does can contribute more ' +
@@ -94,7 +100,26 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
         'often coincide, but sentencing can also be recorded later than the ' +
         'disposition and, in a small share of records, earlier, and whether a ' +
         'sentencing event is inside the covered period is decided by the ' +
-        'sentencing date itself.',
+        'sentencing date itself. ' +
+        // 35.3 additions (pin 12): index definition, wedge, month convention,
+        // median pairs, min_assumed, grade mix — sanctioned byte-exact.
+        'Alongside that component detail, results pages lead with sentencing rates ' +
+        'by conviction where those rates are available: for each sentence category, ' +
+        'the share of sentenced convictions whose sentence included that category ' +
+        'at least once. A conviction sentenced to probation and a fine counts once ' +
+        'under each, so the percentages can sum to more than 100. The denominator ' +
+        'is sentenced convictions — convictions with at least one public sentencing ' +
+        'component recorded — and convictions with no public sentencing record in ' +
+        'the collected data are excluded from the rates and disclosed as a count ' +
+        'beside them. Where sentence lengths are recorded, pages show the median of ' +
+        'the minimum and the median of the maximum length, converted to months ' +
+        'using a 30-day month and a 360-day year; when the two medians are equal a ' +
+        'single figure is shown. Some records state a single length or only a ' +
+        'maximum; for those the minimum is treated as equal to the stated length, ' +
+        'and the share of such records is tracked per category in the underlying ' +
+        'aggregates. Charge pages also show the mix of charge grades among ' +
+        'convictions, listed from most to least common; convictions with no grade ' +
+        'recorded on the docket are grouped under "no recorded grade".',
     },
     limitations: {
       heading: 'Known limitations',

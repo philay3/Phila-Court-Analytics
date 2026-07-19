@@ -8,6 +8,8 @@ export * from './public/error-messages.js';
 export * from './public/forbidden-fields.js';
 export * from './public/search.js';
 export * from './public/charge-directory.js';
+export * from './public/sentencing-index.js';
+export * from './public/result-display.js';
 export * from './public/charge-result.js';
 export * from './public/judge-result.js';
 export * from './public/methodology.js';

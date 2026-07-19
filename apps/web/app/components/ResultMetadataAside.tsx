@@ -23,7 +23,7 @@
  */
 import { useId, type ReactNode } from 'react';
 import Link from 'next/link';
-import { formatLastRefreshed } from '../lib/formatters';
+import { formatAggregateRunLabel, formatLastRefreshed } from '../lib/formatters';
 import { CHARGE_RESULT_COPY } from './charge-result-copy';
 import { RESULT_DISPLAY_COPY } from './result-display-copy';
 
@@ -34,6 +34,8 @@ interface ResultMetadataAsideProps {
   lastRefreshed: string;
   /** API links object — hrefs for the relocated Definitions/Methodology links. */
   links: { methodology: string; definitions: string };
+  /** The served run reference for the provenance line (task 35.3, pin 7). */
+  aggregateRunId: string;
   /** Page-specific rows between the heading and last-refreshed (charge page:
    *  the sample-size label/value pairs). */
   children?: ReactNode;
@@ -45,6 +47,7 @@ interface ResultMetadataAsideProps {
 export function ResultMetadataAside({
   lastRefreshed,
   links,
+  aggregateRunId,
   children,
   actions,
 }: ResultMetadataAsideProps) {
@@ -71,6 +74,12 @@ export function ResultMetadataAside({
         <Link href={links.definitions} className={LINK_CLASS}>
           {CHARGE_RESULT_COPY.definitionsLinkText}
         </Link>
+      </p>
+      {/* Provenance line (task 35.3, pin 7): the served run reference in its
+          short id form, at the bottom of the aside on both result pages. Its
+          meaning is explained in methodology. */}
+      <p data-testid="aggregate-run-line" className="text-xs text-faint">
+        {formatAggregateRunLabel(aggregateRunId)}
       </p>
     </aside>
   );

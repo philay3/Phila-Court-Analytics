@@ -18,18 +18,31 @@
  * (honesty-apparatus overrides 1–2: responsible-use and coverage-note
  * positions are unchanged).
  *
- * Distribution order is CONDITIONAL on the API `sentencing.available` flag
- * (task 33.2 pinned decision 4): where sentencing data exists the sentencing
- * block leads and the outcome block is demoted below it; on the
- * sentencing-unavailable arm the outcome block leads and the sentencing slot
- * below renders the existing callout. The branch consumes the API boolean
- * only — no counts or thresholds are evaluated here.
+ * Distribution order (task 35.3, pins 1–3) branches on the sentencing-index
+ * display arm derived in `sentencing-index-display.ts`:
+ *   - lead: the index section leads, the component-grain sentencing block
+ *     renders below it under the distinct detail caption, outcome below that.
+ *   - zero-sentenced: outcome leads; the ruling-4 fallback line (carrying the
+ *     served conviction count) replaces the generic sentencing-unavailable
+ *     notice in the sentencing slot.
+ *   - absent: today's post-Phase-33 conditional order, structurally unchanged
+ *     (33.2 pinned decision 4): sentencing leads when `sentencing.available`,
+ *     else outcome leads with the notice below.
+ * Every branch consumes API booleans/arrays only — no counts or thresholds
+ * are evaluated here.
  *
  * Every count, percentage, sample size, date, and label renders through the
  * 11.4 formatters (pinned decision 7); the page computes no analytics.
  */
+import { SENTENCING_DETAIL_CAPTION } from '@pca/shared';
 import type { ChargeOnlyResultSuccess } from '@pca/shared';
-import { formatResultTypeLabel } from '../lib/formatters';
+import {
+  formatRecordsLabel,
+  formatResultTypeLabel,
+  formatSentenceComponentsLabel,
+  formatZeroSentencedFallback,
+} from '../lib/formatters';
+import { resolveChargeSentencingIndexDisplay } from '../lib/sentencing-index-display';
 import { DateRangeLabel } from './DateRangeLabel';
 import { ResponsibleUseNotice } from './ResponsibleUseNotice';
 import { ThinDataCallout } from './ThinDataCallout';
@@ -39,6 +52,7 @@ import { JudgeDisclosure } from './JudgeDisclosure';
 import { JudgeFilterEntry } from './JudgeFilterEntry';
 import { ResultMetadataAside } from './ResultMetadataAside';
 import { SampleSizeLabel } from './SampleSizeLabel';
+import { SentencingIndexSection } from './SentencingIndexSection';
 import { CHARGE_RESULT_COPY } from './charge-result-copy';
 import { RESULT_DISPLAY_COPY } from './result-display-copy';
 
@@ -48,9 +62,13 @@ interface ChargeOnlyResultViewProps {
 
 export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
   const { charge, outcomes, sentencing, links } = data;
+  const indexDisplay = resolveChargeSentencingIndexDisplay(data.sentencingIndex);
   // One page-level thin-data callout slot; each distribution also shows its own
-  // precise thin-data badge inside DistributionSection.
-  const showThinDataCallout = outcomes.thinData || (sentencing.available && sentencing.thinData);
+  // precise thin-data badge inside its section. Pure OR over API booleans.
+  const showThinDataCallout =
+    outcomes.thinData ||
+    (sentencing.available && sentencing.thinData) ||
+    (data.sentencingIndex.available && data.sentencingIndex.summary.thinData);
 
   const outcomeBlock = (
     <div data-testid="section-outcome" className="overflow-x-auto">
@@ -62,7 +80,7 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
       />
     </div>
   );
-  const sentencingBlock = (
+  const sentencingBlock = (caption?: string) => (
     <div data-testid="section-sentencing" className="overflow-x-auto">
       {sentencing.available ? (
         <DistributionSection
@@ -70,12 +88,68 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
           rows={sentencing.rows}
           sampleSize={sentencing.sampleSize}
           thinData={sentencing.thinData}
+          caption={caption}
         />
       ) : (
         <SentencingUnavailableNotice methodologyHref={links.methodology} />
       )}
     </div>
   );
+
+  // The three index arms (35.3 pins 1–3), exhaustively switched: a new arm
+  // must add a case rather than fall through.
+  const distributionBlocks = (() => {
+    switch (indexDisplay.kind) {
+      case 'lead':
+        return (
+          <>
+            <div data-testid="section-sentencing-index" className="overflow-x-auto">
+              <SentencingIndexSection
+                summary={indexDisplay.index.summary}
+                categories={indexDisplay.index.categories}
+                grades={indexDisplay.index.grades}
+              />
+            </div>
+            {sentencingBlock(SENTENCING_DETAIL_CAPTION)}
+            {outcomeBlock}
+          </>
+        );
+      case 'zero-sentenced':
+        // Outcome-first; the ruling-4 fallback line (served conviction count)
+        // replaces the generic notice in the sentencing slot (ruling Q4).
+        return (
+          <>
+            {outcomeBlock}
+            <div
+              data-testid="section-sentencing-index"
+              className="space-y-3 border-t-3 border-double border-ink pt-3"
+            >
+              <p className="text-sm text-muted">
+                {formatZeroSentencedFallback(indexDisplay.index.summary.convictions)}
+              </p>
+            </div>
+            {sentencing.available && sentencingBlock()}
+          </>
+        );
+      case 'absent':
+        // Today's post-Phase-33 page, structurally unchanged (pin 2).
+        return sentencing.available ? (
+          <>
+            {sentencingBlock()}
+            {outcomeBlock}
+          </>
+        ) : (
+          <>
+            {outcomeBlock}
+            {sentencingBlock()}
+          </>
+        );
+      default: {
+        const exhaustive: never = indexDisplay;
+        return exhaustive;
+      }
+    }
+  })();
 
   return (
     // section-counter-reset scopes the Roman-numeral markers the two
@@ -104,22 +178,13 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
           </div>
         )}
 
-        {sentencing.available ? (
-          <>
-            {sentencingBlock}
-            {outcomeBlock}
-          </>
-        ) : (
-          <>
-            {outcomeBlock}
-            {sentencingBlock}
-          </>
-        )}
+        {distributionBlocks}
       </div>
 
       <ResultMetadataAside
         lastRefreshed={data.lastRefreshed}
         links={links}
+        aggregateRunId={data.aggregateRunId}
         actions={
           // DP-3 disclosure wraps the DP-2 entry from the OUTSIDE — the
           // entry's ARIA, testid, strings, and routing are byte-identical.
@@ -138,7 +203,7 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
               {CHARGE_RESULT_COPY.asideOutcomesLabel}
             </dt>
             <dd className="mt-1">
-              <SampleSizeLabel sampleSize={outcomes.sampleSize} />
+              <SampleSizeLabel label={formatRecordsLabel(outcomes.sampleSize)} />
             </dd>
           </div>
           {sentencing.available && (
@@ -147,7 +212,7 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
                 {CHARGE_RESULT_COPY.asideSentencingLabel}
               </dt>
               <dd className="mt-1">
-                <SampleSizeLabel sampleSize={sentencing.sampleSize} />
+                <SampleSizeLabel label={formatSentenceComponentsLabel(sentencing.sampleSize)} />
               </dd>
             </div>
           )}

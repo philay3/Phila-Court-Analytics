@@ -1,19 +1,40 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { scanPublicCopy } from '@pca/shared';
+import type { SentencingIndexSummary } from '@pca/shared';
 import {
   RESULT_TYPE_CHARGE_ONLY_LABEL,
   RESULT_TYPE_JUDGE_SPECIFIC_LABEL,
   THIN_DATA_LABEL,
+  formatAggregateRunLabel,
   formatCount,
   formatDateOnly,
   formatDateRange,
+  formatGradeMixLine,
   formatLastRefreshed,
+  formatMedianMonths,
   formatPercentage,
   formatRecordedOutcomes,
+  formatRecordsLabel,
   formatResultTypeLabel,
-  formatSampleSize,
+  formatSentenceComponentsLabel,
+  formatSentencedConvictionsLabel,
   formatThinDataLabel,
+  formatWedgeDisclosure,
+  formatZeroSentencedFallback,
 } from './formatters.js';
+
+/** Fabricated summary for wedge tests; every number is a test-only value. */
+function summaryWith(overrides: Partial<SentencingIndexSummary>): SentencingIndexSummary {
+  return {
+    convictions: 600,
+    sentencedConvictions: 588,
+    wedgeCount: 12,
+    wedgePercentage: 2,
+    thinData: false,
+    dateRange: { start: '2025-01-03', end: '2026-06-27' },
+    ...overrides,
+  };
+}
 
 describe('formatCount', () => {
   it('renders zero as "0" (not blank or dropped)', () => {
@@ -42,17 +63,104 @@ describe('formatPercentage', () => {
   });
 });
 
-describe('formatSampleSize', () => {
-  it('locks the noun-free "Sample size: N" format', () => {
-    // n = 1 exists only to pin the format — there is no singular/plural noun.
-    // DP-5 Amendment A guard: result surfaces keep this output byte-identical;
-    // only directory rows and featured cards use formatRecordedOutcomes.
-    expect(formatSampleSize(1)).toBe('Sample size: 1');
-    expect(formatSampleSize(1234)).toBe('Sample size: 1,234');
+describe('reconciled sample labels (35.3, pin 11)', () => {
+  it('locks the "Records: N" outcome-block format', () => {
+    expect(formatRecordsLabel(1234)).toBe('Records: 1,234');
+    expect(formatRecordsLabel(0)).toBe('Records: 0');
   });
 
-  it('renders a zero sample size', () => {
-    expect(formatSampleSize(0)).toBe('Sample size: 0');
+  it('locks the "Sentence components: N" component-block format', () => {
+    expect(formatSentenceComponentsLabel(987)).toBe('Sentence components: 987');
+  });
+
+  it('locks the "Sentenced convictions: N" index-block format', () => {
+    expect(formatSentencedConvictionsLabel(588)).toBe('Sentenced convictions: 588');
+    expect(formatSentencedConvictionsLabel(1234)).toBe('Sentenced convictions: 1,234');
+  });
+});
+
+describe('formatMedianMonths (35.3, pin 4)', () => {
+  it('collapses a flat pair to a single figure', () => {
+    expect(formatMedianMonths(3, 3)).toBe('3');
+  });
+
+  it('renders a distinct pair as an unspaced en-dash range', () => {
+    expect(formatMedianMonths(12, 18)).toBe('12–18');
+    expect(formatMedianMonths(0.4, 3)).toBe('0.4–3');
+  });
+
+  it('returns null for a duration-free category (empty cell, ruling Q7)', () => {
+    expect(formatMedianMonths(undefined, undefined)).toBeNull();
+  });
+});
+
+describe('formatWedgeDisclosure (35.3, pin 10)', () => {
+  it('fills the plural template with served values', () => {
+    expect(formatWedgeDisclosure(summaryWith({}))).toBe(
+      '12 of 600 recorded convictions (2%) have no public sentencing record in the collected data and are not counted in the rates above.',
+    );
+  });
+
+  it('uses the singular variant at wedgeCount = 1', () => {
+    expect(formatWedgeDisclosure(summaryWith({ wedgeCount: 1, wedgePercentage: 0.2 }))).toBe(
+      '1 of 600 recorded convictions (0.2%) has no public sentencing record in the collected data and is not counted in the rates above.',
+    );
+  });
+
+  it('renders the zero-wedge case through the plural form', () => {
+    expect(formatWedgeDisclosure(summaryWith({ wedgeCount: 0, wedgePercentage: 0 }))).toBe(
+      '0 of 600 recorded convictions (0%) have no public sentencing record in the collected data and are not counted in the rates above.',
+    );
+  });
+});
+
+describe('formatZeroSentencedFallback (35.3, ruling 4)', () => {
+  it('fills the plural template with the served conviction count', () => {
+    expect(formatZeroSentencedFallback(323)).toBe(
+      'None of the 323 recorded convictions here has a public sentencing record in the collected data.',
+    );
+  });
+
+  it('uses the singular variant at convictions = 1', () => {
+    expect(formatZeroSentencedFallback(1)).toBe(
+      'The 1 recorded conviction here has no public sentencing record in the collected data.',
+    );
+  });
+});
+
+describe('formatGradeMixLine (35.3, pin 5)', () => {
+  it('renders a multi-grade mix dominant-first as served, with the gated ungraded label', () => {
+    expect(
+      formatGradeMixLine([
+        { grade: 'F3', convictionCount: 300, percentageOfConvictions: 50 },
+        { grade: 'M1', convictionCount: 150, percentageOfConvictions: 25 },
+        { grade: 'ungraded', convictionCount: 30, percentageOfConvictions: 5 },
+      ]),
+    ).toBe('Conviction grades: F3 50% · M1 25% · no recorded grade 5%');
+  });
+
+  it('states the grade rather than a mix on a single-grade page', () => {
+    expect(
+      formatGradeMixLine([{ grade: 'M1', convictionCount: 9, percentageOfConvictions: 100 }]),
+    ).toBe('Every recorded conviction here is grade M1.');
+  });
+
+  it('uses the ungraded wording when the single grade row is the ungraded bucket', () => {
+    expect(
+      formatGradeMixLine([{ grade: 'ungraded', convictionCount: 4, percentageOfConvictions: 100 }]),
+    ).toBe('Every recorded conviction here has no recorded grade.');
+  });
+
+  it('returns null for an empty grade list', () => {
+    expect(formatGradeMixLine([])).toBeNull();
+  });
+});
+
+describe('formatAggregateRunLabel (35.3, pin 7)', () => {
+  it('renders the pinned prefix plus the first 8 characters of the run id', () => {
+    expect(formatAggregateRunLabel('2f9c1e04-8d5b-4c33-9a67-0d1e2f3a4b5c')).toBe(
+      'Data release: 2f9c1e04',
+    );
   });
 });
 
@@ -166,7 +274,16 @@ describe('copy safety', () => {
       RESULT_TYPE_CHARGE_ONLY_LABEL,
       RESULT_TYPE_JUDGE_SPECIFIC_LABEL,
       THIN_DATA_LABEL,
-      formatSampleSize(1234),
+      formatRecordsLabel(1234),
+      formatSentenceComponentsLabel(987),
+      formatSentencedConvictionsLabel(588),
+      formatWedgeDisclosure(summaryWith({})),
+      formatZeroSentencedFallback(323),
+      formatGradeMixLine([
+        { grade: 'F3', convictionCount: 300, percentageOfConvictions: 50 },
+        { grade: 'M1', convictionCount: 150, percentageOfConvictions: 25 },
+      ]) ?? '',
+      formatAggregateRunLabel('2f9c1e04-8d5b-4c33-9a67-0d1e2f3a4b5c'),
     ];
     for (const label of labels) {
       expect(scanPublicCopy(label)).toEqual([]);

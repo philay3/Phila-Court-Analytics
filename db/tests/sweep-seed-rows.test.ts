@@ -71,6 +71,12 @@ async function countWhereRegistry(
     'analytics.charge_sentencing_aggregates',
     'analytics.judge_outcome_aggregates',
     'analytics.judge_sentencing_aggregates',
+    // Task 35.2: the five sentencing-index tables ride the same registry runs.
+    'analytics.charge_sentencing_index_summaries',
+    'analytics.charge_sentencing_index_aggregates',
+    'analytics.charge_conviction_grade_aggregates',
+    'analytics.judge_sentencing_index_summaries',
+    'analytics.judge_sentencing_index_aggregates',
   ] as const;
   let aggregates = 0;
   for (const table of aggregateTables) {

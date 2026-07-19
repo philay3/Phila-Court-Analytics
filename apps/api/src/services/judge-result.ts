@@ -23,9 +23,16 @@ import {
   findActiveJudgeById,
   findActiveJudgeBySlug,
   getJudgeOutcomeRows,
+  getJudgeSentencingIndexCategoryRows,
+  getJudgeSentencingIndexSummary,
   getJudgeSentencingRows,
 } from '../repositories/judge-result.js';
-import { UUID_PATTERN, buildDistributionBlock, buildSentencing } from './result-helpers.js';
+import {
+  UUID_PATTERN,
+  buildDistributionBlock,
+  buildJudgeSentencingIndex,
+  buildSentencing,
+} from './result-helpers.js';
 
 function chargeSummary(charge: ChargeRow) {
   return {
@@ -127,6 +134,18 @@ export async function getJudgeSpecificResult(
   const judgeSentencingRows = await getJudgeSentencingRows(db, run.id, charge.id, judge.id);
   const baselineSentencingRows = await getChargeSentencingRows(db, run.id, charge.id);
 
+  // Task 35.2: the conviction-grain index for THE CELL (charge x judge) —
+  // judge grain, no grade mix (ruling 2), no baseline index here (that is
+  // the charge-only endpoint's). Summary absence is the absent arm and
+  // short-circuits the category read.
+  const indexSummary = await getJudgeSentencingIndexSummary(db, run.id, charge.id, judge.id);
+  const sentencingIndex = indexSummary
+    ? buildJudgeSentencingIndex(
+        indexSummary,
+        await getJudgeSentencingIndexCategoryRows(db, run.id, charge.id, judge.id),
+      )
+    : { available: false as const };
+
   return {
     resultType: 'judge_specific',
     charge: chargeSummary(charge),
@@ -144,6 +163,7 @@ export async function getJudgeSpecificResult(
       outcomes: buildOutcomes(baselineOutcomeRows),
       sentencing: buildSentencing(baselineSentencingRows),
     },
+    sentencingIndex,
     links: { methodology: '/methodology', definitions: '/definitions' },
   };
 }

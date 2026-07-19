@@ -39,14 +39,14 @@ fastest lever and reverses instantly.
 
 ## Republish-to-prod
 
-Re-runs the go-live nine-table dump/restore against a production database
+Re-runs the go-live fourteen-table dump/restore against a production database
 that already contains data. The restore is data-only, so the existing rows
 must be cleared first — one multi-table TRUNCATE handles the foreign keys
-because all nine tables are truncated together.
+because all fourteen tables are truncated together.
 
 1. Produce/refresh the local publish (the normal local pipeline flow:
    generate → validate → publish; never on Render, never with `CI` set).
-2. Dump the nine tables and build the FK-ordered TOC exactly as in
+2. Dump the fourteen tables and build the FK-ordered TOC exactly as in
    `docs/runbook-go-live.md` Step 4 (items 1–2).
 3. Clear and restore:
 
@@ -60,12 +60,17 @@ because all nine tables are truncated together.
      analytics.charge_outcome_aggregates,
      analytics.charge_sentencing_aggregates,
      analytics.judge_outcome_aggregates,
-     analytics.judge_sentencing_aggregates;'
+     analytics.judge_sentencing_aggregates,
+     analytics.charge_sentencing_index_summaries,
+     analytics.charge_sentencing_index_aggregates,
+     analytics.charge_conviction_grade_aggregates,
+     analytics.judge_sentencing_index_summaries,
+     analytics.judge_sentencing_index_aggregates;'
    pg_restore --single-transaction --data-only \
      -L /tmp/toc.ordered \
      -d "$PROD_DATABASE_URL" \
-     /tmp/pca-public-9table.dump
-   rm /tmp/pca-public-9table.dump /tmp/toc.full /tmp/toc.ordered
+     /tmp/pca-public-14table.dump
+   rm /tmp/pca-public-14table.dump /tmp/toc.full /tmp/toc.ordered
    unset PROD_DATABASE_URL
    ```
 

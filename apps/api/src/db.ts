@@ -6,10 +6,12 @@ import type { Database } from '@pca/db';
 /**
  * The public API's view of the database: exactly the tables the public
  * surface may read, derived from @pca/db's Database so column types can
- * never drift — the four ref.* tables plus the aggregate-run bookkeeping and
- * the four aggregate tables the 8.1/8.2 result endpoints consume. Everything
- * else (the future raw/parsed/fact/review layers) is a compile error, not a
- * convention.
+ * never drift — the four ref.* tables plus the aggregate-run bookkeeping, the
+ * four aggregate tables the 8.1/8.2 result endpoints consume, and the five
+ * Task 35.1 conviction-grain sentencing-index tables (served starting 35.2).
+ * Everything else (the raw/parsed/fact/review layers) is a compile error, not
+ * a convention. This Pick is the compile-enforced public-surface manifest:
+ * the ADR 0004 dump/restore table set mirrors it exactly.
  */
 export type PublicApiDatabase = Pick<
   Database,
@@ -22,6 +24,11 @@ export type PublicApiDatabase = Pick<
   | 'analytics.charge_sentencing_aggregates'
   | 'analytics.judge_outcome_aggregates'
   | 'analytics.judge_sentencing_aggregates'
+  | 'analytics.charge_sentencing_index_summaries'
+  | 'analytics.charge_sentencing_index_aggregates'
+  | 'analytics.charge_conviction_grade_aggregates'
+  | 'analytics.judge_sentencing_index_summaries'
+  | 'analytics.judge_sentencing_index_aggregates'
 >;
 
 export function createApiDb(): Kysely<PublicApiDatabase> {

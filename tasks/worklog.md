@@ -7763,3 +7763,195 @@ the homepage copy-heavy phase per the amendment's for-the-record note.
 - **Notes for next task:** public-copy disclaimer vocabulary is deliberate
   product copy — inventoried as carved out, not scrubbed. Git history was
   not rewritten.
+
+## Task 35.1 — Conviction-Grain Sentencing Index Aggregates + Build-Run-Id Persistence (2026-07-19)
+
+- **What was built:** (1) Migration `20260719120000` — five conviction-grain
+  sentencing-index tables (`charge_sentencing_index_summaries`,
+  `charge_sentencing_index_aggregates`, `charge_conviction_grade_aggregates`,
+  `judge_sentencing_index_summaries`, `judge_sentencing_index_aggregates`)
+  per the Phase 35 design-gate rulings: wedge exclude-with-disclosure,
+  pooled rates + charge-grain grade mix with `ungraded` bucket, pair medians
+  (days, `min_assumed` included) + `min_assumed` share, thin flag on
+  sentenced convictions, categories from taxonomy only. Percentages
+  `numeric(4,1)` half-up; medians `numeric(6,1)`; summaries servable at zero
+  sentenced (`convictions > 0`, `sentenced_convictions >= 0`). Migration
+  `20260719120001` — nullable `aggregate_runs.build_run_id`, deliberately
+  FK-less (fact.* is outside the dump/restore set; rationale comment in the
+  migration). (2) Generator: `_build_sentencing_index` core + charge/judge
+  wrappers in the same single-run/single-transaction lifecycle; conviction
+  family via the new `pipeline/conviction_family.py` named constant; grades
+  from `parsed.charges.grade`; resolved build-run id now persisted on the run
+  row. (3) Validation extended over all nine tables: wedge identity,
+  category <= sentenced, grade-mix sums, 1-decimal percentage envelope,
+  cross-population conviction reconciliation (union of cells),
+  medians-present-iff-duration-bearing + component `min <= max` (via the
+  persisted build-run id), `build_run_id` presence; `completed` still means
+  validated. (4) Public-surface manifest 9 -> 14: `PublicApiDatabase` Pick,
+  `db/src/types.ts`, both runbooks' dump/TOC/count lists, schema doc, ADR
+  0004 amendment.
+- **Files touched:** `db/migrations/20260719120000_...ts`,
+  `db/migrations/20260719120001_...ts`, `db/src/types.ts`,
+  `apps/api/src/db.ts`, `services/pipeline/src/pipeline/conviction_family.py`,
+  `.../aggregates/generate.py`, `.../aggregates/validate.py`,
+  `services/pipeline/tests/test_aggregates_generate.py`,
+  `tests/test_aggregates_validate.py`, `docs/runbook-go-live.md`,
+  `docs/runbook-rollback-republish.md`, `docs/v1database-schema.md`,
+  `docs/decisions/0004-deployment.md`, `tasks/worklog.md`.
+- **Acceptance:** run `24184d68` against build `1767bea3` generated +
+  validated clean (9 tables, 0 violations); reconciled exactly: citywide
+  6782/5822/960, retail-theft 343/332/11, rates 72.2/41.0/12.4, retail grade
+  mix F3 56.0 / M1 23.9 / S 12.0 / M2 8.2, M4 medians 345/690 & 720/720 with
+  min_assumed 10.1/90.1 (citywide via verification rerun; per-specimen rows
+  exact), all five occurring categories present (costs_fees 10, other 1).
+  Never published; active run `82b6cc99` untouched.
+- **Deviations from plan:** none beyond the adjudicated approval fixes
+  (summary-table date ranges per Q4; ADR amendment as manifest surface).
+- **Notes for next task (35.2/35.3):** Q2 divergence measured ZERO both ways
+  on build `1767bea3` (public_eligible == judge_specific_eligible on all 7738
+  components of judge-eligible conviction parents) — definitions coincide on
+  this build; carry into the 35.3 label pass. Day->month conversion (/30) is
+  the 35.2 API layer's job; nothing stores months. The standing
+  `pca_pipeline_test` currency queue item is CLOSED: both new migrations
+  applied there and the down path round-trip verified; suite runs 1097
+  passed against it.
+
+## Task 35.2 — Sentencing Index API Payloads (2026-07-19)
+
+- **What was built:** (1) Shared contracts: new
+  `packages/shared/src/public/sentencing-index.ts` — summary/category/grade
+  row schemas and the two-arm section unions (`available` boolean per house
+  section convention; absent arm is bare `{ available: false }`, no message —
+  all copy is 35.3's). `sentencingIndex` added as a REQUIRED field on both
+  SUCCESS arms only (charge shape carries `grades`; judge shape has no grades
+  key — ruling 2); unavailable arms untouched. (2) Month conversion:
+  `apps/api/src/services/months.ts` — `daysToMonths` parses the numeric(6,1)
+  string to integer tenths and rounds with `floor((T+15)/30)`, exact half-up
+  with no float ties; months are the only served unit, day values never
+  leave the API. (3) Serving: five repository reads (summary anchor +
+  category rows + grade rows at charge grain; summary + categories at judge
+  grain), summary-miss short-circuits to the absent arm; assembly in
+  `result-helpers.ts` orders categories by taxonomy sortOrder via
+  `resolvePublicCategory` (validates codes; display names deliberately not
+  served) and serves grades dominant-first (`conviction_count DESC, grade
+  ASC` — adjudicated fix). (4) Seeds: index scenario matrix in
+  `db/seeds/aggregate-data.ts` + writer/self-validation in `aggregates.ts`
+  (wedge identity by construction; deliberate absences restated:
+  simple-assault charge cell, dui/samuel judge cell, fakename-example
+  everywhere). (5) Tests: shared schema suite, exhaustive month unit tests,
+  inject coverage for every arm on both endpoints, key-sweep additions (the
+  judge sweep deliberately does NOT allow `grades`/`percentageOfConvictions`).
+- **Files touched:** `packages/shared/src/public/sentencing-index.ts` (+
+  test), `charge-result.ts`, `judge-result.ts`, `index.ts`,
+  `test-support/fixtures.ts`; `apps/api/src/services/months.ts` (+ test),
+  `result-helpers.ts`, `charge-result.ts`, `judge-result.ts`,
+  `apps/api/src/repositories/charge-result.ts`, `judge-result.ts`,
+  `apps/api/src/routes/public/results.test.ts`, `judge-results.test.ts`;
+  `db/seeds/aggregate-data.ts`, `db/seeds/aggregates.ts`;
+  `tasks/worklog.md`.
+- **Adjudicated out-of-scope touches (called out):** four web test-fixture
+  one-liners (`sentencingIndex: { available: false }`, absent-arm literal
+  only, zero rendering/copy assertions) in
+  `apps/web/app/charges/[chargeSlug]/charge-result-state.test.ts`,
+  `.../judge/[judgeSlug]/judge-result-state.test.ts`,
+  `apps/web/app/components/ChargeOnlyResultView.test.tsx`,
+  `JudgeSpecificResultView.test.tsx` — type-driven only (required field on
+  the success types). Consequential ripple: `db/scripts/sweep-seed-rows.ts`
+  and `db/tests/sweep-seed-rows.test.ts` table lists extended with the five
+  index tables (the new run FKs otherwise block the registry-run delete).
+- **Deviations from plan:** the sweep-script ripple above (surfaced by the
+  @pca/db gate); none otherwise.
+- **Verification:** all four workspace suites green (@pca/shared 205,
+  @pca/api 210, @pca/web 235, @pca/db 61); live degradation captured on
+  canonical `pca` (posture line + both endpoints for real served slugs):
+  existing payload fields byte-identical, new section serving the clean
+  absent arm — run `82b6cc99` predates the index population; the 74
+  unpublished 35.1 index summary rows there belong to run `24184d68` and
+  are invisible to serving by run scoping. Nothing published.
+- **Notes for next task (35.3):** the payload makes display states
+  derivable, it does not name them — zero-sentenced is `available: true` +
+  `sentencedConvictions: 0` + empty `categories` (ruling-4 fallback line is
+  a frontend derivation); the absent arm carries no message field at all.
+  Months come pre-converted (≤1dp); the web app must convert nothing.
+  Judge payloads carry the CELL index only — no baseline index, no grade
+  mix; a judge-page baseline index would be a future additive change.
+
+## Task 35.3 — Index Rendering + the Copy Pass (2026-07-19)
+
+- **What was built:** (1) Sanctioned copy: new
+  `packages/shared/src/public/result-display.ts` — the complete 35.3 string
+  set (index caption/headers, sentenced-convictions label, wedge + zero-
+  sentenced templates in BOTH grammatical variants, grade-mix strings with
+  the gated `no recorded grade` label, detail caption, `Records: ` /
+  `Sentence components: ` reconciled prefixes, `Data release: ` provenance
+  prefix), byte-pinned + scan-clean + no-em-dash in its test. (2) Display:
+  `apps/web/app/lib/sentencing-index-display.ts` names the three arms
+  (lead / zero-sentenced / absent) with never-checked exhaustive switches;
+  `SentencingIndexSection.tsx` renders the lead block as the house
+  bar+required-table pattern (caption = conditional header, median column
+  with flat-pair collapse and empty duration-free cells, wedge line, grade
+  line on charge pages only — judge grain passes no grades, structurally).
+  Both result views branch per arm: index leads → detail caption on the
+  component block → outcome; zero-sentenced renders outcome-first with the
+  ruling-4 fallback line REPLACING the generic notice; absent arm is
+  today's page structurally with only the reconciled labels applied
+  (ruling Q1). Judge scope only carries the cell index; baseline scope
+  unchanged. (3) Formatters: `formatMedianMonths`, `formatWedgeDisclosure`,
+  `formatZeroSentencedFallback` (singular branches per sanction),
+  `formatGradeMixLine`, `formatAggregateRunLabel` (8-char short id),
+  `formatRecordsLabel`/`formatSentenceComponentsLabel`/
+  `formatSentencedConvictionsLabel`; `formatSampleSize` +
+  `SAMPLE_SIZE_LABEL_PREFIX` deleted (the byte-identity guard lifted by
+  design). `SampleSizeLabel` now takes a pre-formatted label;
+  `DistributionSection` gained kind-based labels + a caption override.
+  (4) Provenance: `ResultMetadataAside` renders `Data release: <short id>`
+  last, on both result pages. (5) Methodology (M1–M4 as sanctioned):
+  sampleSize body replaced (three units), sentencing body gains the index
+  definition/wedge/month-and-median conventions/min_assumed/grade-mix
+  block, `sentencing detail` retitle, dataSource gains the release-code
+  meaning. (6) Provisional-30 retirement: `packages/taxonomy/seeds/
+  thin-data.json` deleted; `THIN_DATA_CONFIG` emission, validation, and
+  test assertions removed; pipeline default 10 is the sole threshold.
+  (7) Seeds: flat-pair category row (incarceration 90/90 days → 3) on the
+  judge cell (ruling Q5). (8) Tests/E2E: new unit suites per arm/state;
+  E2E scenario slugs extended (`chargeZeroSentenced`, `chargeIndexAbsent` =
+  simple-assault lock, absent judge cell dui × judge-samuel-seeddata);
+  charge/judge/mobile specs rewritten for the three arms, labels, and
+  provenance — all through `assertPageClean` (axe + both scanners).
+- **Files touched:** `packages/shared/src/public/result-display.ts` (+
+  test, new), `packages/shared/src/index.ts`,
+  `packages/shared/src/public/charge-directory.ts` (comment only);
+  `packages/taxonomy/seeds/thin-data.json` (deleted), `src/build.ts`,
+  `src/validation.ts`, `src/generate.test.ts`;
+  `apps/web/app/lib/formatters.ts` (+ test),
+  `sentencing-index-display.ts` (+ test, new);
+  `apps/web/app/components/SentencingIndexSection.tsx` (+ test, new),
+  `ChargeOnlyResultView.tsx` (+ test), `JudgeSpecificResultView.tsx` (+
+  test), `ResultMetadataAside.tsx` (+ test), `DistributionSection.tsx` (+
+  test), `SampleSizeLabel.tsx` (+ test);
+  `apps/api/src/content/methodology.ts`,
+  `apps/api/src/routes/public/judge-results.test.ts` (flat-pair ripple);
+  `db/seeds/aggregate-data.ts`; `e2e/support/constants.ts`,
+  `e2e/tests/{charge-only-result,judge-flow,mobile}.spec.ts`;
+  `tasks/worklog.md`.
+- **Deviations from plan:** none of substance. Called out: the flat-pair
+  seed rippled into `apps/api/src/routes/public/judge-results.test.ts`
+  (payload assertion extended with the new row — file not in the plan's
+  list); a stale doc comment in `charge-directory.ts` referencing the
+  deleted `formatSampleSize` was retitled (comment-only).
+- **Visual review (amended gate, real data only):** scratch clone
+  `pca_35_3_review` created from canonical `pca` (template copy); run
+  `24184d68` published INSIDE THE CLONE ONLY (prior `82b6cc99` superseded
+  there). Clone arms verified rendering: 72 lead pages, 2 zero-sentenced
+  (7-conviction plural and the 1-conviction SINGULAR variant live), 3
+  absent charges, 1189/350 judge cells with/without index. Canonical `pca`
+  untouched: read-only boot confirmed active run still `82b6cc99`,
+  `24184d68` never published there, absent arm = today's page with
+  reconciled labels. Reviewer boots left running (clone web :3000/api
+  :3001; canonical web :3003/api :3002, SELECT-only).
+- **Notes for next task / phase close:** the zero-sentenced fallback and
+  wedge singular variants are live paths on the real corpus (criminal-
+  conspiracy-903c). The seeded matrix now carries a flat median pair on
+  the judge cell. `pca_e2e` scratch-DB convention exercised as established
+  — formal promotion recorded at phase close. Drop the review clone after
+  the Chops review: `DROP DATABASE pca_35_3_review`.

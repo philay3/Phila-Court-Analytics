@@ -8,6 +8,7 @@ import {
   taxonomyVersionSchema,
   thinDataStatusSchema,
 } from './common.js';
+import { chargeSentencingIndexSchema } from './sentencing-index.js';
 
 /**
  * Charge-only public result contract (task 8.1):
@@ -105,6 +106,9 @@ export const chargeOnlyResultSuccessSchema = Type.Object(
     aggregateRunId: Type.String({ format: 'uuid' }),
     outcomes: chargeOutcomesSchema,
     sentencing: chargeSentencingSchema,
+    // Task 35.2: the conviction-grain index, a sibling of (never a change
+    // to) the component-grain sentencing section above. Success arm only.
+    sentencingIndex: chargeSentencingIndexSchema,
     links: resultLinksSchema,
   },
   { additionalProperties: false },

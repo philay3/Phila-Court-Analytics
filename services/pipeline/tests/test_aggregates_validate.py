@@ -46,19 +46,34 @@ from test_aggregates_generate import TEST_DB_URL_ENV_VAR, _classify, _Seeder
 from pipeline.aggregates.generate import generate_aggregates
 from pipeline.aggregates.validate import (
     CHECK_BASELINE_MISSING,
+    CHECK_BUILD_RUN_ID_MISSING,
+    CHECK_CATEGORY_COUNT_EXCEEDS_SENTENCED,
+    CHECK_COMPONENT_DURATION_INVALID,
+    CHECK_CONVICTION_RECONCILIATION_MISMATCH,
     CHECK_COUNT_SUM_MISMATCH,
     CHECK_DATE_RANGE_BEFORE_WINDOW,
     CHECK_DATE_RANGE_INVERTED,
     CHECK_DATE_RANGE_MISSING,
+    CHECK_GRADE_MIX_SUM_MISMATCH,
+    CHECK_MEDIAN_DAYS_INVALID,
+    CHECK_MEDIAN_PRESENCE_MISMATCH,
     CHECK_PERCENTAGE_MISALIGNED,
     CHECK_PRIVACY_VIOLATION,
     CHECK_RUN_ID_MISMATCH,
     CHECK_SAMPLE_SIZE_INCONSISTENT,
     CHECK_SAMPLE_SIZE_MISSING,
+    CHECK_SUMMARY_ROW_MISSING,
     CHECK_TAXONOMY_VERSION_MISSING,
+    CHECK_WEDGE_IDENTITY_MISMATCH,
     scannable_row,
     validate_aggregates,
     validate_baseline,
+    validate_conviction_reconciliation,
+    validate_grade_mix,
+    validate_index_against_facts,
+    validate_index_categories,
+    validate_index_row_basics,
+    validate_index_summaries,
     validate_privacy,
     validate_table_rows,
 )
@@ -540,3 +555,400 @@ def test_db_run_selection_and_terminal_failed_runs(agg_conn, capsys):
         )
     agg_conn.commit()
     assert _validate(agg_conn, run_id=run_id) == 2
+
+
+# --------------------------------------------------------------------------- #
+# Conviction-grain sentencing index checks (Task 35.1) — pure.                #
+# --------------------------------------------------------------------------- #
+
+
+def _summary(
+    *,
+    convictions: int,
+    sentenced: int,
+    wedge: int,
+    wedge_pct: str,
+    charge_id: str = CHARGE_A,
+    judge_id: str | None = None,
+    run_id: str | None = RUN_ID,
+    start: date | None = date(2025, 2, 1),
+    end: date | None = date(2025, 7, 1),
+) -> dict[str, object]:
+    row: dict[str, object] = {
+        "aggregate_run_id": run_id,
+        "charge_id": charge_id,
+        "convictions": convictions,
+        "sentenced_convictions": sentenced,
+        "wedge_count": wedge,
+        "wedge_percentage": Decimal(wedge_pct),
+        "is_thin_data": sentenced < 10,
+        "date_range_start": start,
+        "date_range_end": end,
+        "taxonomy_version": TAXONOMY_VERSION,
+    }
+    if judge_id is not None:
+        row["judge_id"] = judge_id
+    return row
+
+
+def _category(
+    *,
+    count: int,
+    pct: str,
+    charge_id: str = CHARGE_A,
+    judge_id: str | None = None,
+    category: str = "cat_probation",
+    median_min: str | None = None,
+    median_max: str | None = None,
+    min_assumed_pct: str | None = None,
+) -> dict[str, object]:
+    row: dict[str, object] = {
+        "aggregate_run_id": RUN_ID,
+        "charge_id": charge_id,
+        "category_code": category,
+        "conviction_count": count,
+        "percentage_of_sentenced": Decimal(pct),
+        "median_min_days": None if median_min is None else Decimal(median_min),
+        "median_max_days": None if median_max is None else Decimal(median_max),
+        "min_assumed_percentage": (
+            None if min_assumed_pct is None else Decimal(min_assumed_pct)
+        ),
+        "taxonomy_version": TAXONOMY_VERSION,
+    }
+    if judge_id is not None:
+        row["judge_id"] = judge_id
+    return row
+
+
+def _grade_row(
+    *, grade: str, count: int, pct: str, charge_id: str = CHARGE_A
+) -> dict[str, object]:
+    return {
+        "aggregate_run_id": RUN_ID,
+        "charge_id": charge_id,
+        "grade": grade,
+        "conviction_count": count,
+        "percentage_of_convictions": Decimal(pct),
+        "taxonomy_version": TAXONOMY_VERSION,
+    }
+
+
+def test_index_summary_identities_pass_and_fail():
+    good = _summary(convictions=4, sentenced=3, wedge=1, wedge_pct="25.0")
+    assert validate_index_summaries([good]) == Counter()
+
+    broken = _summary(convictions=4, sentenced=3, wedge=2, wedge_pct="50.0")
+    assert validate_index_summaries([broken])[CHECK_WEDGE_IDENTITY_MISMATCH] == 1
+
+    misaligned = _summary(convictions=4, sentenced=3, wedge=1, wedge_pct="30.0")
+    assert validate_index_summaries([misaligned])[CHECK_PERCENTAGE_MISALIGNED] == 1
+
+
+def test_index_row_basics_run_id_taxonomy_and_dates():
+    rows = [
+        _summary(
+            convictions=1,
+            sentenced=1,
+            wedge=0,
+            wedge_pct="0.0",
+            run_id=OTHER_RUN_ID,
+            start=date(2024, 12, 1),
+            end=date(2024, 11, 1),
+        )
+    ]
+    violations = validate_index_row_basics(
+        rows,
+        expected_run_id=RUN_ID,
+        has_date_range=True,
+        data_start_date=WINDOW_START,
+    )
+    assert violations[CHECK_RUN_ID_MISMATCH] == 1
+    assert violations[CHECK_DATE_RANGE_BEFORE_WINDOW] == 1
+    assert violations[CHECK_DATE_RANGE_INVERTED] == 1
+
+
+def test_index_category_checks_against_summary():
+    summary = [_summary(convictions=5, sentenced=3, wedge=2, wedge_pct="40.0")]
+    good = _category(count=2, pct="66.7")
+    assert validate_index_categories([good], summary, judge_grain=False) == Counter()
+
+    exceeding = _category(count=4, pct="133.3")
+    violations = validate_index_categories([exceeding], summary, judge_grain=False)
+    assert violations[CHECK_CATEGORY_COUNT_EXCEEDS_SENTENCED] == 1
+
+    orphan = _category(count=1, pct="33.3", charge_id=CHARGE_B)
+    violations = validate_index_categories([orphan], summary, judge_grain=False)
+    assert violations[CHECK_SUMMARY_ROW_MISSING] == 1
+
+    misaligned = _category(count=2, pct="50.0")
+    violations = validate_index_categories([misaligned], summary, judge_grain=False)
+    assert violations[CHECK_PERCENTAGE_MISALIGNED] == 1
+
+
+def test_index_category_median_column_consistency():
+    summary = [_summary(convictions=5, sentenced=3, wedge=2, wedge_pct="40.0")]
+    half = _category(count=1, pct="33.3", median_min="90.0")
+    violations = validate_index_categories([half], summary, judge_grain=False)
+    assert violations[CHECK_MEDIAN_DAYS_INVALID] == 1
+
+    inverted = _category(
+        count=1,
+        pct="33.3",
+        median_min="180.0",
+        median_max="90.0",
+        min_assumed_pct="0.0",
+    )
+    violations = validate_index_categories([inverted], summary, judge_grain=False)
+    assert violations[CHECK_MEDIAN_DAYS_INVALID] == 1
+
+
+def test_grade_mix_sums_and_orphans():
+    summary = [_summary(convictions=4, sentenced=4, wedge=0, wedge_pct="0.0")]
+    good = [
+        _grade_row(grade="F3", count=3, pct="75.0"),
+        _grade_row(grade="ungraded", count=1, pct="25.0"),
+    ]
+    assert validate_grade_mix(good, summary) == Counter()
+
+    short = [_grade_row(grade="F3", count=3, pct="75.0")]
+    assert validate_grade_mix(short, summary)[CHECK_GRADE_MIX_SUM_MISMATCH] == 1
+
+    orphan = [_grade_row(grade="F3", count=1, pct="100.0", charge_id=CHARGE_B)]
+    assert validate_grade_mix(orphan, summary)[CHECK_SUMMARY_ROW_MISSING] == 1
+
+
+def test_conviction_reconciliation_over_the_union_of_cells():
+    summaries = [_summary(convictions=5, sentenced=5, wedge=0, wedge_pct="0.0")]
+    outcome_rows = [
+        _row(count=3, percentage="30.00", sample_size=10, category="guilty_plea"),
+        _row(count=2, percentage="20.00", sample_size=10, category="guilty_verdict"),
+        _row(count=5, percentage="50.00", sample_size=10, category="dismissed"),
+    ]
+    assert (
+        validate_conviction_reconciliation(summaries, outcome_rows, judge_grain=False)
+        == Counter()
+    )
+
+    # Disagreeing totals on the same cell.
+    tampered = [_summary(convictions=4, sentenced=4, wedge=0, wedge_pct="0.0")]
+    violations = validate_conviction_reconciliation(
+        tampered, outcome_rows, judge_grain=False
+    )
+    assert violations[CHECK_CONVICTION_RECONCILIATION_MISMATCH] == 1
+
+    # A conviction-family outcome cell with NO summary row is the same
+    # contradiction; a summary cell with no outcome rows likewise.
+    violations = validate_conviction_reconciliation([], outcome_rows, judge_grain=False)
+    assert violations[CHECK_CONVICTION_RECONCILIATION_MISMATCH] == 1
+    violations = validate_conviction_reconciliation(summaries, [], judge_grain=False)
+    assert violations[CHECK_CONVICTION_RECONCILIATION_MISMATCH] == 1
+
+
+def _anchor(
+    *,
+    oid: str,
+    charge_id: str = CHARGE_A,
+    category: str = "guilty_plea",
+    public_eligible: bool = True,
+    judge_id: str | None = None,
+    judge_specific_eligible: bool = False,
+) -> dict[str, object]:
+    return {
+        "id": oid,
+        "normalized_charge_id": charge_id,
+        "normalized_judge_id": judge_id,
+        "outcome_category_code": category,
+        "public_eligible": public_eligible,
+        "judge_specific_eligible": judge_specific_eligible,
+    }
+
+
+def _component(
+    *,
+    oid: str,
+    category: str = "cat_probation",
+    min_days: int | None = None,
+    max_days: int | None = None,
+) -> dict[str, object]:
+    return {
+        "charge_outcome_id": oid,
+        "sentencing_category_code": category,
+        "min_days": min_days,
+        "max_days": max_days,
+    }
+
+
+OID_A = "77777777-7777-7777-7777-777777777777"
+
+
+def test_index_against_facts_median_presence_both_directions():
+    anchors = [_anchor(oid=OID_A)]
+    duration_components = [_component(oid=OID_A, min_days=90, max_days=180)]
+
+    # Duration-bearing category with stored medians: clean.
+    stored = _category(
+        count=1,
+        pct="100.0",
+        median_min="90.0",
+        median_max="180.0",
+        min_assumed_pct="0.0",
+    )
+    assert (
+        validate_index_against_facts(
+            [stored], anchors, duration_components, judge_grain=False
+        )
+        == Counter()
+    )
+
+    # Stored medians without duration-bearing components: mismatch.
+    violations = validate_index_against_facts(
+        [stored], anchors, [_component(oid=OID_A)], judge_grain=False
+    )
+    assert violations[CHECK_MEDIAN_PRESENCE_MISMATCH] == 1
+
+    # Duration-bearing components without stored medians: mismatch.
+    bare = _category(count=1, pct="100.0")
+    violations = validate_index_against_facts(
+        [bare], anchors, duration_components, judge_grain=False
+    )
+    assert violations[CHECK_MEDIAN_PRESENCE_MISMATCH] == 1
+
+
+def test_index_against_facts_component_defects_are_tallied():
+    anchors = [_anchor(oid=OID_A)]
+    defective = [
+        _component(oid=OID_A, min_days=90),  # half-present
+        _component(oid=OID_A, min_days=180, max_days=90),  # inverted
+    ]
+    violations = validate_index_against_facts([], anchors, defective, judge_grain=False)
+    assert violations[CHECK_COMPONENT_DURATION_INVALID] == 2
+
+    # The same defects under a non-anchored parent feed nothing: no tally.
+    outside = [
+        {**c, "charge_outcome_id": "88888888-8888-8888-8888-888888888888"}
+        for c in defective
+    ]
+    assert (
+        validate_index_against_facts([], anchors, outside, judge_grain=False)
+        == Counter()
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Conviction-grain sentencing index checks (Task 35.1) — DB integration.      #
+# --------------------------------------------------------------------------- #
+
+
+def _seed_and_generate_with_index(conn: psycopg.Connection) -> str:
+    """Seed a corpus whose outcomes include real conviction-family codes so
+    the index population is non-empty, generate, return the run id."""
+    seeder = _Seeder(conn)
+    build_run_id = seeder.build_run()
+    seeder.sentenced_outcome(
+        build_run_id,
+        outcome_category="guilty_plea",
+        disposition_date=date(2025, 3, 1),
+        components=[
+            ("cat_probation", date(2025, 3, 1), True, ()),
+            ("cat_incarceration", date(2025, 3, 1), True, ()),
+        ],
+        grade="F3",
+        component_durations=[(720, 720, True), (90, 180, False)],
+    )
+    seeder.fact(
+        build_run_id,
+        category="guilty_verdict",
+        disposition_date=date(2025, 4, 1),
+        public_eligible=True,
+    )
+    seeder.fact(
+        build_run_id,
+        category="cat_dismissed",
+        disposition_date=date(2025, 5, 1),
+        public_eligible=True,
+    )
+    rc = generate_aggregates(
+        conn,
+        build_run_id=build_run_id,
+        data_start_date=WINDOW_START,
+        thin_min_sample=10,
+        label="unit-test",
+    )
+    assert rc == 0
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT id FROM analytics.aggregate_runs ORDER BY started_at DESC LIMIT 1"
+        )
+        return str(cur.fetchone()["id"])
+
+
+def test_db_index_clean_run_validates_completed(agg_conn, capsys):
+    run_id = _seed_and_generate_with_index(agg_conn)
+    assert _validate(agg_conn) == 0
+    assert _run_row(agg_conn, run_id)["status"] == "completed"
+    out = capsys.readouterr().out
+    for table in (
+        "charge_sentencing_index_summaries",
+        "charge_sentencing_index_aggregates",
+        "charge_conviction_grade_aggregates",
+        "judge_sentencing_index_summaries",
+        "judge_sentencing_index_aggregates",
+    ):
+        assert f"{table}: rows_checked=" in out
+
+
+def test_db_index_tampered_summary_fails_reconciliation(agg_conn, capsys):
+    run_id = _seed_and_generate_with_index(agg_conn)
+    # Inflate the summary while keeping the wedge identity CHECK satisfied:
+    # the cross-population reconciliation and grade-mix sum must both object.
+    with agg_conn.cursor() as cur:
+        cur.execute(
+            "UPDATE analytics.charge_sentencing_index_summaries "
+            "SET convictions = convictions + 1, wedge_count = wedge_count + 1 "
+            "WHERE aggregate_run_id = %s",
+            (run_id,),
+        )
+    agg_conn.commit()
+
+    assert _validate(agg_conn) == 1
+    assert _run_row(agg_conn, run_id)["status"] == "failed"
+    out = capsys.readouterr().out
+    assert (
+        "charge_sentencing_index_summaries."
+        f"{CHECK_CONVICTION_RECONCILIATION_MISMATCH}" in out
+    )
+    assert f"charge_conviction_grade_aggregates.{CHECK_GRADE_MIX_SUM_MISMATCH}" in out
+
+
+def test_db_index_median_presence_tamper_fails(agg_conn, capsys):
+    run_id = _seed_and_generate_with_index(agg_conn)
+    # Null out a stored median triple: internally consistent (all-null), but
+    # the build's components say the category is duration-bearing.
+    with agg_conn.cursor() as cur:
+        cur.execute(
+            "UPDATE analytics.charge_sentencing_index_aggregates "
+            "SET median_min_days = NULL, median_max_days = NULL, "
+            "min_assumed_percentage = NULL "
+            "WHERE aggregate_run_id = %s AND category_code = 'cat_incarceration'",
+            (run_id,),
+        )
+    agg_conn.commit()
+
+    assert _validate(agg_conn) == 1
+    out = capsys.readouterr().out
+    assert f"charge_sentencing_index_aggregates.{CHECK_MEDIAN_PRESENCE_MISMATCH}" in out
+
+
+def test_db_missing_build_run_id_fails_the_run(agg_conn, capsys):
+    run_id = _seed_and_generate_with_index(agg_conn)
+    with agg_conn.cursor() as cur:
+        cur.execute(
+            "UPDATE analytics.aggregate_runs SET build_run_id = NULL WHERE id = %s",
+            (run_id,),
+        )
+    agg_conn.commit()
+
+    assert _validate(agg_conn) == 1
+    assert _run_row(agg_conn, run_id)["status"] == "failed"
+    out = capsys.readouterr().out
+    assert f"charge_sentencing_index_summaries.{CHECK_BUILD_RUN_ID_MISSING}" in out

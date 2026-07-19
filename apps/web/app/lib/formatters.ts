@@ -1,5 +1,26 @@
-import { RECORDED_OUTCOMES_LABEL_PREFIX } from '@pca/shared';
-import type { ChargeOnlyResultSuccess, DateRange, JudgeSpecificResultSuccess } from '@pca/shared';
+import {
+  AGGREGATE_RUN_LABEL_PREFIX,
+  CONVICTION_GRADES_ITEM_SEPARATOR,
+  CONVICTION_GRADES_LABEL_PREFIX,
+  RECORDED_OUTCOMES_LABEL_PREFIX,
+  RECORDS_LABEL_PREFIX,
+  SENTENCE_COMPONENTS_LABEL_PREFIX,
+  SENTENCED_CONVICTIONS_LABEL_PREFIX,
+  SINGLE_GRADE_TEMPLATE,
+  SINGLE_GRADE_UNGRADED_LINE,
+  UNGRADED_GRADE_LABEL,
+  WEDGE_DISCLOSURE_TEMPLATE,
+  WEDGE_DISCLOSURE_TEMPLATE_SINGULAR,
+  ZERO_SENTENCED_FALLBACK_SINGULAR,
+  ZERO_SENTENCED_FALLBACK_TEMPLATE,
+} from '@pca/shared';
+import type {
+  ChargeOnlyResultSuccess,
+  ConvictionGradeRow,
+  DateRange,
+  JudgeSpecificResultSuccess,
+  SentencingIndexSummary,
+} from '@pca/shared';
 
 /**
  * Shared frontend formatting utilities (task 11.4). Pure functions, no React,
@@ -51,9 +72,6 @@ const timestampFormatter = new Intl.DateTimeFormat(LOCALE, {
 /** en-dash with surrounding spaces, e.g. "January 1, 2025 – June 30, 2026". */
 const DATE_RANGE_SEPARATOR = ' – ';
 
-/** Prefix for the sample-size label; the value follows via {@link formatCount}. */
-export const SAMPLE_SIZE_LABEL_PREFIX = 'Sample size: ';
-
 /**
  * Result-type display labels. The sample-size unit (charge-level) is explained
  * in methodology, not here — these strings are deliberately noun-free.
@@ -94,13 +112,22 @@ export function formatPercentage(percentage: number): string {
 }
 
 /**
- * Sample-size label, e.g. "Sample size: 1,234". Generic over both outcome and
- * sentencing sample sizes: the caller passes the value and this utility does
- * not encode which distribution it belongs to. Noun-free because sample sizes
- * are charge-level, not case-level.
+ * Reconciled sample labels (35.3, pin 11): each block names the unit its
+ * sample actually counts. Outcome blocks count records (charge dispositions);
+ * the component-grain sentencing block counts sentence components; the
+ * sentencing-index block counts sentenced convictions (the rates'
+ * denominator). Prefixes are @pca/shared pinned literals.
  */
-export function formatSampleSize(sampleSize: number): string {
-  return `${SAMPLE_SIZE_LABEL_PREFIX}${formatCount(sampleSize)}`;
+export function formatRecordsLabel(sampleSize: number): string {
+  return `${RECORDS_LABEL_PREFIX}${formatCount(sampleSize)}`;
+}
+
+export function formatSentenceComponentsLabel(sampleSize: number): string {
+  return `${SENTENCE_COMPONENTS_LABEL_PREFIX}${formatCount(sampleSize)}`;
+}
+
+export function formatSentencedConvictionsLabel(sentencedConvictions: number): string {
+  return `${SENTENCED_CONVICTIONS_LABEL_PREFIX}${formatCount(sentencedConvictions)}`;
 }
 
 /**
@@ -108,9 +135,7 @@ export function formatSampleSize(sampleSize: number): string {
  * directory rows and the homepage featured cards (DP-5 Amendment A), e.g.
  * "Recorded outcomes: 1,234". The prefix is the @pca/shared
  * RECORDED_OUTCOMES_LABEL_PREFIX pinned literal; the value path is the same
- * en-US grouping as every other count. Result surfaces keep
- * {@link formatSampleSize} byte-identically — site-wide label reconciliation
- * is a named Sprint 9 copy item, not this formatter's job.
+ * en-US grouping as every other count.
  */
 export function formatRecordedOutcomes(sampleSize: number): string {
   return `${RECORDED_OUTCOMES_LABEL_PREFIX}${formatCount(sampleSize)}`;
@@ -181,4 +206,96 @@ export function formatDateOnly(dateOnly: string): string {
   }
   const utcDate = new Date(Date.UTC(Number(yearPart), Number(monthPart) - 1, Number(dayPart)));
   return dateOnlyFormatter.format(utcDate);
+}
+
+// Median month values arrive pre-converted from the API (at most one decimal
+// place); like percentages they are rendered without trailing `.0`.
+const monthsFormatter = new Intl.NumberFormat(LOCALE, {
+  maximumFractionDigits: 1,
+});
+
+/** Unspaced en dash between a distinct median pair, e.g. "12–18". */
+const MEDIAN_RANGE_SEPARATOR = '–';
+
+/**
+ * Median pair display (35.3, pin 4): a flat pair (min = max) collapses to a
+ * single figure; a distinct pair renders as a range. Equality comparison here
+ * is presentation, not analytics — both values come from the API as served.
+ * Returns `null` for duration-free categories (the trio is all-or-none per
+ * the shared contract), which render an empty cell by ruling Q7.
+ */
+export function formatMedianMonths(
+  medianMinMonths: number | undefined,
+  medianMaxMonths: number | undefined,
+): string | null {
+  if (medianMinMonths === undefined || medianMaxMonths === undefined) {
+    return null;
+  }
+  if (medianMinMonths === medianMaxMonths) {
+    return monthsFormatter.format(medianMinMonths);
+  }
+  return `${monthsFormatter.format(medianMinMonths)}${MEDIAN_RANGE_SEPARATOR}${monthsFormatter.format(medianMaxMonths)}`;
+}
+
+/**
+ * Wedge disclosure line (35.3, pin 10). Both grammatical variants are pinned
+ * in @pca/shared; this formatter only picks the variant and fills the slots
+ * with API-served values.
+ */
+export function formatWedgeDisclosure(summary: SentencingIndexSummary): string {
+  const template =
+    summary.wedgeCount === 1 ? WEDGE_DISCLOSURE_TEMPLATE_SINGULAR : WEDGE_DISCLOSURE_TEMPLATE;
+  return template
+    .replace('{wedgeCount}', formatCount(summary.wedgeCount))
+    .replace('{convictions}', formatCount(summary.convictions))
+    .replace('{wedgePercentage}', formatPercentage(summary.wedgePercentage));
+}
+
+/**
+ * Zero-sentenced fallback line (35.3, ruling 4): carries the served
+ * conviction count. Variant selection mirrors {@link formatWedgeDisclosure}.
+ */
+export function formatZeroSentencedFallback(convictions: number): string {
+  if (convictions === 1) {
+    return ZERO_SENTENCED_FALLBACK_SINGULAR;
+  }
+  return ZERO_SENTENCED_FALLBACK_TEMPLATE.replace('{convictions}', formatCount(convictions));
+}
+
+/** The served `ungraded` bucket renders under its gated label (pin 5). */
+function gradeDisplayLabel(grade: string): string {
+  return grade === 'ungraded' ? UNGRADED_GRADE_LABEL : grade;
+}
+
+/**
+ * Grade-mix line (35.3, pin 5; charge pages only). Rows render dominant-first
+ * exactly as served — no re-sorting. A single grade row states the grade
+ * rather than a mix; an empty array yields `null` (nothing to state).
+ */
+export function formatGradeMixLine(grades: readonly ConvictionGradeRow[]): string | null {
+  const [firstGrade] = grades;
+  if (firstGrade === undefined) {
+    return null;
+  }
+  if (grades.length === 1) {
+    if (firstGrade.grade === 'ungraded') {
+      return SINGLE_GRADE_UNGRADED_LINE;
+    }
+    return SINGLE_GRADE_TEMPLATE.replace('{grade}', firstGrade.grade);
+  }
+  const items = grades.map(
+    (row) => `${gradeDisplayLabel(row.grade)} ${formatPercentage(row.percentageOfConvictions)}`,
+  );
+  return `${CONVICTION_GRADES_LABEL_PREFIX}${items.join(CONVICTION_GRADES_ITEM_SEPARATOR)}`;
+}
+
+/** Length of the short id form rendered on the provenance line (pin 7). */
+const AGGREGATE_RUN_SHORT_ID_LENGTH = 8;
+
+/**
+ * Provenance line (35.3, pin 7): the already-served `aggregateRunId` in its
+ * short id form, e.g. "Data release: 2f9c1e04".
+ */
+export function formatAggregateRunLabel(aggregateRunId: string): string {
+  return `${AGGREGATE_RUN_LABEL_PREFIX}${aggregateRunId.slice(0, AGGREGATE_RUN_SHORT_ID_LENGTH)}`;
 }

@@ -40,11 +40,14 @@ import pytest
 from psycopg.rows import dict_row
 
 from pipeline.aggregates.generate import (
+    UNGRADED_BUCKET,
     FactIntegrityError,
     build_charge_outcome_aggregates,
     build_charge_sentencing_aggregates,
+    build_charge_sentencing_index,
     build_judge_outcome_aggregates,
     build_judge_sentencing_aggregates,
+    build_judge_sentencing_index,
     generate_aggregates,
 )
 from pipeline.fact_review_vocab import (
@@ -858,6 +861,274 @@ def test_judge_sentencing_integrity_stop_on_eligible_fact_before_window():
 
 
 # --------------------------------------------------------------------------- #
+# Conviction-grain sentencing index (Task 35.1) — pure core.                  #
+# --------------------------------------------------------------------------- #
+
+OID_1 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"
+OID_2 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2"
+OID_3 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3"
+OID_4 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4"
+
+
+def _conv(
+    *,
+    oid: str,
+    charge_id: str | None = CHARGE_A,
+    category: str = "guilty_plea",
+    disposition_date: date | None = date(2025, 3, 1),
+    public_eligible: bool = True,
+    judge_id: str | None = None,
+    judge_specific_eligible: bool = False,
+    grade: str | None = None,
+) -> dict[str, object]:
+    return {
+        "id": oid,
+        "normalized_charge_id": charge_id,
+        "outcome_category_code": category,
+        "disposition_date": disposition_date,
+        "public_eligible": public_eligible,
+        "ineligibility_reason_codes": [],
+        "normalized_judge_id": judge_id,
+        "judge_specific_eligible": judge_specific_eligible,
+        "grade": grade,
+    }
+
+
+def _comp(
+    *,
+    oid: str,
+    category: str = "probation",
+    public_eligible: bool = True,
+    min_days: int | None = None,
+    max_days: int | None = None,
+    min_assumed: bool = False,
+    judge_specific_eligible: bool = False,
+) -> dict[str, object]:
+    return {
+        "charge_outcome_id": oid,
+        "normalized_charge_id": CHARGE_A,
+        "sentencing_category_code": category,
+        "sentence_date": date(2025, 3, 2),
+        "min_days": min_days,
+        "max_days": max_days,
+        "min_assumed": min_assumed,
+        "public_eligible": public_eligible,
+        "ineligibility_reason_codes": [],
+        "normalized_judge_id": None,
+        "judge_specific_eligible": judge_specific_eligible,
+    }
+
+
+def _ibuild(outcome_facts, sentence_facts, *, thin_min_sample: int = 10):
+    return build_charge_sentencing_index(
+        outcome_facts,
+        sentence_facts,
+        data_start_date=date(2025, 1, 1),
+        thin_min_sample=thin_min_sample,
+        taxonomy_version=TAXONOMY_VERSION,
+    )
+
+
+def _jibuild(outcome_facts, sentence_facts, *, thin_min_sample: int = 10):
+    return build_judge_sentencing_index(
+        outcome_facts,
+        sentence_facts,
+        data_start_date=date(2025, 1, 1),
+        thin_min_sample=thin_min_sample,
+        taxonomy_version=TAXONOMY_VERSION,
+    )
+
+
+def test_index_summary_wedge_and_m3_distinct_counting():
+    # Three convictions: one with two probation components (counts ONCE — M3),
+    # one with a single fine component, one with none (the wedge). A dismissed
+    # fact and an ineligible conviction are excluded from the population.
+    outcome_facts = [
+        _conv(oid=OID_1),
+        _conv(oid=OID_2, category="guilty_verdict"),
+        _conv(oid=OID_3),
+        _conv(oid=OID_4, category="dismissed"),
+        _conv(oid="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa5", public_eligible=False),
+    ]
+    sentence_facts = [
+        _comp(oid=OID_1),
+        _comp(oid=OID_1),
+        _comp(oid=OID_2, category="fine"),
+        _comp(oid=OID_4, category="probation"),  # non-conviction parent: ignored
+    ]
+    summaries, categories, grades, report = _ibuild(outcome_facts, sentence_facts)
+
+    assert len(summaries) == 1
+    summary = summaries[0]
+    assert summary["convictions"] == 3
+    assert summary["sentenced_convictions"] == 2
+    assert summary["wedge_count"] == 1
+    assert summary["wedge_percentage"] == "33.3"
+    assert summary["is_thin_data"] is True  # sentenced 2 < 10
+    assert [(r["category_code"], r["conviction_count"]) for r in categories] == [
+        ("fine", 1),
+        ("probation", 1),
+    ]
+    for row in categories:
+        assert row["percentage_of_sentenced"] == "50.0"
+    assert report["index_convictions"] == 3
+    assert report["index_wedge"] == 1
+
+
+def test_index_zero_sentenced_cell_is_still_servable():
+    # Ruling 4: convictions with zero sentenced convictions keep their summary
+    # row (wedge = 100%), with no category rows.
+    outcome_facts = [_conv(oid=OID_1), _conv(oid=OID_2)]
+    summaries, categories, grades, _report = _ibuild(outcome_facts, [])
+    assert len(summaries) == 1
+    assert summaries[0]["sentenced_convictions"] == 0
+    assert summaries[0]["wedge_count"] == 2
+    assert summaries[0]["wedge_percentage"] == "100.0"
+    assert categories == []
+    assert len(grades) == 1  # grade mix still describes the convictions
+
+
+def test_index_conviction_with_only_ineligible_components_is_wedge():
+    outcome_facts = [_conv(oid=OID_1)]
+    sentence_facts = [_comp(oid=OID_1, public_eligible=False)]
+    summaries, categories, _grades, _report = _ibuild(outcome_facts, sentence_facts)
+    assert summaries[0]["sentenced_convictions"] == 0
+    assert summaries[0]["wedge_count"] == 1
+    assert categories == []
+
+
+def test_index_median_pair_interpolation_and_min_assumed_share():
+    # Two duration-bearing incarceration components (interpolated even-count
+    # median) plus one durationless component of the same category: medians
+    # over the duration-bearing pair; min_assumed share over ALL THREE (the
+    # M4 denominator).
+    outcome_facts = [_conv(oid=OID_1), _conv(oid=OID_2)]
+    sentence_facts = [
+        _comp(oid=OID_1, category="incarceration", min_days=90, max_days=180),
+        _comp(
+            oid=OID_2,
+            category="incarceration",
+            min_days=180,
+            max_days=361,
+            min_assumed=True,
+        ),
+        _comp(oid=OID_2, category="incarceration"),
+    ]
+    _summaries, categories, _grades, _report = _ibuild(outcome_facts, sentence_facts)
+    (row,) = categories
+    assert row["category_code"] == "incarceration"
+    assert row["conviction_count"] == 2
+    assert row["median_min_days"] == "135.0"
+    assert row["median_max_days"] == "270.5"
+    assert row["min_assumed_percentage"] == "33.3"
+
+
+def test_index_durationless_category_has_null_median_columns():
+    outcome_facts = [_conv(oid=OID_1)]
+    sentence_facts = [_comp(oid=OID_1, category="no_further_penalty")]
+    _summaries, categories, _grades, _report = _ibuild(outcome_facts, sentence_facts)
+    (row,) = categories
+    assert row["median_min_days"] is None
+    assert row["median_max_days"] is None
+    assert row["min_assumed_percentage"] is None
+
+
+def test_index_grade_mix_folds_null_into_ungraded():
+    outcome_facts = [
+        _conv(oid=OID_1, grade="F3"),
+        _conv(oid=OID_2, grade="F3"),
+        _conv(oid=OID_3, grade="M1"),
+        _conv(oid=OID_4),  # NULL grade
+    ]
+    _summaries, _categories, grades, _report = _ibuild(outcome_facts, [])
+    assert [(r["grade"], r["conviction_count"]) for r in grades] == [
+        ("F3", 2),
+        ("M1", 1),
+        (UNGRADED_BUCKET, 1),
+    ]
+    assert [r["percentage_of_convictions"] for r in grades] == ["50.0", "25.0", "25.0"]
+    assert sum(r["conviction_count"] for r in grades) == 4
+
+
+def test_index_thin_flag_keys_on_sentenced_convictions():
+    # 10 convictions, 9 sentenced -> thin at the default threshold; a tenth
+    # sentenced conviction clears it. The threshold is the threaded parameter.
+    def _facts(sentenced: int):
+        outcome_facts, sentence_facts = [], []
+        for i in range(10):
+            oid = f"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa{i:02d}"
+            outcome_facts.append(_conv(oid=oid))
+            if i < sentenced:
+                sentence_facts.append(_comp(oid=oid))
+        return outcome_facts, sentence_facts
+
+    summaries, _c, _g, _r = _ibuild(*_facts(9))
+    assert summaries[0]["is_thin_data"] is True
+    summaries, _c, _g, _r = _ibuild(*_facts(10))
+    assert summaries[0]["is_thin_data"] is False
+
+
+def test_index_integrity_stops():
+    with pytest.raises(FactIntegrityError):
+        _ibuild([_conv(oid=OID_1, charge_id=None)], [])
+    with pytest.raises(FactIntegrityError):
+        _ibuild([_conv(oid=OID_1, disposition_date=None)], [])
+    with pytest.raises(FactIntegrityError):
+        _ibuild([_conv(oid=OID_1, disposition_date=date(2024, 12, 31))], [])
+    # Component STOPs: half-present duration, min > max, negative days.
+    with pytest.raises(FactIntegrityError):
+        _ibuild([_conv(oid=OID_1)], [_comp(oid=OID_1, min_days=30)])
+    with pytest.raises(FactIntegrityError):
+        _ibuild([_conv(oid=OID_1)], [_comp(oid=OID_1, min_days=60, max_days=30)])
+    with pytest.raises(FactIntegrityError):
+        _ibuild([_conv(oid=OID_1)], [_comp(oid=OID_1, min_days=-1, max_days=30)])
+
+
+def test_index_component_defect_outside_population_does_not_stop():
+    # A defective component under a NON-conviction parent feeds nothing and
+    # must not stop the run (checks apply to components feeding cells).
+    outcome_facts = [_conv(oid=OID_1), _conv(oid=OID_2, category="dismissed")]
+    sentence_facts = [_comp(oid=OID_2, min_days=30)]
+    summaries, categories, _grades, _report = _ibuild(outcome_facts, sentence_facts)
+    assert summaries[0]["convictions"] == 1
+    assert categories == []
+
+
+def test_judge_index_cell_membership_and_q2_component_filter():
+    # Cell membership by judge_specific_eligible OUTCOME facts; sentenced
+    # status by public_eligible components (adjudicated Q2) — a component that
+    # is public-eligible but NOT judge-specific-eligible still sentences the
+    # conviction at judge grain, so both grains agree.
+    outcome_facts = [
+        _conv(oid=OID_1, judge_id=JUDGE_X, judge_specific_eligible=True),
+        _conv(oid=OID_2),  # public-only: charge grain, not judge grain
+    ]
+    sentence_facts = [
+        _comp(oid=OID_1, judge_specific_eligible=False),
+    ]
+    summaries, categories, report = _jibuild(outcome_facts, sentence_facts)
+    assert len(summaries) == 1
+    assert summaries[0]["judge_id"] == JUDGE_X
+    assert summaries[0]["convictions"] == 1
+    assert summaries[0]["sentenced_convictions"] == 1
+    assert summaries[0]["wedge_count"] == 0
+    assert [(r["category_code"], r["conviction_count"]) for r in categories] == [
+        ("probation", 1)
+    ]
+    assert report["index_grade_rows"] == 0  # ruling 2: no grade mix here
+
+    # Charge grain sees BOTH convictions and the same sentenced verdict.
+    charge_summaries, _c, _g, _r = _ibuild(outcome_facts, sentence_facts)
+    assert charge_summaries[0]["convictions"] == 2
+    assert charge_summaries[0]["sentenced_convictions"] == 1
+
+
+def test_judge_index_null_judge_on_eligible_fact_stops():
+    with pytest.raises(FactIntegrityError):
+        _jibuild([_conv(oid=OID_1, judge_id=None, judge_specific_eligible=True)], [])
+
+
+# --------------------------------------------------------------------------- #
 # DB integration (real Postgres TEST database).                              #
 # --------------------------------------------------------------------------- #
 
@@ -970,12 +1241,12 @@ class _Seeder:
         self.conn.commit()
         return run_id
 
-    def _parsed_charge(self, cur) -> str:
+    def _parsed_charge(self, cur, grade: str | None = None) -> str:
         self._seq += 1
         cur.execute(
-            "INSERT INTO parsed.charges (docket_id, sequence) VALUES (%s, %s) "
-            "RETURNING id",
-            (self.docket_id, self._seq),
+            "INSERT INTO parsed.charges (docket_id, sequence, grade) "
+            "VALUES (%s, %s, %s) RETURNING id",
+            (self.docket_id, self._seq, grade),
         )
         return str(cur.fetchone()["id"])
 
@@ -1015,9 +1286,10 @@ class _Seeder:
         charge_id: str | None = None,
         judge_id: str | None = None,
         judge_specific_eligible: bool = False,
+        grade: str | None = None,
     ) -> None:
         with self.conn.cursor(row_factory=dict_row) as cur:
-            parsed_charge_id = self._parsed_charge(cur)
+            parsed_charge_id = self._parsed_charge(cur, grade)
             cur.execute(
                 """
                 INSERT INTO fact.charge_outcomes
@@ -1059,6 +1331,8 @@ class _Seeder:
         charge_id: str | None = None,
         judge_id: str | None = None,
         judge_specific_eligible: bool = False,
+        grade: str | None = None,
+        component_durations: list[tuple[int | None, int | None, bool]] | None = None,
     ) -> None:
         """Seed one eligible parent outcome fact and its 1:1 sentence-component facts.
 
@@ -1072,10 +1346,16 @@ class _Seeder:
         and eligibility flag onto the parent outcome and its components, mirroring
         the fact layer: a component is judge-specific-eligible only if it is also
         public-eligible (the sentence-fact invariant).
+
+        Task 35.1: ``grade`` stamps the parent's parsed charge;
+        ``component_durations`` optionally aligns
+        ``(min_days, max_days, min_assumed)`` per component (default: no
+        durations, ``min_assumed`` false).
         """
         target_charge = charge_id or self.charge_id
+        durations = component_durations or [(None, None, False)] * len(components)
         with self.conn.cursor(row_factory=dict_row) as cur:
-            parsed_charge_id = self._parsed_charge(cur)
+            parsed_charge_id = self._parsed_charge(cur, grade)
             cur.execute(
                 """
                 INSERT INTO fact.charge_outcomes
@@ -1106,11 +1386,9 @@ class _Seeder:
             )
             outcome_id = str(cur.fetchone()["id"])
             for order, (
-                category,
-                sentence_date,
-                public_eligible,
-                reason_codes,
-            ) in enumerate(components, start=1):
+                (category, sentence_date, public_eligible, reason_codes),
+                (min_days, max_days, min_assumed),
+            ) in enumerate(zip(components, durations, strict=True), start=1):
                 cur.execute(
                     """
                     INSERT INTO parsed.sentences
@@ -1126,11 +1404,13 @@ class _Seeder:
                     INSERT INTO fact.charge_sentences
                       (build_run_id, charge_outcome_id, parsed_sentence_id,
                        normalized_charge_id, sentencing_category_code, sentence_date,
+                       min_days, max_days, min_assumed,
                        normalized_judge_id, judge_attribution_method,
                        attribution_method, component_match_method, mvp_eligible,
                        public_eligible, judge_specific_eligible,
                        ineligibility_reason_codes, review_needed, taxonomy_version)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'charge_row', 'exact',
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            'charge_row', 'exact',
                             %s, %s, %s, %s, false, %s)
                     """,
                     (
@@ -1140,6 +1420,9 @@ class _Seeder:
                         target_charge,
                         category,
                         sentence_date,
+                        min_days,
+                        max_days,
+                        min_assumed,
                         judge_id,
                         "synthetic" if judge_id is not None else None,
                         public_eligible,
@@ -1833,3 +2116,186 @@ def test_db_judge_outcomes_without_judge_sentencing_writes_no_rows(agg_conn):
     assert _judge_rows(agg_conn, run_id) != []
     assert _judge_sent_rows(agg_conn, run_id) == []
     assert _sent_rows(agg_conn, run_id) != []
+
+
+def _index_summary_rows(conn: psycopg.Connection, run_id: str) -> list[dict]:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT * FROM analytics.charge_sentencing_index_summaries "
+            "WHERE aggregate_run_id = %s ORDER BY charge_id",
+            (run_id,),
+        )
+        return list(cur.fetchall())
+
+
+def _index_category_rows(conn: psycopg.Connection, run_id: str) -> list[dict]:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT * FROM analytics.charge_sentencing_index_aggregates "
+            "WHERE aggregate_run_id = %s ORDER BY category_code",
+            (run_id,),
+        )
+        return list(cur.fetchall())
+
+
+def _grade_mix_rows(conn: psycopg.Connection, run_id: str) -> list[dict]:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT * FROM analytics.charge_conviction_grade_aggregates "
+            "WHERE aggregate_run_id = %s ORDER BY grade",
+            (run_id,),
+        )
+        return list(cur.fetchall())
+
+
+def test_db_index_population_written_and_build_run_id_persisted(agg_conn, capsys):
+    """Task 35.1: all five index tables under the same run; run row carries
+    the resolved build-run id; zero-sentenced cells stay servable."""
+    seeder = _Seeder(agg_conn)
+    build_run_id = seeder.build_run()
+    # One sentenced conviction (two components, one duration-bearing), one
+    # unsentenced conviction (the wedge), one non-conviction outcome.
+    seeder.sentenced_outcome(
+        build_run_id,
+        outcome_category="guilty_plea",
+        disposition_date=date(2025, 3, 1),
+        components=[
+            ("probation", date(2025, 3, 1), True, ()),
+            ("incarceration", date(2025, 3, 1), True, ()),
+        ],
+        grade="F3",
+        component_durations=[(720, 720, True), (90, 180, False)],
+    )
+    seeder.fact(
+        build_run_id,
+        category="guilty_verdict",
+        disposition_date=date(2025, 4, 1),
+        public_eligible=True,
+    )
+    seeder.fact(
+        build_run_id,
+        category="dismissed",
+        disposition_date=date(2025, 5, 1),
+        public_eligible=True,
+    )
+
+    rc = generate_aggregates(
+        agg_conn,
+        build_run_id=build_run_id,
+        data_start_date=date(2025, 1, 1),
+        thin_min_sample=10,
+        label="unit-test",
+    )
+    assert rc == 0
+
+    with agg_conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT id FROM analytics.aggregate_runs")
+        run_ids = [str(r["id"]) for r in cur.fetchall()]
+    assert len(run_ids) == 1
+    run_id = run_ids[0]
+
+    # The ops-track item: the resolved build-run id is persisted, not printed.
+    run = _run_row(agg_conn, run_id)
+    assert str(run["build_run_id"]) == build_run_id
+
+    (summary,) = _index_summary_rows(agg_conn, run_id)
+    assert summary["convictions"] == 2
+    assert summary["sentenced_convictions"] == 1
+    assert summary["wedge_count"] == 1
+    assert str(summary["wedge_percentage"]) == "50.0"
+    assert summary["is_thin_data"] is True
+    assert summary["date_range_start"] == date(2025, 3, 1)
+    assert summary["date_range_end"] == date(2025, 4, 1)
+
+    categories = _index_category_rows(agg_conn, run_id)
+    assert [(r["category_code"], r["conviction_count"]) for r in categories] == [
+        ("incarceration", 1),
+        ("probation", 1),
+    ]
+    incarceration, probation = categories
+    assert str(incarceration["median_min_days"]) == "90.0"
+    assert str(incarceration["median_max_days"]) == "180.0"
+    assert str(incarceration["min_assumed_percentage"]) == "0.0"
+    assert str(probation["median_min_days"]) == "720.0"
+    assert str(probation["median_max_days"]) == "720.0"
+    assert str(probation["min_assumed_percentage"]) == "100.0"
+    for row in categories:
+        assert str(row["percentage_of_sentenced"]) == "100.0"
+
+    grades = _grade_mix_rows(agg_conn, run_id)
+    assert [(r["grade"], r["conviction_count"]) for r in grades] == [
+        ("F3", 1),
+        ("ungraded", 1),
+    ]
+    assert {str(r["percentage_of_convictions"]) for r in grades} == {"50.0"}
+
+    # No judge-specific facts -> the judge-grain index tables stay empty.
+    with agg_conn.cursor() as cur:
+        for table in (
+            "judge_sentencing_index_summaries",
+            "judge_sentencing_index_aggregates",
+        ):
+            cur.execute(
+                f"SELECT count(*) FROM analytics.{table} "  # noqa: S608 - test-local constant
+                "WHERE aggregate_run_id = %s",
+                (run_id,),
+            )
+            assert cur.fetchone()[0] == 0
+
+    out = capsys.readouterr().out
+    assert "index_charges=1" in out
+    assert "index_convictions=2" in out
+    assert "index_sentenced_convictions=1" in out
+    assert "index_wedge=1" in out
+    assert "index_grade_rows=2" in out
+    assert "judge_index_pairs=0" in out
+
+
+def test_db_index_judge_grain_rows_share_the_run(agg_conn):
+    seeder = _Seeder(agg_conn)
+    build_run_id = seeder.build_run()
+    judge_id = seeder.new_judge("placeholder-judge-x", "Placeholder Judge X")
+    seeder.sentenced_outcome(
+        build_run_id,
+        outcome_category="guilty_plea",
+        disposition_date=date(2025, 3, 1),
+        components=[("probation", date(2025, 3, 1), True, ())],
+        judge_id=judge_id,
+        judge_specific_eligible=True,
+    )
+
+    assert (
+        generate_aggregates(
+            agg_conn,
+            build_run_id=build_run_id,
+            data_start_date=date(2025, 1, 1),
+            thin_min_sample=10,
+            label="unit-test",
+        )
+        == 0
+    )
+
+    with agg_conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT id FROM analytics.aggregate_runs")
+        run_id = str(cur.fetchone()["id"])
+        cur.execute(
+            "SELECT * FROM analytics.judge_sentencing_index_summaries "
+            "WHERE aggregate_run_id = %s",
+            (run_id,),
+        )
+        (judge_summary,) = cur.fetchall()
+        cur.execute(
+            "SELECT * FROM analytics.judge_sentencing_index_aggregates "
+            "WHERE aggregate_run_id = %s",
+            (run_id,),
+        )
+        (judge_category,) = cur.fetchall()
+
+    assert str(judge_summary["judge_id"]) == judge_id
+    assert judge_summary["convictions"] == 1
+    assert judge_summary["sentenced_convictions"] == 1
+    assert judge_category["category_code"] == "probation"
+    # Charge grain carries the same conviction (grain agreement, Q2).
+    (charge_summary,) = _index_summary_rows(agg_conn, run_id)
+    assert charge_summary["convictions"] == 1
+    assert charge_summary["sentenced_convictions"] == 1

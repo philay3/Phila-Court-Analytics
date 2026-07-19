@@ -33,10 +33,9 @@ export const BROWSE_ALL_CHARGES_LINK_TEXT = 'Browse all charges';
  * Sample-size label prefix for EXACTLY two surfaces: /charges directory rows
  * and the homepage featured cards (DP-5 Amendment A). N counts disposed
  * charge outcomes — one per outcome fact — hence "Recorded outcomes", not
- * "charges" (reads as the filed universe) or internal vocabulary. The result
- * pages' `Sample size:` convention (SAMPLE_SIZE_LABEL_PREFIX,
- * formatSampleSize) is deliberately untouched; site-wide label
- * reconciliation is a named Sprint 9 copy item.
+ * "charges" (reads as the filed universe) or internal vocabulary. The 35.3
+ * label reconciliation (result-display.ts) deliberately left this prefix
+ * untouched: it remains scoped to these two surfaces only.
  */
 export const RECORDED_OUTCOMES_LABEL_PREFIX = 'Recorded outcomes: ';
 

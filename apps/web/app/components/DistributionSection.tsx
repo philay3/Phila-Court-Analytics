@@ -27,7 +27,12 @@ import type {
   SentencingDistributionEntry,
   ThinDataStatus,
 } from '@pca/shared';
-import { formatCount, formatPercentage } from '../lib/formatters';
+import {
+  formatCount,
+  formatPercentage,
+  formatRecordsLabel,
+  formatSentenceComponentsLabel,
+} from '../lib/formatters';
 import { definitionAnchor, type DistributionKind } from '../lib/definition-anchor';
 import { categoryFillClass } from './category-fill';
 import { RESULT_DISPLAY_COPY } from './result-display-copy';
@@ -46,12 +51,29 @@ interface DistributionSectionProps {
   sampleSize: SampleSize;
   /** This distribution's API thin-data flag. */
   thinData: ThinDataStatus;
+  /**
+   * Caption override (task 35.3, pin 11): when the sentencing block renders
+   * below the index lead block it carries the distinct detail caption; on the
+   * absent arm the default captions render byte-identically to today.
+   */
+  caption?: string;
 }
 
 function captionFor(kind: DistributionKind): string {
   return kind === 'outcome'
     ? RESULT_DISPLAY_COPY.outcomeCaption
     : RESULT_DISPLAY_COPY.sentencingCaption;
+}
+
+/**
+ * Reconciled sample labels (task 35.3, pin 11): each block names the unit its
+ * sample counts — outcome blocks count records, the component-grain
+ * sentencing block counts sentence components.
+ */
+function sampleLabelFor(kind: DistributionKind, sampleSize: SampleSize): string {
+  return kind === 'outcome'
+    ? formatRecordsLabel(sampleSize)
+    : formatSentenceComponentsLabel(sampleSize);
 }
 
 function categoryHeaderFor(kind: DistributionKind): string {
@@ -65,9 +87,10 @@ export function DistributionSection({
   rows,
   sampleSize,
   thinData,
+  caption: captionOverride,
 }: DistributionSectionProps) {
   const captionId = useId();
-  const caption = captionFor(kind);
+  const caption = captionOverride ?? captionFor(kind);
   const categoryHeader = categoryHeaderFor(kind);
 
   return (
@@ -77,7 +100,7 @@ export function DistributionSection({
     >
       {/* Section metadata, right-aligned on the header line (Civic Atlas). */}
       <div className="flex flex-wrap items-center justify-end gap-3">
-        <SampleSizeLabel sampleSize={sampleSize} />
+        <SampleSizeLabel label={sampleLabelFor(kind, sampleSize)} />
         <ThinDataBadge thin={thinData} />
       </div>
 

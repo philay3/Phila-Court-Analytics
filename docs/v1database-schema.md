@@ -189,7 +189,7 @@ Maintains pre-computed statistics that serve client endpoints.
 #### `analytics.aggregate_runs`
 
 - **Purpose**: Records aggregation history, marking which aggregate sets are active.
-- **Fields**: `id`, `status` (`in_progress`, `completed`, `failed`), `started_at`, `completed_at`, `published_at` (gated by validation checks), `invalidated_at` (set transactionally when a newer run is published), `invalidated_reason`, `parser_version`, `taxonomy_version`, `data_range_start`, `data_range_end`.
+- **Fields**: `id`, `status` (`in_progress`, `completed`, `failed`), `started_at`, `completed_at`, `published_at` (gated by validation checks), `invalidated_at` (set transactionally when a newer run is published), `invalidated_reason`, `parser_version`, `build_run_id` (Task 35.1 — the source `fact.fact_build_runs` id, nullable on historical rows, deliberately FK-less because `fact.*` is outside the public dump/restore set), `taxonomy_version`, `data_range_start`, `data_range_end`.
 
 #### `analytics.charge_outcome_aggregates` & `analytics.charge_sentencing_aggregates`
 
@@ -198,6 +198,11 @@ Maintains pre-computed statistics that serve client endpoints.
 #### `analytics.judge_outcome_aggregates` & `analytics.judge_sentencing_aggregates`
 
 - **Purpose**: Stores statistics grouped by judge and charge code (overall outcome counts, sentencing sample sizes, and percentages).
+
+#### Conviction-grain sentencing index (Task 35.1)
+
+- **Tables**: `analytics.charge_sentencing_index_summaries`, `analytics.charge_sentencing_index_aggregates`, `analytics.charge_conviction_grade_aggregates`, `analytics.judge_sentencing_index_summaries`, `analytics.judge_sentencing_index_aggregates`.
+- **Purpose**: Conviction-denominated sentencing statistics per charge (and per charge x judge cell). Summaries carry convictions / sentenced convictions / wedge (convictions with no public-eligible sentencing component, disclosed rather than dropped) plus the thin flag keyed on sentenced convictions; category rows carry conviction-grain counts, percentage of sentenced, and (for duration-bearing categories) component-grain median min/max days with the `min_assumed` share; the grade table (charge grain only) carries the conviction grade mix with an explicit `ungraded` bucket. Percentages are `numeric(4,1)`; medians `numeric(6,1)` days.
 
 ---
 

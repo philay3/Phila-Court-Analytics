@@ -12,11 +12,19 @@ import {
   findActiveChargeById,
   findActiveChargeBySlug,
   findActivePublishedRun,
+  getChargeConvictionGradeRows,
   getChargeOutcomeRows,
+  getChargeSentencingIndexCategoryRows,
+  getChargeSentencingIndexSummary,
   getChargeSentencingRows,
   type ChargeRow,
 } from '../repositories/charge-result.js';
-import { UUID_PATTERN, buildDistributionBlock, buildSentencing } from './result-helpers.js';
+import {
+  UUID_PATTERN,
+  buildChargeSentencingIndex,
+  buildDistributionBlock,
+  buildSentencing,
+} from './result-helpers.js';
 
 function chargeSummary(charge: ChargeRow) {
   return {
@@ -86,6 +94,20 @@ export async function getChargeOnlyResult(
 
   const sentencing = buildSentencing(await getChargeSentencingRows(db, run.id, charge.id));
 
+  // Task 35.2: the conviction-grain index, a sibling of the sentencing
+  // section above. The summary row is the servable anchor — its absence is
+  // the absent arm (run predating the population, or a zero-conviction
+  // cell; publicly indistinguishable by design) and short-circuits the row
+  // reads.
+  const indexSummary = await getChargeSentencingIndexSummary(db, run.id, charge.id);
+  const sentencingIndex = indexSummary
+    ? buildChargeSentencingIndex(
+        indexSummary,
+        await getChargeSentencingIndexCategoryRows(db, run.id, charge.id),
+        await getChargeConvictionGradeRows(db, run.id, charge.id),
+      )
+    : { available: false as const };
+
   return {
     charge: chargeSummary(charge),
     resultType: 'charge_only',
@@ -96,6 +118,7 @@ export async function getChargeOnlyResult(
     aggregateRunId: run.id,
     outcomes,
     sentencing,
+    sentencingIndex,
     links: { methodology: '/methodology', definitions: '/definitions' },
   };
 }
