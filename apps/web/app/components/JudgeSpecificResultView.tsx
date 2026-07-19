@@ -28,20 +28,32 @@
  * last-refreshed line relocated there byte-identically. No aside sample sizes
  * on this view — they stay in the scope-section headers only (DP-3).
  *
- * Slot order WITHIN each scope is conditional on that scope's API
- * `sentencing.available` flag (task 33.2 pinned decisions 3–4): available →
- * sentencing above outcome; unavailable → outcome first with the callout in
- * the sentencing slot below. The page stays scope-major, each scope branches
- * independently (mixed combinations are expected), and the branch consumes
- * the API boolean only.
+ * Slot order WITHIN each scope is conditional. The judge scope carries the
+ * cell's sentencing index (task 35.3, pin 6): on the lead arm the index
+ * section leads the scope, the component-grain sentencing slot renders below
+ * it under the distinct detail caption, outcome below that; on the
+ * zero-sentenced arm outcome leads with the ruling-4 fallback line replacing
+ * the generic notice; on the absent arm the scope renders exactly the
+ * post-Phase-33 order (33.2 pinned decision 4): sentencing above outcome when
+ * available, else outcome first with the callout below. The judge payload
+ * serves no grades at this grain, so no grade line can render (ruling 2) —
+ * and no baseline index is served, so the baseline scope always uses the
+ * 33.2 order. The page stays scope-major, each scope branches independently,
+ * and every branch consumes API booleans/arrays only.
  *
  * Every count, percentage, sample size, date, and label renders through the
  * 11.4 formatters; the page computes no analytics.
  */
 import { useId } from 'react';
 import Link from 'next/link';
+import { SENTENCING_DETAIL_CAPTION } from '@pca/shared';
 import type { JudgeSpecificResultSuccess, ResultDistributions } from '@pca/shared';
-import { formatResultTypeLabel } from '../lib/formatters';
+import { formatResultTypeLabel, formatZeroSentencedFallback } from '../lib/formatters';
+import {
+  resolveJudgeSentencingIndexDisplay,
+  type JudgeSentencingIndexDisplay,
+} from '../lib/sentencing-index-display';
+import { SentencingIndexSection } from './SentencingIndexSection';
 import { DateRangeLabel } from './DateRangeLabel';
 import { ResponsibleUseNotice } from './ResponsibleUseNotice';
 import { ThinDataCallout } from './ThinDataCallout';
@@ -61,16 +73,18 @@ export function JudgeSpecificResultView({ data }: JudgeSpecificResultViewProps) 
   const { charge, judge, judgeSpecific, baseline, links } = data;
   const judgeHeadingId = useId();
   const baselineHeadingId = useId();
+  const cellIndexDisplay = resolveJudgeSentencingIndexDisplay(data.sentencingIndex);
 
   // Page-level thin-data callout slot: a PURE OR over the API-provided
-  // thin-data booleans of the four rendered distributions — no counts, sample
-  // sizes, or thresholds are evaluated here. It SUPPLEMENTS the per-slot badges
-  // that DistributionSection still renders inside each distribution.
+  // thin-data booleans of the rendered distributions and the cell index — no
+  // counts, sample sizes, or thresholds are evaluated here. It SUPPLEMENTS the
+  // per-slot badges that each section still renders.
   const showThinDataCallout = [
     judgeSpecific.outcomes.thinData,
     judgeSpecific.sentencing.available && judgeSpecific.sentencing.thinData,
     baseline.outcomes.thinData,
     baseline.sentencing.available && baseline.sentencing.thinData,
+    data.sentencingIndex.available && data.sentencingIndex.summary.thinData,
   ].some(Boolean);
 
   return (
@@ -110,6 +124,8 @@ export function JudgeSpecificResultView({ data }: JudgeSpecificResultViewProps) 
             methodologyHref={links.methodology}
             outcomeTestId="section-judge-outcome"
             sentencingTestId="section-judge-sentencing"
+            indexDisplay={cellIndexDisplay}
+            indexTestId="section-judge-sentencing-index"
           />
         </section>
 
@@ -129,6 +145,7 @@ export function JudgeSpecificResultView({ data }: JudgeSpecificResultViewProps) 
       <ResultMetadataAside
         lastRefreshed={data.lastRefreshed}
         links={links}
+        aggregateRunId={data.aggregateRunId}
         actions={
           <p>
             <Link href={`/charges/${charge.slug}`} className={LINK_CLASS}>
@@ -148,6 +165,9 @@ interface ScopeSlotsProps {
   methodologyHref: string;
   outcomeTestId: string;
   sentencingTestId: string;
+  /** The cell's index display arm — judge scope only; baseline passes none. */
+  indexDisplay?: JudgeSentencingIndexDisplay;
+  indexTestId?: string;
 }
 
 /**
@@ -155,11 +175,23 @@ interface ScopeSlotsProps {
  * the judge and baseline sections are structurally identical (pinned decision
  * 1). The sentencing slot renders the 13.1 distribution when available, else the
  * 13.2 sentencing-unavailable callout — independently of the other scope.
- * Slot order follows this scope's `sentencing.available` flag (task 33.2
- * pinned decision 4): sentencing leads when available, outcome leads on the
- * unavailable arm.
+ *
+ * Without an `indexDisplay` (the baseline scope, and by construction any
+ * scope with the absent arm) slot order follows this scope's
+ * `sentencing.available` flag (task 33.2 pinned decision 4): sentencing leads
+ * when available, outcome leads on the unavailable arm. With the cell index
+ * (judge scope, task 35.3 pin 6) the three-arm order matches the charge page:
+ * index lead → sentencing detail → outcome; or outcome → fallback line on the
+ * zero-sentenced arm. No grades exist at this grain, so none are passed.
  */
-function ScopeSlots({ scope, methodologyHref, outcomeTestId, sentencingTestId }: ScopeSlotsProps) {
+function ScopeSlots({
+  scope,
+  methodologyHref,
+  outcomeTestId,
+  sentencingTestId,
+  indexDisplay,
+  indexTestId,
+}: ScopeSlotsProps) {
   const outcomeSlot = (
     <div data-testid={outcomeTestId} className="overflow-x-auto">
       <DistributionSection
@@ -170,7 +202,7 @@ function ScopeSlots({ scope, methodologyHref, outcomeTestId, sentencingTestId }:
       />
     </div>
   );
-  const sentencingSlot = (
+  const sentencingSlot = (caption?: string) => (
     <div data-testid={sentencingTestId} className="overflow-x-auto">
       {scope.sentencing.available ? (
         <DistributionSection
@@ -178,22 +210,65 @@ function ScopeSlots({ scope, methodologyHref, outcomeTestId, sentencingTestId }:
           rows={scope.sentencing.rows}
           sampleSize={scope.sentencing.sampleSize}
           thinData={scope.sentencing.thinData}
+          caption={caption}
         />
       ) : (
         <SentencingUnavailableNotice methodologyHref={methodologyHref} />
       )}
     </div>
   );
-
-  return scope.sentencing.available ? (
+  const legacyOrder = scope.sentencing.available ? (
     <>
-      {sentencingSlot}
+      {sentencingSlot()}
       {outcomeSlot}
     </>
   ) : (
     <>
       {outcomeSlot}
-      {sentencingSlot}
+      {sentencingSlot()}
     </>
   );
+
+  if (indexDisplay === undefined) {
+    return legacyOrder;
+  }
+
+  switch (indexDisplay.kind) {
+    case 'lead':
+      return (
+        <>
+          <div data-testid={indexTestId} className="overflow-x-auto">
+            <SentencingIndexSection
+              summary={indexDisplay.index.summary}
+              categories={indexDisplay.index.categories}
+            />
+          </div>
+          {sentencingSlot(SENTENCING_DETAIL_CAPTION)}
+          {outcomeSlot}
+        </>
+      );
+    case 'zero-sentenced':
+      // Outcome-first; the ruling-4 fallback line replaces the generic notice
+      // in the sentencing slot (ruling Q4).
+      return (
+        <>
+          {outcomeSlot}
+          <div
+            data-testid={indexTestId}
+            className="space-y-3 border-t-3 border-double border-ink pt-3"
+          >
+            <p className="text-sm text-muted">
+              {formatZeroSentencedFallback(indexDisplay.index.summary.convictions)}
+            </p>
+          </div>
+          {scope.sentencing.available && sentencingSlot()}
+        </>
+      );
+    case 'absent':
+      return legacyOrder;
+    default: {
+      const exhaustive: never = indexDisplay;
+      return exhaustive;
+    }
+  }
 }

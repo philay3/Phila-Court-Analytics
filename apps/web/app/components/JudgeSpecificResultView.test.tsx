@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import {
   CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
+  SENTENCING_DETAIL_CAPTION,
+  SENTENCING_INDEX_CAPTION,
+  type JudgeSentencingIndexPresent,
   type JudgeSpecificResultSuccess,
   type OutcomeDistributionEntry,
   type ResultDistributions,
@@ -11,9 +14,12 @@ import {
 import {
   RESULT_TYPE_JUDGE_SPECIFIC_LABEL,
   THIN_DATA_LABEL,
+  formatAggregateRunLabel,
   formatDateRange,
   formatLastRefreshed,
-  formatSampleSize,
+  formatRecordsLabel,
+  formatSentenceComponentsLabel,
+  formatZeroSentencedFallback,
 } from '../lib/formatters.js';
 import { RESULT_DISPLAY_COPY } from './result-display-copy.js';
 import { CHARGE_RESULT_COPY } from './charge-result-copy.js';
@@ -54,11 +60,49 @@ const SENTENCING_ROWS: SentencingDistributionEntry[] = [
 ];
 
 // Four independent sample sizes, all distinct so each renders as a unique
-// on-screen "Sample size: N" string.
+// on-screen reconciled label string (35.3 pin 11).
 const JUDGE_OUTCOME_N = 14;
 const JUDGE_SENTENCING_N = 9;
 const BASELINE_OUTCOME_N = 1000;
 const BASELINE_SENTENCING_N = 600;
+const AGGREGATE_RUN_ID = '00000000-0000-0000-0000-0000000000aa';
+
+// Fabricated cell index (no grades at this grain, ruling 2).
+const CELL_INDEX_PRESENT: JudgeSentencingIndexPresent = {
+  available: true,
+  summary: {
+    convictions: 49,
+    sentencedConvictions: 45,
+    wedgeCount: 4,
+    wedgePercentage: 8.2,
+    thinData: false,
+    dateRange: { start: '2025-02-01', end: '2026-06-10' },
+  },
+  categories: [
+    {
+      categoryCode: 'probation',
+      convictionCount: 30,
+      percentageOfSentenced: 66.7,
+      medianMinMonths: 2,
+      medianMaxMonths: 6,
+      minAssumedPercentage: 40,
+    },
+    { categoryCode: 'fine', convictionCount: 20, percentageOfSentenced: 44.4 },
+  ],
+};
+
+const CELL_INDEX_ZERO_SENTENCED: JudgeSentencingIndexPresent = {
+  available: true,
+  summary: {
+    convictions: 7,
+    sentencedConvictions: 0,
+    wedgeCount: 7,
+    wedgePercentage: 100,
+    thinData: true,
+    dateRange: { start: '2025-02-01', end: '2026-06-10' },
+  },
+  categories: [],
+};
 
 function makeScope(outcomeN: number, sentencingN: number): ResultDistributions {
   return {
@@ -83,10 +127,11 @@ function makeSuccess(
     dateRange: { start: '2025-01-01', end: '2026-06-30' },
     lastRefreshed: '2026-07-01T14:30:00.000Z',
     taxonomyVersion: '1.0.0',
-    aggregateRunId: '00000000-0000-0000-0000-0000000000aa',
+    aggregateRunId: AGGREGATE_RUN_ID,
     judgeSpecific: makeScope(JUDGE_OUTCOME_N, JUDGE_SENTENCING_N),
     baseline: makeScope(BASELINE_OUTCOME_N, BASELINE_SENTENCING_N),
-    // Task 35.2 type-compatibility only: the absent arm, rendered by 35.3.
+    // Default fixture keeps the absent arm: today's page (pin 2), with the
+    // present arms exercised by their own tests below.
     sentencingIndex: { available: false },
     links: { methodology: '/methodology', definitions: '/definitions' },
     ...overrides,
@@ -141,26 +186,28 @@ describe('JudgeSpecificResultView', () => {
     expect(
       judgeOutcome.getByRole('table', { name: RESULT_DISPLAY_COPY.outcomeCaption }),
     ).toBeInTheDocument();
-    expect(judgeOutcome.getByText(formatSampleSize(JUDGE_OUTCOME_N))).toBeInTheDocument();
+    expect(judgeOutcome.getByText(formatRecordsLabel(JUDGE_OUTCOME_N))).toBeInTheDocument();
 
     const judgeSentencing = within(screen.getByTestId('section-judge-sentencing'));
     expect(
       judgeSentencing.getByRole('table', { name: RESULT_DISPLAY_COPY.sentencingCaption }),
     ).toBeInTheDocument();
-    expect(judgeSentencing.getByText(formatSampleSize(JUDGE_SENTENCING_N))).toBeInTheDocument();
+    expect(
+      judgeSentencing.getByText(formatSentenceComponentsLabel(JUDGE_SENTENCING_N)),
+    ).toBeInTheDocument();
 
     const baselineOutcome = within(screen.getByTestId('section-baseline-outcome'));
     expect(
       baselineOutcome.getByRole('table', { name: RESULT_DISPLAY_COPY.outcomeCaption }),
     ).toBeInTheDocument();
-    expect(baselineOutcome.getByText(formatSampleSize(BASELINE_OUTCOME_N))).toBeInTheDocument();
+    expect(baselineOutcome.getByText(formatRecordsLabel(BASELINE_OUTCOME_N))).toBeInTheDocument();
 
     const baselineSentencing = within(screen.getByTestId('section-baseline-sentencing'));
     expect(
       baselineSentencing.getByRole('table', { name: RESULT_DISPLAY_COPY.sentencingCaption }),
     ).toBeInTheDocument();
     expect(
-      baselineSentencing.getByText(formatSampleSize(BASELINE_SENTENCING_N)),
+      baselineSentencing.getByText(formatSentenceComponentsLabel(BASELINE_SENTENCING_N)),
     ).toBeInTheDocument();
 
     // Coverage note, responsible-use notice + methodology/definitions links.
@@ -354,5 +401,83 @@ describe('JudgeSpecificResultView', () => {
       'section-baseline-sentencing',
       'section-metadata',
     ]);
+  });
+
+  it('leads the judge scope with the cell index and no grade line (35.3 pin 6); baseline unchanged', () => {
+    const { container } = render(
+      <JudgeSpecificResultView data={makeSuccess({ sentencingIndex: CELL_INDEX_PRESENT })} />,
+    );
+
+    expect(sectionOrder(container)).toEqual([
+      'section-summary',
+      'section-responsible-use',
+      'section-judge-sentencing-index',
+      'section-judge-sentencing',
+      'section-judge-outcome',
+      'section-baseline-sentencing',
+      'section-baseline-outcome',
+      'section-metadata',
+    ]);
+
+    const indexSection = within(screen.getByTestId('section-judge-sentencing-index'));
+    expect(indexSection.getByRole('table', { name: SENTENCING_INDEX_CAPTION })).toBeInTheDocument();
+    expect(indexSection.getByText('Sentenced convictions: 45')).toBeInTheDocument();
+    expect(indexSection.getByTestId('index-wedge-disclosure')).toBeInTheDocument();
+    // No grades exist at this grain (ruling 2): no grade line anywhere.
+    expect(screen.queryByTestId('index-grade-mix')).not.toBeInTheDocument();
+
+    // The judge-scope component block renders below under the detail caption;
+    // the baseline keeps today's caption.
+    const judgeSentencing = within(screen.getByTestId('section-judge-sentencing'));
+    expect(
+      judgeSentencing.getByRole('table', { name: SENTENCING_DETAIL_CAPTION }),
+    ).toBeInTheDocument();
+    const baselineSentencing = within(screen.getByTestId('section-baseline-sentencing'));
+    expect(
+      baselineSentencing.getByRole('table', { name: RESULT_DISPLAY_COPY.sentencingCaption }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the judge scope outcome-first with the fallback line on the zero-sentenced cell arm', () => {
+    const { container } = render(
+      <JudgeSpecificResultView
+        data={makeSuccess({
+          sentencingIndex: CELL_INDEX_ZERO_SENTENCED,
+          judgeSpecific: makeUnavailableScope(JUDGE_OUTCOME_N),
+        })}
+      />,
+    );
+
+    // Cell summary is thin → page-level callout renders.
+    expect(sectionOrder(container)).toEqual([
+      'section-summary',
+      'section-responsible-use',
+      'section-thin-data',
+      'section-judge-outcome',
+      'section-judge-sentencing-index',
+      'section-baseline-sentencing',
+      'section-baseline-outcome',
+      'section-metadata',
+    ]);
+
+    const indexSlot = within(screen.getByTestId('section-judge-sentencing-index'));
+    expect(
+      indexSlot.getByText(
+        formatZeroSentencedFallback(CELL_INDEX_ZERO_SENTENCED.summary.convictions),
+      ),
+    ).toBeInTheDocument();
+    // The generic notice is replaced in the judge scope (ruling Q4); the
+    // baseline scope still renders its full table, so the pinned message
+    // appears nowhere on this arm.
+    expect(screen.queryByText(CHARGE_SENTENCING_UNAVAILABLE_MESSAGE)).not.toBeInTheDocument();
+  });
+
+  it('renders the provenance line in the aside (35.3 pin 7)', () => {
+    render(<JudgeSpecificResultView data={makeSuccess()} />);
+
+    const aside = within(screen.getByTestId('section-metadata'));
+    expect(aside.getByTestId('aggregate-run-line')).toHaveTextContent(
+      formatAggregateRunLabel(AGGREGATE_RUN_ID),
+    );
   });
 });

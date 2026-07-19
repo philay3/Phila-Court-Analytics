@@ -7875,3 +7875,83 @@ the homepage copy-heavy phase per the amendment's for-the-record note.
   Months come pre-converted (≤1dp); the web app must convert nothing.
   Judge payloads carry the CELL index only — no baseline index, no grade
   mix; a judge-page baseline index would be a future additive change.
+
+## Task 35.3 — Index Rendering + the Copy Pass (2026-07-19)
+
+- **What was built:** (1) Sanctioned copy: new
+  `packages/shared/src/public/result-display.ts` — the complete 35.3 string
+  set (index caption/headers, sentenced-convictions label, wedge + zero-
+  sentenced templates in BOTH grammatical variants, grade-mix strings with
+  the gated `no recorded grade` label, detail caption, `Records: ` /
+  `Sentence components: ` reconciled prefixes, `Data release: ` provenance
+  prefix), byte-pinned + scan-clean + no-em-dash in its test. (2) Display:
+  `apps/web/app/lib/sentencing-index-display.ts` names the three arms
+  (lead / zero-sentenced / absent) with never-checked exhaustive switches;
+  `SentencingIndexSection.tsx` renders the lead block as the house
+  bar+required-table pattern (caption = conditional header, median column
+  with flat-pair collapse and empty duration-free cells, wedge line, grade
+  line on charge pages only — judge grain passes no grades, structurally).
+  Both result views branch per arm: index leads → detail caption on the
+  component block → outcome; zero-sentenced renders outcome-first with the
+  ruling-4 fallback line REPLACING the generic notice; absent arm is
+  today's page structurally with only the reconciled labels applied
+  (ruling Q1). Judge scope only carries the cell index; baseline scope
+  unchanged. (3) Formatters: `formatMedianMonths`, `formatWedgeDisclosure`,
+  `formatZeroSentencedFallback` (singular branches per sanction),
+  `formatGradeMixLine`, `formatAggregateRunLabel` (8-char short id),
+  `formatRecordsLabel`/`formatSentenceComponentsLabel`/
+  `formatSentencedConvictionsLabel`; `formatSampleSize` +
+  `SAMPLE_SIZE_LABEL_PREFIX` deleted (the byte-identity guard lifted by
+  design). `SampleSizeLabel` now takes a pre-formatted label;
+  `DistributionSection` gained kind-based labels + a caption override.
+  (4) Provenance: `ResultMetadataAside` renders `Data release: <short id>`
+  last, on both result pages. (5) Methodology (M1–M4 as sanctioned):
+  sampleSize body replaced (three units), sentencing body gains the index
+  definition/wedge/month-and-median conventions/min_assumed/grade-mix
+  block, `sentencing detail` retitle, dataSource gains the release-code
+  meaning. (6) Provisional-30 retirement: `packages/taxonomy/seeds/
+  thin-data.json` deleted; `THIN_DATA_CONFIG` emission, validation, and
+  test assertions removed; pipeline default 10 is the sole threshold.
+  (7) Seeds: flat-pair category row (incarceration 90/90 days → 3) on the
+  judge cell (ruling Q5). (8) Tests/E2E: new unit suites per arm/state;
+  E2E scenario slugs extended (`chargeZeroSentenced`, `chargeIndexAbsent` =
+  simple-assault lock, absent judge cell dui × judge-samuel-seeddata);
+  charge/judge/mobile specs rewritten for the three arms, labels, and
+  provenance — all through `assertPageClean` (axe + both scanners).
+- **Files touched:** `packages/shared/src/public/result-display.ts` (+
+  test, new), `packages/shared/src/index.ts`,
+  `packages/shared/src/public/charge-directory.ts` (comment only);
+  `packages/taxonomy/seeds/thin-data.json` (deleted), `src/build.ts`,
+  `src/validation.ts`, `src/generate.test.ts`;
+  `apps/web/app/lib/formatters.ts` (+ test),
+  `sentencing-index-display.ts` (+ test, new);
+  `apps/web/app/components/SentencingIndexSection.tsx` (+ test, new),
+  `ChargeOnlyResultView.tsx` (+ test), `JudgeSpecificResultView.tsx` (+
+  test), `ResultMetadataAside.tsx` (+ test), `DistributionSection.tsx` (+
+  test), `SampleSizeLabel.tsx` (+ test);
+  `apps/api/src/content/methodology.ts`,
+  `apps/api/src/routes/public/judge-results.test.ts` (flat-pair ripple);
+  `db/seeds/aggregate-data.ts`; `e2e/support/constants.ts`,
+  `e2e/tests/{charge-only-result,judge-flow,mobile}.spec.ts`;
+  `tasks/worklog.md`.
+- **Deviations from plan:** none of substance. Called out: the flat-pair
+  seed rippled into `apps/api/src/routes/public/judge-results.test.ts`
+  (payload assertion extended with the new row — file not in the plan's
+  list); a stale doc comment in `charge-directory.ts` referencing the
+  deleted `formatSampleSize` was retitled (comment-only).
+- **Visual review (amended gate, real data only):** scratch clone
+  `pca_35_3_review` created from canonical `pca` (template copy); run
+  `24184d68` published INSIDE THE CLONE ONLY (prior `82b6cc99` superseded
+  there). Clone arms verified rendering: 72 lead pages, 2 zero-sentenced
+  (7-conviction plural and the 1-conviction SINGULAR variant live), 3
+  absent charges, 1189/350 judge cells with/without index. Canonical `pca`
+  untouched: read-only boot confirmed active run still `82b6cc99`,
+  `24184d68` never published there, absent arm = today's page with
+  reconciled labels. Reviewer boots left running (clone web :3000/api
+  :3001; canonical web :3003/api :3002, SELECT-only).
+- **Notes for next task / phase close:** the zero-sentenced fallback and
+  wedge singular variants are live paths on the real corpus (criminal-
+  conspiracy-903c). The seeded matrix now carries a flat median pair on
+  the judge cell. `pca_e2e` scratch-DB convention exercised as established
+  — formal promotion recorded at phase close. Drop the review clone after
+  the Chops review: `DROP DATABASE pca_35_3_review`.

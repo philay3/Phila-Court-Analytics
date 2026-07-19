@@ -6,12 +6,11 @@ import { EXPECTED_OUTCOME_CODES, EXPECTED_SENTENCING_CODES, loadSeeds } from './
 describe('buildArtifacts', () => {
   const artifacts = buildArtifacts(loadSeeds());
 
-  it('emits JSON containing all categories, thin-data config, and the version', () => {
+  it('emits JSON containing all categories and the version', () => {
     const parsed = JSON.parse(artifacts.taxonomyJson) as {
       taxonomyVersion: string;
       outcomeCategories: Array<{ code: string }>;
       sentencingCategories: Array<{ code: string }>;
-      thinData: { provisional: boolean };
     };
 
     expect(parsed.taxonomyVersion).toBe('1.0.0');
@@ -21,7 +20,6 @@ describe('buildArtifacts', () => {
     expect(parsed.sentencingCategories.map((c) => c.code).sort()).toEqual(
       [...EXPECTED_SENTENCING_CODES].sort(),
     );
-    expect(parsed.thinData.provisional).toBe(true);
   });
 
   it('emits TypeScript containing all category codes and the version', () => {

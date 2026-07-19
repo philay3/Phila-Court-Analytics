@@ -7,7 +7,8 @@ import { definitionAnchor } from '../lib/definition-anchor.js';
 import {
   formatCount,
   formatPercentage,
-  formatSampleSize,
+  formatRecordsLabel,
+  formatSentenceComponentsLabel,
   THIN_DATA_LABEL,
 } from '../lib/formatters.js';
 
@@ -38,8 +39,8 @@ describe('DistributionSection', () => {
       />,
     );
 
-    // Sample size present via the 11.4 formatter.
-    expect(screen.getByText(formatSampleSize(OUTCOME_SAMPLE_SIZE))).toBeInTheDocument();
+    // Sample present via the 11.4 formatter (35.3 reconciled: records).
+    expect(screen.getByText(formatRecordsLabel(OUTCOME_SAMPLE_SIZE))).toBeInTheDocument();
 
     const table = screen.getByRole('table', { name: RESULT_DISPLAY_COPY.outcomeCaption });
     const bodyRows = within(table).getAllByRole('row').slice(1); // drop the header row
@@ -66,9 +67,31 @@ describe('DistributionSection', () => {
 
     const table = screen.getByRole('table', { name: RESULT_DISPLAY_COPY.sentencingCaption });
     expect(table).toBeInTheDocument();
-    expect(screen.getByText(formatSampleSize(SENTENCING_SAMPLE_SIZE))).toBeInTheDocument();
-    // Not the outcome sample size — this distribution shows its own.
-    expect(screen.queryByText(formatSampleSize(OUTCOME_SAMPLE_SIZE))).not.toBeInTheDocument();
+    expect(
+      screen.getByText(formatSentenceComponentsLabel(SENTENCING_SAMPLE_SIZE)),
+    ).toBeInTheDocument();
+    // Not the outcome label — this distribution shows its own unit and value.
+    expect(screen.queryByText(formatRecordsLabel(OUTCOME_SAMPLE_SIZE))).not.toBeInTheDocument();
+  });
+
+  it('renders a caption override in place of the default (35.3: the detail caption below the index)', () => {
+    // Mechanism test with a test-local caption; the sanctioned detail-caption
+    // string itself is byte-pinned in @pca/shared and asserted by the views'
+    // tests via the imported constant (never re-typed here).
+    render(
+      <DistributionSection
+        kind="sentencing"
+        rows={SENTENCING_ROWS}
+        sampleSize={SENTENCING_SAMPLE_SIZE}
+        thinData={false}
+        caption="Test-local caption override"
+      />,
+    );
+
+    expect(screen.getByRole('table', { name: 'Test-local caption override' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('table', { name: RESULT_DISPLAY_COPY.sentencingCaption }),
+    ).not.toBeInTheDocument();
   });
 
   it('renders rows in served order — a shuffled fixture is NOT re-sorted', () => {

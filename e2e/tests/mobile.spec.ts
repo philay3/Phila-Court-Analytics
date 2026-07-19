@@ -8,16 +8,17 @@ import { SLUGS } from '../support/constants';
  * page never scrolls horizontally at a narrow viewport, then runs the page gate.
  */
 
-// The pinned mobile content order for a NON-thin, sentencing-available charge
-// (retail-theft has no thin-data callout and carries sentencing data): summary
-// → responsible-use → sentencing → outcome → metadata aside (DP-3 pinned DOM
-// order; the aside renders at its DOM position — last — below 900px, and the
-// former links/judge-filter blocks live inside it). Sentencing leads per the
-// 33.2 conditional order (sentencing.available → sentencing first); source
+// The pinned mobile content order for a NON-thin, index-present charge
+// (retail-theft has no thin-data callout, carries sentencing data, and its
+// index cell is seeded): summary → responsible-use → sentencing-index lead →
+// sentencing detail → outcome → metadata aside (35.3 pin 1 over the DP-3
+// pinned DOM order; the aside renders at its DOM position — last — below
+// 900px, and the former links/judge-filter blocks live inside it). Source
 // order, no CSS `order`.
 const EXPECTED_SECTION_ORDER = [
   'section-summary',
   'section-responsible-use',
+  'section-sentencing-index',
   'section-sentencing',
   'section-outcome',
   'section-metadata',

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import type { ComponentProps, ReactNode } from 'react';
-import { formatLastRefreshed } from '../lib/formatters.js';
+import { formatAggregateRunLabel, formatLastRefreshed } from '../lib/formatters.js';
 import { CHARGE_RESULT_COPY } from './charge-result-copy.js';
 import { RESULT_DISPLAY_COPY } from './result-display-copy.js';
 import { ResultMetadataAside } from './ResultMetadataAside.js';
@@ -16,12 +16,14 @@ vi.mock('next/link', () => ({
 }));
 
 const LAST_REFRESHED = '2026-07-01T14:30:00.000Z';
+const AGGREGATE_RUN_ID = '00000000-0000-0000-0000-0000000000aa';
 
 function renderAside(overrides: Partial<ComponentProps<typeof ResultMetadataAside>> = {}) {
   return render(
     <ResultMetadataAside
       lastRefreshed={LAST_REFRESHED}
       links={{ methodology: '/methodology', definitions: '/definitions' }}
+      aggregateRunId={AGGREGATE_RUN_ID}
       {...overrides}
     />,
   );
@@ -69,7 +71,17 @@ describe('ResultMetadataAside', () => {
     const order = Array.from(aside.querySelectorAll('h2, p')).map(
       (el) => el.getAttribute('data-testid') ?? el.tagName.toLowerCase(),
     );
-    // heading → children → last-refreshed → actions → links paragraph.
-    expect(order).toEqual(['h2', 'aside-child', 'p', 'aside-action', 'p']);
+    // heading → children → last-refreshed → actions → links → provenance line.
+    expect(order).toEqual(['h2', 'aside-child', 'p', 'aside-action', 'p', 'aggregate-run-line']);
+  });
+
+  it('renders the provenance line last: pinned prefix + 8-char short id (35.3 pin 7)', () => {
+    renderAside();
+
+    const line = screen.getByTestId('aggregate-run-line');
+    expect(line).toHaveTextContent(formatAggregateRunLabel(AGGREGATE_RUN_ID));
+    expect(line).toHaveTextContent('Data release: 00000000');
+    // The full UUID never renders — only the short id form.
+    expect(line.textContent).not.toContain(AGGREGATE_RUN_ID);
   });
 });

@@ -469,6 +469,15 @@ describe.skipIf(!hasDb)(
               medianMaxMonths: 6,
               minAssumedPercentage: 40,
             },
+            {
+              // Flat median pair (35.3 ruling Q5): stored 90/90 days → 3/3.
+              categoryCode: 'incarceration',
+              convictionCount: 12,
+              percentageOfSentenced: 26.7,
+              medianMinMonths: 3,
+              medianMaxMonths: 3,
+              minAssumedPercentage: 25,
+            },
             { categoryCode: 'fine', convictionCount: 20, percentageOfSentenced: 44.4 },
           ],
         });

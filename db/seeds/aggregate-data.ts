@@ -448,6 +448,15 @@ export const PUBLISHED_JUDGE_SENTENCING_INDEX: readonly JudgeSentencingIndexSeed
         medianMaxDays: '180.0', // → 6 months
         minAssumedPercentage: '40.0',
       },
+      {
+        // Flat median pair (35.3 ruling Q5): min = max exercises the
+        // single-figure collapse (pin 4) end-to-end.
+        code: SENTENCING.incarceration,
+        convictionCount: 12,
+        medianMinDays: '90.0', // → 3 months
+        medianMaxDays: '90.0', // → 3 months (flat pair)
+        minAssumedPercentage: '25.0',
+      },
       { code: SENTENCING.fine, convictionCount: 20 },
     ],
   },

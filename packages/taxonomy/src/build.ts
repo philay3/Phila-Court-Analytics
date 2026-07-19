@@ -5,13 +5,6 @@ export interface BuiltArtifacts {
   indexTs: string;
 }
 
-interface ThinDataConfig {
-  provisional: boolean;
-  comment: string;
-  outcomeDistribution: { minSampleSize: number };
-  sentencingDistribution: { minSampleSize: number };
-}
-
 // Re-create every record with a fixed key order and sort by sortOrder so
 // output is byte-identical across runs regardless of seed-file formatting.
 function normalizeCategories(data: unknown): TaxonomyCategory[] {
@@ -26,28 +19,16 @@ function normalizeCategories(data: unknown): TaxonomyCategory[] {
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-function normalizeThinData(data: unknown): ThinDataConfig {
-  const thinData = data as ThinDataConfig;
-  return {
-    provisional: thinData.provisional,
-    comment: thinData.comment,
-    outcomeDistribution: { minSampleSize: thinData.outcomeDistribution.minSampleSize },
-    sentencingDistribution: { minSampleSize: thinData.sentencingDistribution.minSampleSize },
-  };
-}
-
 // Callers must run validateAll() first; the casts above assume valid seeds.
 export function buildArtifacts(seeds: SeedFiles): BuiltArtifacts {
   const outcome = normalizeCategories(seeds.outcome);
   const sentencing = normalizeCategories(seeds.sentencing);
-  const thinData = normalizeThinData(seeds.thinData);
   const version = (seeds.version as { taxonomyVersion: string }).taxonomyVersion;
 
   const document = {
     taxonomyVersion: version,
     outcomeCategories: outcome,
     sentencingCategories: sentencing,
-    thinData,
   };
 
   const taxonomyJson = `${JSON.stringify(document, null, 2)}\n`;
@@ -68,8 +49,6 @@ export const TAXONOMY_VERSION = ${JSON.stringify(version)};
 export const OUTCOME_CATEGORIES = ${JSON.stringify(outcome, null, 2)} as const satisfies readonly TaxonomyCategory[];
 
 export const SENTENCING_CATEGORIES = ${JSON.stringify(sentencing, null, 2)} as const satisfies readonly TaxonomyCategory[];
-
-export const THIN_DATA_CONFIG = ${JSON.stringify(thinData, null, 2)} as const;
 
 export type OutcomeCategoryCode = (typeof OUTCOME_CATEGORIES)[number]['code'];
 

@@ -3,16 +3,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import {
   CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
+  SENTENCING_DETAIL_CAPTION,
+  SENTENCING_INDEX_CAPTION,
   type ChargeOnlyResultSuccess,
+  type ChargeSentencingIndexPresent,
   type OutcomeDistributionEntry,
   type SentencingDistributionEntry,
 } from '@pca/shared';
 import {
   RESULT_TYPE_CHARGE_ONLY_LABEL,
   THIN_DATA_LABEL,
+  formatAggregateRunLabel,
   formatDateRange,
   formatLastRefreshed,
-  formatSampleSize,
+  formatRecordsLabel,
+  formatSentenceComponentsLabel,
+  formatZeroSentencedFallback,
 } from '../lib/formatters.js';
 import { RESULT_DISPLAY_COPY } from './result-display-copy.js';
 import { CHARGE_RESULT_COPY } from './charge-result-copy.js';
@@ -48,6 +54,50 @@ const SENTENCING_ROWS: SentencingDistributionEntry[] = [
 
 const OUTCOME_SAMPLE_SIZE = 1234;
 const SENTENCING_SAMPLE_SIZE = 600;
+const AGGREGATE_RUN_ID = '00000000-0000-0000-0000-0000000000aa';
+
+// Fabricated present-arm index (the seeded-matrix convention: test-local
+// numbers only, never corpus figures).
+const INDEX_PRESENT: ChargeSentencingIndexPresent = {
+  available: true,
+  summary: {
+    convictions: 600,
+    sentencedConvictions: 588,
+    wedgeCount: 12,
+    wedgePercentage: 2,
+    thinData: false,
+    dateRange: { start: '2025-01-03', end: '2026-06-27' },
+  },
+  categories: [
+    {
+      categoryCode: 'probation',
+      convictionCount: 290,
+      percentageOfSentenced: 49.3,
+      medianMinMonths: 12,
+      medianMaxMonths: 18,
+      minAssumedPercentage: 10,
+    },
+    { categoryCode: 'fine', convictionCount: 200, percentageOfSentenced: 34 },
+  ],
+  grades: [
+    { grade: 'F3', convictionCount: 300, percentageOfConvictions: 50 },
+    { grade: 'M1', convictionCount: 150, percentageOfConvictions: 25 },
+  ],
+};
+
+const INDEX_ZERO_SENTENCED: ChargeSentencingIndexPresent = {
+  available: true,
+  summary: {
+    convictions: 323,
+    sentencedConvictions: 0,
+    wedgeCount: 323,
+    wedgePercentage: 100,
+    thinData: true,
+    dateRange: { start: '2025-01-15', end: '2026-06-20' },
+  },
+  categories: [],
+  grades: [{ grade: 'M1', convictionCount: 200, percentageOfConvictions: 61.9 }],
+};
 
 function makeSuccess(overrides: Partial<ChargeOnlyResultSuccess> = {}): ChargeOnlyResultSuccess {
   return {
@@ -57,7 +107,7 @@ function makeSuccess(overrides: Partial<ChargeOnlyResultSuccess> = {}): ChargeOn
     dateRange: { start: '2025-01-01', end: '2026-06-30' },
     lastRefreshed: '2026-07-01T14:30:00.000Z',
     taxonomyVersion: '1.0.0',
-    aggregateRunId: '00000000-0000-0000-0000-0000000000aa',
+    aggregateRunId: AGGREGATE_RUN_ID,
     outcomes: { sampleSize: OUTCOME_SAMPLE_SIZE, thinData: false, rows: OUTCOME_ROWS },
     sentencing: {
       available: true,
@@ -65,7 +115,8 @@ function makeSuccess(overrides: Partial<ChargeOnlyResultSuccess> = {}): ChargeOn
       thinData: false,
       rows: SENTENCING_ROWS,
     },
-    // Task 35.2 type-compatibility only: the absent arm, rendered by 35.3.
+    // Default fixture keeps the absent arm: today's page (pin 2), with the
+    // present arms exercised by their own tests below.
     sentencingIndex: { available: false },
     links: { methodology: '/methodology', definitions: '/definitions' },
     ...overrides,
@@ -104,7 +155,7 @@ describe('ChargeOnlyResultView', () => {
     const outcomeTable = screen.getByRole('table', { name: RESULT_DISPLAY_COPY.outcomeCaption });
     expect(within(outcomeTable).getByText('Dismissed')).toBeInTheDocument();
     const outcomeSection = within(screen.getByTestId('section-outcome'));
-    expect(outcomeSection.getByText(formatSampleSize(OUTCOME_SAMPLE_SIZE))).toBeInTheDocument();
+    expect(outcomeSection.getByText(formatRecordsLabel(OUTCOME_SAMPLE_SIZE))).toBeInTheDocument();
 
     // Sentencing distribution with its own, independent sample size — scoped
     // the same way.
@@ -114,16 +165,23 @@ describe('ChargeOnlyResultView', () => {
     expect(within(sentencingTable).getByText('Probation')).toBeInTheDocument();
     const sentencingSection = within(screen.getByTestId('section-sentencing'));
     expect(
-      sentencingSection.getByText(formatSampleSize(SENTENCING_SAMPLE_SIZE)),
+      sentencingSection.getByText(formatSentenceComponentsLabel(SENTENCING_SAMPLE_SIZE)),
     ).toBeInTheDocument();
 
     // The metadata aside pins the sanctioned duplication (DP-3.2 STOP ruling):
-    // both context labels and both formatted sample-size values.
+    // both context labels and both formatted sample values (35.3 reconciled).
     const aside = within(screen.getByTestId('section-metadata'));
     expect(aside.getByText(CHARGE_RESULT_COPY.asideOutcomesLabel)).toBeInTheDocument();
     expect(aside.getByText(CHARGE_RESULT_COPY.asideSentencingLabel)).toBeInTheDocument();
-    expect(aside.getByText(formatSampleSize(OUTCOME_SAMPLE_SIZE))).toBeInTheDocument();
-    expect(aside.getByText(formatSampleSize(SENTENCING_SAMPLE_SIZE))).toBeInTheDocument();
+    expect(aside.getByText(formatRecordsLabel(OUTCOME_SAMPLE_SIZE))).toBeInTheDocument();
+    expect(
+      aside.getByText(formatSentenceComponentsLabel(SENTENCING_SAMPLE_SIZE)),
+    ).toBeInTheDocument();
+
+    // Provenance line (35.3, pin 7) at the bottom of the aside.
+    expect(aside.getByTestId('aggregate-run-line')).toHaveTextContent(
+      formatAggregateRunLabel(AGGREGATE_RUN_ID),
+    );
 
     // Coverage note, responsible-use notice + both links.
     expect(screen.getByText(RESULT_DISPLAY_COPY.coverageNote)).toBeInTheDocument();
@@ -203,5 +261,78 @@ describe('ChargeOnlyResultView', () => {
       'section-sentencing',
       'section-metadata',
     ]);
+  });
+
+  it('leads with the index section on the present arm (35.3 pin 1) with the detail caption below', () => {
+    const { container } = render(
+      <ChargeOnlyResultView data={makeSuccess({ sentencingIndex: INDEX_PRESENT })} />,
+    );
+
+    expect(sectionOrder(container)).toEqual([
+      'section-summary',
+      'section-responsible-use',
+      'section-sentencing-index',
+      'section-sentencing',
+      'section-outcome',
+      'section-metadata',
+    ]);
+
+    // The lead block carries the conditional caption; the component-grain
+    // block below renders under the distinct detail caption (pin 11), so
+    // today's conditional-framing caption is absent on this arm.
+    expect(screen.getByRole('table', { name: SENTENCING_INDEX_CAPTION })).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: SENTENCING_DETAIL_CAPTION })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('table', { name: RESULT_DISPLAY_COPY.sentencingCaption }),
+    ).not.toBeInTheDocument();
+
+    // Wedge disclosure and grade-mix line render inside the lead block.
+    const indexSection = within(screen.getByTestId('section-sentencing-index'));
+    expect(indexSection.getByTestId('index-wedge-disclosure')).toBeInTheDocument();
+    expect(indexSection.getByTestId('index-grade-mix')).toBeInTheDocument();
+  });
+
+  it('renders outcome-first with the fallback line replacing the notice on the zero-sentenced arm (35.3 pin 3)', () => {
+    const { container } = render(
+      <ChargeOnlyResultView
+        data={makeSuccess({
+          sentencingIndex: INDEX_ZERO_SENTENCED,
+          sentencing: { available: false, message: CHARGE_SENTENCING_UNAVAILABLE_MESSAGE },
+        })}
+      />,
+    );
+
+    // Index summary is thin, so the page-level callout slot renders too.
+    expect(sectionOrder(container)).toEqual([
+      'section-summary',
+      'section-responsible-use',
+      'section-thin-data',
+      'section-outcome',
+      'section-sentencing-index',
+      'section-metadata',
+    ]);
+
+    // The ruling-4 fallback line carries the served conviction count and
+    // REPLACES the generic notice (ruling Q4).
+    expect(
+      screen.getByText(formatZeroSentencedFallback(INDEX_ZERO_SENTENCED.summary.convictions)),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(CHARGE_SENTENCING_UNAVAILABLE_MESSAGE)).not.toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: SENTENCING_INDEX_CAPTION })).not.toBeInTheDocument();
+  });
+
+  it('includes the index thin flag in the page-level callout OR (present arm)', () => {
+    render(
+      <ChargeOnlyResultView
+        data={makeSuccess({
+          sentencingIndex: {
+            ...INDEX_PRESENT,
+            summary: { ...INDEX_PRESENT.summary, thinData: true },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText(RESULT_DISPLAY_COPY.thinDataCalloutBody)).toBeInTheDocument();
   });
 });
