@@ -1331,3 +1331,182 @@ def test_disposition_section_placeholder_lines_stay_inert():
     with_lines.pop("parsed_at")
     without_lines.pop("parsed_at")
     assert with_lines == without_lines
+
+
+# ===========================================================================
+# Task 34.2: sentence-condition fragment guard. A condition line beginning
+# with a slash-date also matches the disposition charge-line regex (month
+# digit = sequence); pre-guard it overwrote a real capture (fragment-victim
+# class) or left a phantom current_charge_seq that KeyError'd at the
+# component save (the quarantined CP KeyError class). The guard rejects the
+# match on the structural date-head shape; the line follows the natural
+# non-charge-line flow, silently. Synthetic text only.
+# ===========================================================================
+
+_MC_HEAD_TWO_CHARGES = [
+    *_MC_HEAD[:-1],
+    "1 1 18 § 2701 M1 Simple Assault 01/01/2025 X1234567",
+    "2 2 18 § 3921 M2 Theft 01/01/2025 X1234567",
+]
+
+
+def build_mc_two_charges(*disposition_body: str) -> str:
+    """An MC sheet with two charges plus a DISPOSITION section body."""
+    return "\n".join(
+        [*_MC_HEAD_TWO_CHARGES, "DISPOSITION SENTENCING/PENALTIES", *disposition_body]
+    )
+
+
+def test_fragment_guard_rejects_slash_date_line_preserves_disposition():
+    """The victim shape: a slash-date condition line whose month digit equals
+    an existing sequence no longer overwrites that charge's real disposition,
+    re-dates it, or joins the component raw_text. Silent — no warning."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Reyes, Judge M. 01/15/2025",
+        "Probation",
+        "Min of 6.00 Months Max of 12.00 Months",
+        "1/20/25 Report to courtroom 402",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    assert len(record["charges"]) == 1
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    assert charge["disposition_date"] == "2025-01-15"
+    assert charge["disposition_judge_raw"] == "Reyes, Judge M."
+    [sentence] = charge["sentences"]
+    assert "courtroom" not in sentence["raw_text"]
+    assert warnings == []
+
+
+@pytest.mark.parametrize(
+    "fragment_line",
+    [
+        "1/20/25 Report to courtroom 402",
+        "1/20/2025 Surrender by noon",
+        "1/20/25",
+        "1/20/25, then report",
+    ],
+)
+def test_fragment_shapes_rejected_at_charge_match(fragment_line):
+    """Rejection boundary: D/DD/YY and D/DD/YYYY heads, bare fragments, and
+    non-digit boundaries after the year (recon-exact ``(?!\\d)``) all reject.
+    Month digit 1 = the real sequence, so any miss would overwrite Guilty."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Reyes, Judge M. 01/15/2025",
+        fragment_line,
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    assert charge["disposition_date"] == "2025-01-15"
+    assert warnings == []
+
+
+@pytest.mark.parametrize(
+    ("charge_line", "expected_disposition"),
+    [
+        ("1 / Simple Assault Guilty", "Guilty"),
+        ("1/Simple Assault Guilty", "Guilty"),
+        ("1/15 Grams Possession Guilty", "15 Grams Possession Guilty"),
+        ("1/15/20261 Count Guilty", "15/20261 Count Guilty"),
+    ],
+)
+def test_genuine_charge_lines_still_match(charge_line, expected_disposition):
+    """The false-positive lock: canonical spaced columns, tight spacing, a
+    numeric two-segment head (no second slash), and a 5-digit run after the
+    second slash (not a year) all still match as charge lines."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        charge_line,
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == expected_disposition
+
+
+def test_fragment_guard_preserves_component_attachment():
+    """The cross-sequence steal (F-C class): a component line after the
+    fragment stays with the true owner (charge 2), not the month-digit
+    charge (charge 1)."""
+    page = build_mc_two_charges(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Reyes, Judge M. 01/15/2025",
+        "2 / Theft Guilty",
+        "Reyes, Judge M. 01/15/2025",
+        "Probation",
+        "Min of 6.00 Months Max of 12.00 Months",
+        "1/20/25 Report to courtroom 402",
+        "Fines and Costs",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    first, second = record["charges"]
+    assert first["disposition_raw"] == "Guilty"
+    assert first["sentences"] == []
+    assert [s["sentence_type"] for s in second["sentences"]] == [
+        "Probation",
+        "Fines and Costs",
+    ]
+    assert warnings == []
+
+
+def test_fragment_guard_phantom_sequence_with_component_line_parses():
+    """The crash class (F-Q): a fragment whose month digit matches NO charge,
+    followed by a component block. Pre-guard this KeyError'd at the component
+    save (phantom current_charge_seq); post-guard it parses and the component
+    attaches to the real current charge."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Reyes, Judge M. 01/15/2025",
+        "9/20/25 Report to courtroom 402",
+        "Probation",
+        "Min of 6.00 Months Max of 12.00 Months",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    [sentence] = charge["sentences"]
+    assert sentence["sentence_type"] == "Probation"
+    assert warnings == []
+
+
+def test_rejected_fragment_with_duration_units_joins_component_raw_text():
+    """The natural non-charge-line flow, duration arm: a rejected fragment
+    carrying duration units joins the OPEN component's raw_text via the
+    existing continuation heuristic — the pinned raw_text delta arm."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Reyes, Judge M. 01/15/2025",
+        "Probation",
+        "Min of 6.00 Months Max of 12.00 Months",
+        "1/20/25 surrender within 10 days",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    [sentence] = charge["sentences"]
+    assert "surrender within 10 days" in sentence["raw_text"]
+    assert warnings == []
+
+
+def test_rejected_fragment_in_judge_slot_leaves_judge_capture_intact():
+    """The natural non-charge-line flow, judge-slot arm: a fragment between
+    the charge line and its judge line is skipped with the slot still open —
+    the judge is captured from the next line as before."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "1/20/25 Report to courtroom 402",
+        "Reyes, Judge M. 01/15/2025",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    assert charge["disposition_judge_raw"] == "Reyes, Judge M."
+    assert warnings == []

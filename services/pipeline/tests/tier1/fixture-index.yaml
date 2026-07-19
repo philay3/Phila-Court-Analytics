@@ -406,3 +406,14 @@ fixtures:
     expected_warnings: []
     layout_unverified: false
     synthetic: true
+
+  - filename: condition_date_fragment_cp.txt
+    court_type: Common Pleas
+    scenario: 34.2 fragment guard — a sentence-condition line beginning with a
+      slash-date (month digit = an earlier sequence) is rejected at the
+      charge-line match; the real plea/nolle dispositions survive, no phantom
+      overwrite, and the trailing component attaches to the true owner
+    expected_charge_count: 2
+    expected_warnings: []
+    layout_unverified: false
+    synthetic: true

@@ -1,0 +1,62 @@
+{
+  "error": null,
+  "record": {
+    "case": {
+      "assigned_judge_raw": "Rivera, Judge L.",
+      "case_status": "Closed",
+      "county": "Philadelphia",
+      "court_type": "Common Pleas",
+      "cross_court_dockets": null,
+      "dc_number": null,
+      "defendant_hash": "448d52bbde9d979a881b33d5d1102f5600bfe8b789da3e8d45aa00d5b0b59991",
+      "filed_date": "2025-03-02",
+      "otn": "X 2468135-7"
+    },
+    "charges": [
+      {
+        "disposition_date": "2026-09-14",
+        "disposition_judge_raw": "Rivera, Judge L.",
+        "disposition_raw": "Nolle Prossed",
+        "grade": null,
+        "offense": "Illegal Gambling",
+        "sentences": [],
+        "sequence": 1,
+        "statute": "18 \u00a7 5512 M1"
+      },
+      {
+        "disposition_date": "2026-09-14",
+        "disposition_judge_raw": "Rivera, Judge L.",
+        "disposition_raw": "Guilty Plea - Negotiated",
+        "grade": null,
+        "offense": "Burglary",
+        "sentences": [
+          {
+            "max_days": 1080,
+            "min_days": 360,
+            "program": "Probation",
+            "raw_text": "Probation, Min of 12.00 Months Max of 36.00 Months",
+            "sentence_date": "2026-09-14",
+            "sentence_type": "Probation"
+          },
+          {
+            "max_days": null,
+            "min_days": null,
+            "program": "Fines and Costs",
+            "raw_text": "Fines and Costs",
+            "sentence_date": "2026-09-14",
+            "sentence_type": "Fines and Costs"
+          }
+        ],
+        "sequence": 2,
+        "statute": "18 \u00a7 3502 F1"
+      }
+    ],
+    "docket_number": "CP-51-CR-0000000-2025",
+    "notes": [],
+    "parser_version": 2,
+    "related_cases": []
+  },
+  "review_needed": false,
+  "status": "parsed",
+  "warnings": []
+}

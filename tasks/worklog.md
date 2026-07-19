@@ -8016,3 +8016,69 @@ the homepage copy-heavy phase per the amendment's for-the-record note.
   no corpus tooling runs between 34.1 and the batch rerun (34.5 follows
   34.4 in the ruled order). Expected 34.1 delta class at the rerun:
   raw-string change only on exactly the 76 truncation-class rows.
+
+## Task 34.2 — Sentence-Condition Fragment Guard (2026-07-19)
+
+- **Pre-build mini-gate (adjudicated plan amendment):** a read-only corpus
+  scan (`r3supp_fragment_scan.py` + console + `r3-supplement.md` in
+  `~/court-data/reports/phase34-recon-20260719/`) simulated the disposition
+  loop pre- and post-guard over all 17,619 stored extraction artifacts,
+  quarantined docs included. Findings, CONFIRMED as 34.2's expected delta
+  class: 27 docs / 60 predicate-matching lines → F-V victim recovery
+  (4 CP dockets, disposition_raw restoration ONLY — R3's component
+  re-attachment claim formally withdrawn), F-C component recovery (4 CP
+  dockets gain components on the real charge), F-Q quarantine exit (the
+  4 CP KeyError docs crash on a fragment-set phantom sequence and PARSE
+  post-guard), F-0 verified inert (15 docs, zero diffs proven). Fidelity:
+  0 replica mismatches, 4/4 victim agreement with zero extras, crash
+  reproduced on exactly the production quartet.
+- **Quarantine adjudication restated (ruled at the mini-gate):** the
+  28.2/aug2025 "isolated expected CP KeyError class" is no longer isolated
+  or unexplained — mechanism: fragment-set phantom sequence KeyError at the
+  component save; exit: this guard. Batch-rerun ledger: parse_failed 9→5
+  from 34.2's effect, 5→0 after 34.4 + reflow; loaded +4 (F-Q) at the rerun
+  cycle and +5 (MC) at reflow. 34.5's spec carries the updated ledger.
+- **What was built:** (1) `_CONDITION_DATE_FRAGMENT_RE` =
+  `^\d{1,2}/\d{1,2}/\d{2,4}(?!\d)` (recon-exact boundary, ruled) and a
+  match-rejection gate at the disposition charge-line branch: a slash-date-
+  leading line no longer matches as a charge line and follows the natural
+  non-charge-line flow, SILENTLY (ruled — a warning would write envelope
+  diffs across healthy dockets; the scan confirmed zero warning motion
+  corpus-wide). No repair table, no adjacent-line reads. (2) Tier-1
+  additive pair `condition_date_fragment_cp.txt` + golden (two charges,
+  plea/nolle forms, fragment whose month digit = sequence 1, trailing
+  component proving true-owner attachment) + index entry (43 → 44).
+  (3) Unit tests: victim shape preserved + silent
+  (`test_fragment_guard_rejects_slash_date_line_preserves_disposition`),
+  rejection boundary shapes (`test_fragment_shapes_rejected_at_charge_match`),
+  false-positive lock (`test_genuine_charge_lines_still_match`),
+  cross-sequence steal (`test_fragment_guard_preserves_component_attachment`),
+  crash class parses — pre-guard KeyError shape
+  (`test_fragment_guard_phantom_sequence_with_component_line_parses`),
+  post-rejection duration-arm raw_text join
+  (`test_rejected_fragment_with_duration_units_joins_component_raw_text`),
+  judge-slot arm (`test_rejected_fragment_in_judge_slot_leaves_judge_capture_intact`).
+  Lock verification: with the predicate neutralized in-memory, the victim
+  overwrite and the phantom KeyError both reproduce.
+- **Golden write:** `pipeline run-fixtures --update-goldens` wrote the ONE
+  new tier-1 golden `condition_date_fragment_cp.json`
+  (`tier1: match=43 diverged=0 updated=0 new=1 missing=0`) — no existing
+  golden touched.
+- **Files touched:** `services/pipeline/src/pipeline/docket_parser.py`,
+  `tests/test_docket_parser.py`,
+  `tests/tier1/fixtures/condition_date_fragment_cp.txt`,
+  `tests/tier1/goldens/condition_date_fragment_cp.json`,
+  `tests/tier1/fixture-index.yaml`, `tasks/worklog.md`.
+- **Deviations from plan:** none in code. Plan amendments all ruled at the
+  mini-gate: scan-before-build; amended delta enumeration (above); phantom
+  test gains a following component-start line.
+- **Notes for next tasks (34.3–34.5):** shared-branch adjacency honored —
+  the 34.3 token gate lands in the same branch with a disjoint predicate
+  (`§`-in-token, after token derivation); no restructuring was done for it.
+  Sequencing invariant continues: `ACCEPTED_ENVELOPE_VERSIONS` stays {6};
+  envelope 6→7 rides 34.4. Expected 34.2 delta at the batch rerun: F-V /
+  F-C / F-Q / F-0 exactly (tier-2 diverged +8, failed 9→5, golden_missing
+  +4); anything outside those signatures is unattributed → STOP. If any F-C
+  docket also carries Rule 600 / concat class membership, per-diff
+  attribution handles co-membership (ruled — expected handling, not
+  anomaly).

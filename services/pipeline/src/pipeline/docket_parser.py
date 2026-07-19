@@ -97,6 +97,23 @@ DISPO_SKIP_HEADERS = {
     "Sentence Conditions",
 }
 
+# --- 34.2 fragment guard -----------------------------------------------------
+# A sentence-condition line that BEGINS with a slash-date (D/DD/YY or
+# D/DD/YYYY) also matches the disposition charge-line regex: its month digit
+# parses as a charge sequence and the date tail plus condition text becomes
+# that sequence's disposition_raw — overwriting a real capture when the
+# sequence exists, or leaving a phantom current_charge_seq that KeyErrors at
+# the component save when it does not (the quarantined CP KeyError class).
+# The guard rejects the charge-line MATCH when the line itself is a slash-date
+# head; the line then follows the natural non-charge-line flow, silently, like
+# every other condition line. Structural shape only — no string table, no
+# adjacent-line reads. The boundary is non-digit after the year (recon-exact,
+# R3 supplement): a genuine charge line prints "<seq> / <offense…>" with
+# whitespace-separated columns and can never satisfy the zero-whitespace date
+# head; any junk shape the predicate misses keeps today's behavior
+# (false-negative bias, deliberate).
+_CONDITION_DATE_FRAGMENT_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}(?!\d)")
+
 
 # --- Item 1: junk judge guard (Task 18.2) -----------------------------------
 # A judge slot sometimes captures a sentence fragment instead of a name (the
@@ -833,6 +850,10 @@ def parse_docket_text(
             continue
 
         charge_match = re.match(r"^(\d+)\s*/\s*(.*)$", line_str)
+        if charge_match and _CONDITION_DATE_FRAGMENT_RE.match(line_str):
+            # 34.2: a slash-date-leading condition line is not a charge line.
+            # Reject the match; the line takes the non-charge-line flow below.
+            charge_match = None
         if charge_match:
             save_current_sentence()
             seq = int(charge_match.group(1))
