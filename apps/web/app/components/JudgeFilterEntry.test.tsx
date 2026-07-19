@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { JUDGE_FILTER_HELP_MESSAGE } from '@pca/shared';
 import type { JudgeSearchResult } from '@pca/shared';
-import { CHARGE_RESULT_COPY } from './charge-result-copy.js';
 import { JudgeFilterEntry } from './JudgeFilterEntry.js';
 
 const DEBOUNCE_MS = 250;
@@ -41,9 +41,13 @@ afterEach(() => {
 });
 
 describe('JudgeFilterEntry', () => {
-  it('renders the availability-caveat help copy', () => {
+  it('renders the sanctioned shared help line (DP-5) and nothing more', () => {
     render(<JudgeFilterEntry chargeSlug="theft" />);
-    expect(screen.getByText(CHARGE_RESULT_COPY.judgeFilterHelp)).toBeInTheDocument();
+    expect(screen.getByText(JUDGE_FILTER_HELP_MESSAGE)).toBeInTheDocument();
+    // The collapse is total: the help paragraph carries the shared line alone.
+    expect(document.getElementById('judge-filter-help')?.textContent).toBe(
+      JUDGE_FILTER_HELP_MESSAGE,
+    );
   });
 
   it('routes to the judge-specific result when a judge is selected', async () => {

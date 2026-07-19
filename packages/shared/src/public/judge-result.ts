@@ -33,6 +33,14 @@ export const JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE =
  */
 export const JUDGE_NOT_FOUND_MESSAGE = 'No judge matches the requested identifier.';
 
+/**
+ * The ONLY judge-filter help line (task DP-5, sanctioned). Rendered
+ * byte-identically wherever a judge-filter control explains itself — the
+ * homepage disclosure and the charge-page filter entry — never re-typed and
+ * never joined by additional help sentences.
+ */
+export const JUDGE_FILTER_HELP_MESSAGE = 'Judge-specific results are shown where available.';
+
 export const judgeSummarySchema = Type.Object(
   {
     id: Type.String({ format: 'uuid' }),

@@ -5,12 +5,25 @@ import {
   validJudgeSpecificResultSuccess,
   validJudgeSpecificResultUnavailable,
 } from '../test-support/fixtures.js';
+import { scanPublicCopy } from './copy-safety.js';
 import {
+  JUDGE_FILTER_HELP_MESSAGE,
   JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE,
   judgeSpecificResultResponseSchema,
   judgeSpecificResultSuccessSchema,
   judgeSpecificResultUnavailableSchema,
 } from './judge-result.js';
+
+describe('JUDGE_FILTER_HELP_MESSAGE', () => {
+  it('is the sanctioned single line and scans clean', () => {
+    expect(JUDGE_FILTER_HELP_MESSAGE).toBe('Judge-specific results are shown where available.');
+    expect(scanPublicCopy(JUDGE_FILTER_HELP_MESSAGE)).toEqual([]);
+  });
+
+  it('contains no em dash (R4: the rule binds new copy)', () => {
+    expect(JUDGE_FILTER_HELP_MESSAGE).not.toContain('—');
+  });
+});
 
 describe('judgeSpecificResultResponseSchema (top-level union)', () => {
   it('accepts both arms', () => {

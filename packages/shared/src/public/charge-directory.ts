@@ -17,6 +17,15 @@ import { sampleSizeSchema } from './common.js';
  */
 export const CHARGE_DIRECTORY_UNAVAILABLE_MESSAGE = 'No charges have published results yet.';
 
+/**
+ * Homepage featured-charges section (task DP-5, sanctioned). The section is
+ * fed by the top rows of the directory response in served order — zero new
+ * API surface — and these are its only two chrome strings: the heading and
+ * the browse-all link to /charges. Rendered verbatim, never re-typed.
+ */
+export const FEATURED_CHARGES_HEADING = 'Charges with the largest sample sizes';
+export const BROWSE_ALL_CHARGES_LINK_TEXT = 'Browse all charges';
+
 export const chargeDirectoryEntrySchema = Type.Object(
   {
     slug: Type.String(),
