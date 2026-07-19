@@ -95,11 +95,11 @@ def test_collect_rejects_cooldown_below_floor(monkeypatch, capsys):
     assert "floor" in entry["message"]
 
 
-def test_legal_conditions_are_not_flags_and_are_hardcoded():
+def test_locked_conditions_are_not_flags_and_are_hardcoded():
     from pipeline.collector import engine
 
     parser = cli.build_parser()
-    # No flag exists to change the counsel-locked ceilings.
+    # No flag exists to change the policy-locked ceilings.
     for bad in ("--hard-ceiling-minutes", "--post-block-cooldown-seconds"):
         try:
             parser.parse_args(["collect", bad, "10"])

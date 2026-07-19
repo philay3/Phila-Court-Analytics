@@ -6,7 +6,7 @@ flag, and what each one means. Update in the same task whenever a collector flag
 The collector fetches docket-sheet PDFs from the UJS portal into directories under
 `~/court-data/` (never inside a repo). It refuses to run in CI, needs the optional Playwright
 group installed (`uv sync --group collector`, `uv run playwright install chromium`), and enforces
-every counsel condition in code — the locked values in the last section are not flags and cannot
+every locked collection condition in code — the locked values in the last section are not flags and cannot
 be changed from the command line.
 
 ```
@@ -63,7 +63,7 @@ pipeline collect --mode refresh --court both \
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
 | `--mode`                   | `enumerate`, `search`, or `refresh` (see above).                                                                                                                                       | `enumerate`                     |
 | `--court`                  | Enumerate: `MC` only. Search: `MC`/`CP`/`both` — gates which harvested rows are FETCHED. Refresh: `MC`/`CP`/`both` filters the target list; **must be explicit** (no default applied). | `MC` (enumerate/search)         |
-| `--max-minutes`            | Wall-clock stop in minutes. Hard-capped at the counsel-locked 240-minute ceiling regardless of value.                                                                                  | `60`                            |
+| `--max-minutes`            | Wall-clock stop in minutes. Hard-capped at the policy-locked 240-minute ceiling regardless of value.                                                                                   | `60`                            |
 | `--report-dir`             | Parent for per-run report dirs (`<run-id>/attempts.jsonl` + `run-report.json`). Must be outside any git tree.                                                                          | `~/court-data/collection-runs/` |
 | `--headless`               | Run the browser headless. Default is headful — the proven configuration and the honest posture.                                                                                        | off (headful)                   |
 | `--batch-size`             | Real portal requests per batch before the inter-batch cooldown. Operational parameter.                                                                                                 | `100`                           |
@@ -108,16 +108,16 @@ the derived target list — that is the scoped already-present bypass) and never
 
 ---
 
-## Counsel-locked values (NOT flags — cannot be changed from any command line)
+## Policy-locked values (NOT flags — cannot be changed from any command line)
 
-| Condition               | Value                                                                          | Source                                  |
-| ----------------------- | ------------------------------------------------------------------------------ | --------------------------------------- |
-| Session ceiling         | 240 minutes                                                                    | ADR 0002 (≤ 4h continuous per session)  |
-| Post-block cooldown     | 300 seconds                                                                    | ADR 0002 amendment (≥ 2-minute minimum) |
-| Per-request delay       | 2.0–5.0 s jittered, after EVERY portal request                                 | COL-1 FIX 1                             |
-| Block streak stop       | 5 consecutive blocks                                                           | ADR 0002 / COL-1                        |
-| Error streak stop       | 5 consecutive errors                                                           | COL-1 FIX 2                             |
-| Daily cap (operational) | ≤ 8h collection per day, break between sessions — runbook discipline, not code | ADR 0002                                |
+| Condition               | Value                                                                          | Source                                       |
+| ----------------------- | ------------------------------------------------------------------------------ | -------------------------------------------- |
+| Session ceiling         | 240 minutes                                                                    | project policy (≤ 4h continuous per session) |
+| Post-block cooldown     | 300 seconds                                                                    | project policy (≥ 2-minute minimum)          |
+| Per-request delay       | 2.0–5.0 s jittered, after EVERY portal request                                 | COL-1 FIX 1                                  |
+| Block streak stop       | 5 consecutive blocks                                                           | project policy / COL-1                       |
+| Error streak stop       | 5 consecutive errors                                                           | COL-1 FIX 2                                  |
+| Daily cap (operational) | ≤ 8h collection per day, break between sessions — runbook discipline, not code | project policy                               |
 
 Every run writes `attempts.jsonl` (per-attempt good-faith record; docket numbers permitted) and
 `run-report.json` (counts, statuses, parameters — no docket numbers) under

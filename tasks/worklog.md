@@ -2464,8 +2464,8 @@ the record field there.
 - **Notes for next task:** Running the collection is the human step (Chops, a
   weekend). Collected PDFs are NEW INPUTS in `~/court-data/intake/`, not fixtures
   or baseline members; they enter the pipeline later via the 16.3 manual-import
-  path after triage. Bot-check written confirmation remains an ADR 0002 open item
-  gating extended/regular collection.
+  path after triage. Bot-check confirmation remains an open source-access policy
+  item gating extended/regular collection.
 - **Verification (all three pipeline CI gates green):**
   - `.venv/bin/ruff check src tests` — All checks passed.
   - `.venv/bin/ruff format --check .` — 42 files already formatted.
@@ -2503,7 +2503,7 @@ the record field there.
     close); operator abort exits cleanly after the report is written.
   - **FIX 4 — operational flags.** Added `--batch-size` (default 40) and
     `--batch-cooldown-seconds` (default 240, enforced 60s floor). The
-    counsel-locked 240-minute ceiling and 120s post-block cooldown stay hardcoded
+    policy-locked 240-minute ceiling and 120s post-block cooldown stay hardcoded
     constants — no flags, unoverridable.
   - **FIX 5 — this worklog record.**
 - **Files touched:** `collector/classification.py` (new `no_results`/`unauthorized`
@@ -3559,12 +3559,12 @@ the record field there.
   + `search_transport.py`) is the natural next cleanup.
  26d4f20 (task COL-2: Date-Filed search-mode collector)
 
-## Task COL-2a — Collector Observability + Pacing Defaults + ADR 0002 Cooldown Amendment (2026-07-12)
+## Task COL-2a — Collector Observability + Pacing Defaults + Cooldown Policy Amendment (2026-07-12)
 
 - **What was built:** search-mode console observability (log lines only, no
   behavior/ledger/report-schema change), updated operational pacing defaults,
-  and a counsel-governed post-block cooldown raise, with ADR 0002 amended to
-  record the "minimum of 2 minutes" reading.
+  and a policy-governed post-block cooldown raise, with the source-access
+  policy record amended to record the "minimum of 2 minutes" reading.
   - **AC-1 window line:** the `complete`-window log line gains `fetched`,
     `already_present`, `fetch_failures` as **flat integers summed over the
     run's FETCHED courts** (harvested stays per-court `cp_`/`mc_` because both
@@ -3588,14 +3588,13 @@ the record field there.
     reference the engine constants (single source of truth; kills future drift)
     and `SearchParams` literal defaults were aligned to 100/120.
   - **PD-3 / AC-5:** `POST_BLOCK_COOLDOWN_SECONDS` 120→300, still hardcoded and
-    flag-proof, with a comment citing ADR 0002's minimum wording.
-  - **AC-6 ADR amendment:** the non-disruption cooldown sentence now reads "a
-    cooldown of at least 2 minutes"; a new `## Amendments` section (2026-07-12)
-    records the minimum reading (basis: operator attestation of counsel's
-    2026-07-11 written confirmation); the Consequences echo updated to
+    flag-proof, with a comment citing the policy minimum wording.
+  - **AC-6 policy amendment:** the non-disruption cooldown sentence now reads
+    "a cooldown of at least 2 minutes"; a new `## Amendments` section
+    (2026-07-12) records the minimum reading; the Consequences echo updated to
     "≥2-minute"; batch-pacing figures left untouched as operational parameters.
-    The AC-6 STOP condition did NOT apply: the current ADR text was flat
-    "2-minute" but an operator-attested clarification exists, so the amendment
+    The AC-6 STOP condition did NOT apply: the recorded text was flat
+    "2-minute" but a clarified minimum reading exists, so the amendment
     proceeds rather than stopping.
 - **Files touched:** `services/pipeline/src/pipeline/collector/engine.py`
   (constants + comments), `.../collector/search_engine.py` (log lines +
@@ -3603,9 +3602,9 @@ the record field there.
   defaults reference engine constants + help text),
   `services/pipeline/tests/test_collector_search_engine.py` (5 new observability
   tests), `tests/test_collector_engine.py` (post-block test renamed to
-  `test_post_block_cooldown_meets_counsel_minimum`, asserts ≥120 and ==300),
+  `test_post_block_cooldown_meets_policy_minimum`, asserts ≥120 and ==300),
   `tests/test_collector_cli.py` (defaults 40/240→100/120, POST_BLOCK 120→300),
-  `agent-docs/decisions/0002-source-access.md`, `tasks/worklog.md`.
+  the source-access policy record, `tasks/worklog.md`.
 - **Scope note / approved deviation:** `cli.py` was NOT in the task's original
   ALLOWED FILES; it was added under the plan-review §7 Option-A approval because
   the effective CLI pacing defaults live in `cli.py`'s argparse literals, not
@@ -3614,8 +3613,8 @@ the record field there.
   after COL-2 merged (origin/main tip `5d919fa`), per the revised branch-point
   instruction.
 - **Existing tests updated (AC-8):** `test_post_block_cooldown_is_two_minutes`
-  → `test_post_block_cooldown_meets_counsel_minimum` (engine); `test_collect_defaults_parse`
-  batch_size/cooldown 40/240→100/120 (cli); `test_legal_conditions_are_not_flags_and_are_hardcoded`
+  → `test_post_block_cooldown_meets_policy_minimum` (engine); `test_collect_defaults_parse`
+  batch_size/cooldown 40/240→100/120 (cli); `test_locked_conditions_are_not_flags_and_are_hardcoded`
   POST_BLOCK 120→300 (cli). Tests that reference the constants by name adapted
   automatically. Floor-rejection test unchanged.
 - **Notes for next task:** the F4 transport consolidation remains the natural
@@ -5020,7 +5019,7 @@ the record field there.
   MC+CP collection is the approved single interleaved process: `--court both`
   (already wired) is now correct under scoped ledgers — one search serves both
   courts' rows (strictly less portal load than two passes), one clock, one
-  RunGuard, one cooldown, so the counsel caps / 300s post-block cooldown /
+  RunGuard, one cooldown, so the locked caps / 300s post-block cooldown /
   block-streak stop are aggregate across courts by construction (tests prove
   streak does not reset on court switch, cooldown idles the whole run, one
   240-min budget). Live output labels courts distinctly: per-window and
@@ -5156,7 +5155,7 @@ the record field there.
   `raw.source_documents.file_hash`; deliberately NOT the NON_TERMINAL_CASE
   warning, which misses partially disposed dockets). `collector/refresh_engine.py`
   is the pure injected-dependency loop: fetches via the court-agnostic
-  enumeration transport (CP and MC identically), reuses every counsel-locked
+  enumeration transport (CP and MC identically), reuses every policy-locked
   constant (240-min ceiling, 300s post-block cooldown, jitter band, batch
   floor, RunGuard streaks, fail-closed classify), skips targets already in the
   cycle's refresh dir (`already_fetched`, streak-neutral), sha256-classifies
@@ -6231,7 +6230,7 @@ in a11y-mobile-pass.md, `decisions/...`, `intake/...` sibling links).
 CLAUDE.md's Documentation rules block replaced with the approved text
 (protection narrows from all of `docs/` to `docs/planning/`; agent docs
 go elsewhere under `docs/`), plus its two other path references updated
-(Reference docs section; ADR 0002 pointer). The original rule (commit
+(Reference docs section; source-access policy pointer). The original rule (commit
 4bd7231, task 2.2) existed for authorship separation — that rationale is
 preserved by the `docs/planning/` boundary.
 
@@ -7720,3 +7719,47 @@ sanctioned-string enumeration above is amended accordingly: the
 featured heading reads `Find your charge`, and `Recorded outcomes: `
 joins the enumeration. Judge-disclosure layout balance is banked to
 the homepage copy-heavy phase per the amendment's for-the-record note.
+
+## Task SEC-1 — Repo Scrub: Personal-Name Variants + Attribution Framing (2026-07-18)
+
+- **What was built:** a tracked-tree scrub, no functional change. (1)
+  Personal-name variants: the committed tree scanned clean — zero hits, no
+  edits needed (two judge-roster given-name matches are legitimate roster
+  content, inventoried and untouched). (2) The source-access decision record
+  was copied offline (byte-identical, hash-verified) and removed from
+  `docs/decisions/`; records 0001, 0003, 0004 remain and the numbering gap is
+  deliberate. (3) Attribution framing neutralized as plain project policy
+  across collector docs, docstrings/comments, CLI help text, and tests:
+  vocabulary now reads "policy-locked" / "locked collection conditions" /
+  "project policy", with every operational rule preserved at identical values
+  and enforcement (240-minute ceiling, 300s post-block cooldown, 2.0–5.0s
+  jitter, batch-cooldown floor, block/error streak stops, daily-cap runbook
+  discipline). Four 1:1 test renames, zero assertion changes. (4) All
+  cross-references to the removed decision record reworded as plain policy
+  statements (collector status line, locked-values table sources, refresh
+  runbook, engine/test comments, historical worklog vocabulary — entries keep
+  their dates, structure, and technical meaning). (5) The frontend-design
+  spec docx was confirmed already at its canonical offline home; it was never
+  in the tracked tree.
+- **Files touched:** `CLAUDE.md`, `docs/collector-commands.md`,
+  `docs/intake/refresh-runbook.md`, `services/pipeline/README.md`,
+  `services/pipeline/src/pipeline/cli.py`, `.../collector/engine.py`,
+  `.../collector/guard.py`, `.../collector/refresh_engine.py`,
+  `.../collector/search_engine.py`,
+  `services/pipeline/tests/test_collector_cli.py`,
+  `tests/test_collector_engine.py`, `tests/test_collector_refresh_engine.py`,
+  `tests/test_collector_search_cli.py`, `tasks/worklog.md`; one file removed
+  from `docs/decisions/`. Two operator-authored planning-doc lines landed as
+  a separate commit on the same branch.
+- **Test renames (1:1, behavior identical):**
+  `test_post_block_cooldown_meets_policy_minimum`,
+  `test_time_budget_clamped_to_locked_ceiling`,
+  `test_report_parameters_echo_policy_locked_values`,
+  `test_locked_conditions_are_not_flags_and_are_hardcoded` — the fourth was
+  term-set-driven (its old name carried the neutralized framing), same
+  treatment class as the approved three; flagged in the completion report.
+- **Deviations from plan:** only the fourth test rename above, which falls
+  under the reported term set and the approved rename treatment.
+- **Notes for next task:** public-copy disclaimer vocabulary is deliberate
+  product copy — inventoried as carved out, not scrubbed. Git history was
+  not rewritten.

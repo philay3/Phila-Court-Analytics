@@ -3,10 +3,10 @@
 All pacing and stop conditions live here, enforced in code — never in a shell
 wrapper and never dependent on operator attention:
 
-Legal conditions (counsel-locked, NOT overridable by any flag):
+Collection conditions (policy-locked, NOT overridable by any flag):
   - a hard 240-minute absolute ceiling on any run;
   - a cooldown of at least 2 minutes after ANY block response, before the
-    next request (we run 300s — above the minimum; see ADR 0002).
+    next request (we run 300s — above the minimum).
 
 Operational parameters (ours; re-evaluated after the baseline run):
   - a jittered 2.0–5.0s delay after every real portal request (FIX 1);
@@ -54,12 +54,11 @@ from pipeline.paths import inside_git_worktree
 
 logger = logging.getLogger("pipeline.collector")
 
-# --- Counsel-locked ceilings (NOT overridable by any flag) -----------------
+# --- Policy-locked ceilings (NOT overridable by any flag) ------------------
 HARD_CEILING_MINUTES = 240
-# ADR 0002 records the post-block cooldown condition as a MINIMUM of 2 minutes
-# (Amendment 2026-07-12, operator attestation of counsel's 2026-07-11 written
-# confirmation). 300s exceeds that minimum — a compliant, more-conservative
-# value. Hardcoded and flag-proof: it stays counsel-governed, never tunable.
+# Project policy sets the post-block cooldown at a MINIMUM of 2 minutes. 300s
+# exceeds that minimum — a more-conservative value. Hardcoded and flag-proof:
+# it stays policy-governed, never tunable.
 POST_BLOCK_COOLDOWN_SECONDS = 300
 
 # --- Operational parameters (ours; batch values are flag-tunable) ----------
@@ -264,7 +263,7 @@ def run(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # The 240-minute ceiling clamps the wall-clock budget: no flag can exceed
-    # it (FIX / legal condition). --max-minutes only ever shortens the run.
+    # it (FIX / locked condition). --max-minutes only ever shortens the run.
     budget_seconds = min(params.max_minutes, HARD_CEILING_MINUTES) * 60
 
     dockets = docket_range(params.court, params.year, params.start_seq, params.count)
@@ -405,7 +404,7 @@ def run(
         sleep(delay)
         delays_taken += 1
 
-        # Post-block cooldown: 300s (≥2-minute counsel minimum) after ANY
+        # Post-block cooldown: 300s (≥2-minute policy minimum) after ANY
         # block, before the next request (on top of the per-request delay).
         if outcome == OUTCOME_BLOCKED:
             logger.info(

@@ -156,7 +156,7 @@ attempt logs its docket number, outcome, batch number, and running
 hits/misses/blocks counts; cooldowns log a notice. **Ctrl-C is graceful** — it
 finishes the in-flight request, writes the report, and exits.
 
-### Enforced legal conditions (counsel-locked, NOT overridable by any flag)
+### Enforced collection conditions (policy-locked, NOT overridable by any flag)
 
 - **Hard 240-minute ceiling** on any run — `--max-minutes` can only shorten it.
 - **2-minute cooldown** after any block/bot-check response, before the next

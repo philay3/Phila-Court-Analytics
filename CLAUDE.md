@@ -131,7 +131,7 @@ the committed tree still imported a module the same task had already deleted.
 
 ## Data source & collector status
 
-Collector status: UNPARKED per ADR 0002 (docs/decisions/0002-source-access.md) — collection conditions live there; the baseline-run task will carry the operational spec.
+Collector status: UNPARKED — collection conditions are enforced in code and documented in docs/collector-commands.md; the baseline-run task will carry the operational spec.
 
 ## Real-data access policy (2026-07-11)
 

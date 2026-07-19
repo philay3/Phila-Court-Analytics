@@ -3,7 +3,7 @@
 Two independent streak counters, both enforced in code (not operator
 attention), each ending the run gracefully with a report when it trips:
 
-- **block streak** (counsel-informed operational parameter, N=5):
+- **block streak** (locked operational parameter, N=5):
   increments on ``blocked``; resets on ``hit`` and on ``miss`` (a clean miss
   is a successful request); an ``error`` is NEUTRAL (an error is not a block,
   so it neither increments nor resets this counter); ``already_present`` is a
