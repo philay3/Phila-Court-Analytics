@@ -19,12 +19,13 @@ EXPECTED_CODES = {
     "SENTINEL_COLLISION",
     "UNKNOWN_NOT_FINAL_DISPOSITION",
     "SUSPECT_DISPOSITION_TOKEN",
+    "BLANK_DOB_CAPTION",
 }
 
 
-def test_vocabulary_is_exactly_the_twelve_codes():
+def test_vocabulary_is_exactly_the_thirteen_codes():
     assert wc.WARNING_CODES == EXPECTED_CODES
-    assert len(wc.WARNING_CODES) == 12
+    assert len(wc.WARNING_CODES) == 13
 
 
 def test_severity_map_covers_every_code_with_valid_levels():
@@ -50,6 +51,9 @@ def test_severity_map_matches_approved_table():
         wc.UNPARSEABLE_DURATION,
         wc.MISSING_SENTENCE_DATE,
         wc.NON_TERMINAL_CASE,
+        # 34.4: a supported layout arriving on every future MC run; review
+        # cannot recover a DOB the sheet does not print (ruled at the plan gate).
+        wc.BLANK_DOB_CAPTION,
     }
 
 

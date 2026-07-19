@@ -27,7 +27,12 @@ from pipeline.fact_review_vocab import (
     STATUS_SUPERSEDED,
     SUPERSESSION_REGRESSION,
 )
-from pipeline.load import STATUS_PARSE_FAILED, STATUS_PARSE_SUPERSEDED, run_load
+from pipeline.load import (
+    ACCEPTED_ENVELOPE_VERSIONS,
+    STATUS_PARSE_FAILED,
+    STATUS_PARSE_SUPERSEDED,
+    run_load,
+)
 from pipeline.seam_check import running_in_ci
 
 # The UJS docket-number shape, as a SUBSTRING probe for the hygiene assertion.
@@ -109,7 +114,7 @@ def make_envelope(
     status: str = "parsed",
     warnings: list | None = None,
     review_needed: bool = False,
-    parser_version: int = 6,
+    parser_version: int = 7,
     error: dict | None = None,
 ) -> dict:
     return {
@@ -127,6 +132,12 @@ def make_envelope(
         "created_at": "2026-07-11T12:00:00+00:00",
         "error": error,
     }
+
+
+def test_accepted_envelope_versions_pinned_to_current_batch():
+    # 34.4: {6} -> {7} with the Phase 34 batch bump. Single-member by design;
+    # this literal pin forces a conscious test update on any future move.
+    assert ACCEPTED_ENVELOPE_VERSIONS == frozenset({7})
 
 
 def make_import_record(source_sha256: str, **overrides: object) -> dict:

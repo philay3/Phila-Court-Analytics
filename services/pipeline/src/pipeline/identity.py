@@ -31,6 +31,26 @@ def hash_defendant(name: str, birth_year: int, *, salt: str) -> str:
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
 
+def hash_defendant_name_only(name: str, *, salt: str) -> str:
+    """Name-only basis for the MC blank-DOB caption variant (Task 34.4).
+
+    Used ONLY when the parser positively identifies the blank-DOB caption
+    signature: same normalization and salt flow as ``hash_defendant``, with the
+    DOB component omitted — no sentinel year, no placeholder, no trailing
+    separator. Collision note for the record: a name-only basis collides across
+    same-name defendants more than name+year; inert, because ``defendant_hash``
+    participates in no dedup, supersession, or fact keying. DOB-present
+    documents never take this path and hash via ``hash_defendant`` unchanged.
+    """
+    if not salt or not salt.strip():
+        raise ValueError(
+            "DEFENDANT_HASH_SALT is required: the salt parameter must be a "
+            "non-empty string. There is no default salt."
+        )
+    basis = f"{salt}|{normalize_name(name)}"
+    return hashlib.sha256(basis.encode("utf-8")).hexdigest()
+
+
 def matches_as_token(sentinel: str, text_lower: str) -> bool:
     """True if ``sentinel`` occurs in ``text_lower`` bounded by a non-alphanumeric
     character (or string edge) on BOTH sides — a whole-token, case-insensitive

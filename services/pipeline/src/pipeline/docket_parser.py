@@ -41,6 +41,7 @@ from pipeline.identity import (
     assert_related_cases_clean,
     collides_with_sentinels,
     hash_defendant,
+    hash_defendant_name_only,
 )
 
 # 32.2: the held-form vocabulary is the 29.3 SINGLE authority — imported, never
@@ -48,6 +49,7 @@ from pipeline.identity import (
 # import adds no DB or pdfplumber path to the parser.
 from pipeline.normalization.outcome_mapper import HELD_FOR_COURT_DISPOSITIONS
 from pipeline.warning_codes import (
+    BLANK_DOB_CAPTION,
     SENTINEL_COLLISION,
     SUSPECT_DISPOSITION_TOKEN,
     SUSPECT_JUDGE_LINE,
@@ -417,6 +419,36 @@ def detect_court_type(docket_number: str) -> str:
     return "Common Pleas"
 
 
+# 34.4: the CONFIRMED MC blank-DOB caption variant (recon R5). These express
+# the variant's POSITIVE structural signature; anything that fails a conjunct
+# raises exactly as before, so every other caption anomaly still quarantines.
+_DOB_LABEL_RE = re.compile(r"Date\s+[Oo]f\s+Birth:")
+_CSZ_LABEL = "City/State/Zip:"
+_DATE_TOKEN_RE = re.compile(r"\d{1,2}/\d{1,2}/\d{4}")
+
+
+def _blank_dob_caption_variant(defendant_info_lines: list[str]) -> bool:
+    """True iff DEFENDANT INFORMATION bears the blank-DOB caption signature:
+    a line carrying BOTH the DOB and City/State/Zip labels whose first
+    non-space character after the DOB label is a letter (the merged
+    neighboring column — a blank DOB value), and no date-shaped token
+    anywhere in the section (so a relocated DOB can never slip past as
+    "blank"). Section-scoped on purpose: the stray CASE PARTICIPANTS date
+    token is a rejected identity source and is never consulted.
+    """
+    merged_blank_line = False
+    for line in defendant_info_lines:
+        m = _DOB_LABEL_RE.search(line)
+        if not m:
+            continue
+        after = line[m.end() :]
+        if _CSZ_LABEL in after and after.strip()[:1].isalpha():
+            merged_blank_line = True
+    if not merged_blank_line:
+        return False
+    return not any(_DATE_TOKEN_RE.search(line) for line in defendant_info_lines)
+
+
 def parse_docket_text(
     docket_number: str, pages_text: list[str], *, salt: str
 ) -> tuple[dict, list[str], list[dict[str, object]]]:
@@ -533,18 +565,42 @@ def parse_docket_text(
     if not defendant_name and v_names:
         defendant_name = sorted(list(v_names))[0]
 
-    if not defendant_name or not dob_str:
+    # 34.4: DOB becomes optional ONLY under the positively identified blank-DOB
+    # caption variant. The gate requires today's failure condition (no DOB
+    # captured anywhere in the name sections) AND a present name AND the
+    # structural signature — so the path is unreachable for any document that
+    # parses today, and every other caption anomaly raises exactly as before.
+    blank_dob_variant = (
+        dob_str is None
+        and bool(defendant_name)
+        and _blank_dob_caption_variant(sections["DEFENDANT INFORMATION"])
+    )
+
+    if not defendant_name or (not dob_str and not blank_dob_variant):
         raise ParseError("Missing defendant name or date of birth")
 
-    try:
-        birth_year = int(dob_str.split("/")[-1])
-    except Exception as exc:
-        raise ParseError("Invalid date of birth format") from exc
+    if blank_dob_variant:
+        # Name-only, salted basis for this class (34.4 adjudication): same
+        # normalization and salt flow, DOB component omitted, no sentinel year.
+        defendant_hash = hash_defendant_name_only(defendant_name, salt=salt)
+        warnings.append(
+            make_warning(
+                BLANK_DOB_CAPTION,
+                section="DEFENDANT INFORMATION",
+                field="date_of_birth",
+            )
+        )
+    else:
+        try:
+            birth_year = int(dob_str.split("/")[-1])
+        except Exception as exc:
+            raise ParseError("Invalid date of birth format") from exc
 
-    defendant_hash = hash_defendant(defendant_name, birth_year, salt=salt)
+        defendant_hash = hash_defendant(defendant_name, birth_year, salt=salt)
 
-    # Compile privacy sentinels
-    sentinels = [dob_str, defendant_name]
+    # Compile privacy sentinels (the DOB string only when the sheet printed one
+    # — never None in the list; name coverage identical on both arms)
+    sentinels = [defendant_name] if dob_str is None else [dob_str, defendant_name]
     for part in re.split(r"[^a-zA-Z]", defendant_name):
         if len(part) >= 3:
             sentinels.append(part)

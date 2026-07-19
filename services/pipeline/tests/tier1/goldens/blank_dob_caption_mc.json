@@ -1,0 +1,51 @@
+{
+  "error": null,
+  "record": {
+    "case": {
+      "assigned_judge_raw": "Moreno, Judge R.",
+      "case_status": "Closed",
+      "county": "Philadelphia",
+      "court_type": "Municipal Court",
+      "cross_court_dockets": null,
+      "dc_number": null,
+      "defendant_hash": "b79b3ad7d17ab711054fc3d1aaafac2185ace9d02a32629a2b1cc90dd5092a75",
+      "filed_date": "2025-03-05",
+      "otn": "X 8642135-7"
+    },
+    "charges": [
+      {
+        "disposition_date": "2026-11-09",
+        "disposition_judge_raw": "Moreno, Judge R.",
+        "disposition_raw": "Guilty",
+        "grade": null,
+        "offense": "Simple Assault",
+        "sentences": [
+          {
+            "max_days": 180,
+            "min_assumed": true,
+            "min_days": 180,
+            "program": "Probation",
+            "raw_text": "Probation, Max of 6.00 Months",
+            "sentence_date": "2026-11-09",
+            "sentence_type": "Probation"
+          }
+        ],
+        "sequence": 1,
+        "statute": "18 \u00a7 2701 M1"
+      }
+    ],
+    "docket_number": "MC-51-CR-0000000-2025",
+    "notes": [],
+    "parser_version": 2,
+    "related_cases": []
+  },
+  "review_needed": false,
+  "status": "parsed",
+  "warnings": [
+    {
+      "code": "BLANK_DOB_CAPTION",
+      "field": "date_of_birth",
+      "section": "DEFENDANT INFORMATION"
+    }
+  ]
+}

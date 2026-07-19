@@ -2,7 +2,7 @@
 
 This is the SINGLE source of truth for the parser/envelope warning vocabulary.
 No other module defines warning strings; every emitter imports the codes from
-here. The set is closed: the twelve codes below are the whole vocabulary, and a
+here. The set is closed: the thirteen codes below are the whole vocabulary, and a
 test asserts emitted codes are a subset of them. Adding a code requires
 plan-level approval — do not invent codes in code.
 
@@ -39,17 +39,24 @@ Severity map rationale:
 - ``info`` — a truthful observation that review cannot improve:
   UNPARSEABLE_DURATION (usually a legitimate non-numeric term such as "Life";
   raw_text is preserved), NON_TERMINAL_CASE (a held/non-terminal case legitimately
-  has null disposition/sentence dates), and MISSING_SENTENCE_DATE. The last is
-  ``info`` because an undated sentence fact is mechanically excluded by the Sprint 7
-  date-range gate: review cannot recover a date the sheet does not print, so
-  flagging it for review would create work that cannot change the outcome.
+  has null disposition/sentence dates), MISSING_SENTENCE_DATE, and
+  BLANK_DOB_CAPTION (Task 34.4 blank-DOB caption variant: a positively
+  identified MC layout whose DEFENDANT INFORMATION prints a blank DOB value
+  under the label with the merged City/State/Zip column following — a
+  supported layout arriving on every future MC collection run; review cannot
+  recover a DOB the sheet does not print, and the name-only identity basis it
+  implies is an adjudicated design fact, not a per-document doubt).
+  MISSING_SENTENCE_DATE is ``info`` because an undated sentence fact is
+  mechanically excluded by the Sprint 7 date-range gate: review cannot recover
+  a date the sheet does not print, so flagging it for review would create work
+  that cannot change the outcome.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 
-# --- The twelve codes (locked; additions require plan approval) -------------
+# --- The thirteen codes (locked; additions require plan approval) -----------
 LOW_TEXT_EXTRACTION = "LOW_TEXT_EXTRACTION"
 MISSING_CHARGE_SECTION = "MISSING_CHARGE_SECTION"
 UNPARSEABLE_DURATION = "UNPARSEABLE_DURATION"
@@ -65,6 +72,10 @@ UNKNOWN_NOT_FINAL_DISPOSITION = "UNKNOWN_NOT_FINAL_DISPOSITION"
 # 34.3: a routed charge line's stripped token still carried the statute cue —
 # a boundary-lost (column-concatenated) whole-row capture, rejected at the gate.
 SUSPECT_DISPOSITION_TOKEN = "SUSPECT_DISPOSITION_TOKEN"
+# 34.4: the positively identified MC blank-DOB caption variant — DOB label
+# present with a blank value, merged City/State/Zip column following; the
+# document parses with the name-only identity basis.
+BLANK_DOB_CAPTION = "BLANK_DOB_CAPTION"
 
 # Severity levels.
 SEVERITY_REVIEW = "review"
@@ -84,6 +95,7 @@ SEVERITY: dict[str, str] = {
     UNPARSEABLE_DURATION: SEVERITY_INFO,
     MISSING_SENTENCE_DATE: SEVERITY_INFO,
     NON_TERMINAL_CASE: SEVERITY_INFO,
+    BLANK_DOB_CAPTION: SEVERITY_INFO,
 }
 
 # The closed vocabulary: the whole set of legal warning codes.

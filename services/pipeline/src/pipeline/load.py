@@ -89,8 +89,9 @@ logger = logging.getLogger("pipeline.load")
 # future format bump cannot silently widen what this task's loader accepts.
 # 32.2: moved {5} -> {6} with the event-line date fix, so the version tuple's
 # newer-version arm transactionally replaces each docket's parsed graph at the
-# 32.4 reload cycle.
-ACCEPTED_ENVELOPE_VERSIONS: frozenset[int] = frozenset({6})
+# 32.4 reload cycle. 34.4: moved {6} -> {7} with the Phase 34 hardening batch;
+# the 34.5 rerun's reloads take the newer-version arm the same way.
+ACCEPTED_ENVELOPE_VERSIONS: frozenset[int] = frozenset({7})
 
 # The raw.source_documents.status value the loader writes for a failed-parse
 # envelope. The 16.3 import-stage vocabulary (imported/duplicate/invalid/failed,
@@ -241,7 +242,8 @@ def _insert_parsed_graph(
     docket_number = record["docket_number"]
     derived = _derive_court_type(docket_number)
     if derived is None:
-        # Not a parsed.warnings row: the warning vocabulary is closed (11 codes).
+        # Not a parsed.warnings row: the warning vocabulary is closed (the
+        # warning_codes module is the single source of truth for its members).
         # A logged, hash-prefix-only warning per decision 6.
         logger.warning(
             "docket-number prefix not CP-/MC-; court_type_derived set NULL",

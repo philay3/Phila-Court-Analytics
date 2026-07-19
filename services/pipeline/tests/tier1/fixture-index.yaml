@@ -430,3 +430,16 @@ fixtures:
     expected_warnings: [SUSPECT_DISPOSITION_TOKEN]
     layout_unverified: false
     synthetic: true
+
+  - filename: blank_dob_caption_mc.txt
+    court_type: Municipal Court
+    scenario: 34.4 blank-DOB caption variant — DEFENDANT INFORMATION is a
+      single line carrying both the Date Of Birth and City/State/Zip labels
+      with a blank DOB value (the merged neighboring column follows the
+      label); the name is present in CASE PARTICIPANTS; the document parses
+      with the name-only identity basis, BLANK_DOB_CAPTION, and normal
+      downstream charge/disposition/sentence capture
+    expected_charge_count: 1
+    expected_warnings: [BLANK_DOB_CAPTION]
+    layout_unverified: false
+    synthetic: true

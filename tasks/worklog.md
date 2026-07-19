@@ -8173,3 +8173,120 @@ the homepage copy-heavy phase per the amendment's for-the-record note.
   (mapped) rather than going NULL — the rerun classifier must expect BOTH
   shapes inside the concat signature. The ARD/Not-Final corner's tripwire
   (dated-null row) rides every future rerun.
+
+## Task 34.4 — MC Blank-DOB Caption Variant + Envelope Bump (2026-07-19)
+
+- **Three planning-chat gates, as ruled.** (1) Plan gate: approved with five
+  rulings — severity `info` for the new code (ongoing-volume analysis;
+  MISSING_SENTENCE_DATE precedent: review cannot recover a DOB the sheet does
+  not print); name `BLANK_DOB_CAPTION` (marks the observation, not the design
+  consequence); fixture `blank_dob_caption_mc.txt` (tree convention over the
+  R6 sketch string); `identity.py` + `test_identity.py` confirmed as
+  adjudicated touch-set inclusions (identity logic lives in the designated
+  module, `hash_defendant` byte-untouched); `load.py` stale vocabulary-count
+  comment folded in count-free (points at the module, no restated number).
+  (2) Census gate: r5-supplement accepted as the task's ex-ante boundary
+  record (AC2). (3) In-task-verification STOP: finding accepted, no build
+  change (below).
+- **Pre-build census (r5-supplement; recon dir):** the approved four-conjunct
+  predicate run verbatim over all 17,619 stored extraction artifacts
+  (quarantined included; 0 missing, 0 extraction-failed). Full-signature
+  bearers: exactly 5, doc-for-doc the quarantined MC prefixes; name capture
+  5/5 with BOTH paths available (Defendant line AND v.-block fallback — the
+  variant path never depends on the fallback); zero currently-parsing
+  bearers; near-miss population EMPTY across all six classes. Adjudicated:
+  conjunct C4 currently excludes nothing — pure forward protection; the unit
+  tests' near-miss arms are therefore the ONLY active locks on the
+  fail-closed boundary and carry that weight alone. Files:
+  `r5supp_variant_census.py`, `r5supp-variant-census-console.txt`,
+  `r5-supplement.md`.
+- **What was built:** (1) `_blank_dob_caption_variant` in `docket_parser.py` —
+  positive-signature predicate (DOB label + City/State/Zip label on one
+  DEFENDANT INFORMATION line, letter as first non-space after the label, no
+  date-shaped token anywhere in the section), gated on today's failure
+  condition (`dob_str is None`) AND a present name; the DOB-optional arm
+  computes the name-only hash, emits the new warning (structural payload:
+  section + field), and leaves every other caption anomaly raising
+  `ParseError` exactly as before. Sentinel arm: DOB string included only when
+  the sheet printed one — never `None` in the list; name coverage unchanged
+  for `assert_no_leak`. (2) `hash_defendant_name_only` in `identity.py`: same
+  normalization, same required-salt guard, DOB component omitted — no
+  sentinel year; `hash_defendant` byte-identical; collision note recorded in
+  the docstring (name-only collides more; inert — nothing keys on the hash).
+  (3) `BLANK_DOB_CAPTION` in `warning_codes.py` (vocabulary 12 → 13, severity
+  `info` as ruled; `EMITTED_CODES` picks it up derivationally). (4) Envelope
+  bump: `ENVELOPE_PARSER_VERSION` 6 → 7, `ACCEPTED_ENVELOPE_VERSIONS`
+  {6} → {7} (comments updated; record `parser_version` stays 2 — the 32.2
+  precedent; no basis-marker field, post-load identifiability is
+  `parsed.warnings.code = 'BLANK_DOB_CAPTION'`); version-pinned tests updated
+  (`test_envelope.py` ==7, `test_load.py` helper default 7 + NEW literal pin
+  `ACCEPTED_ENVELOPE_VERSIONS == frozenset({7})`,
+  `test_facts_build_facts.py` ==7, `test_run_fixtures.py` wrapper literal 7);
+  `load.py:244` comment now count-free. (5) Tier-1 additive pair
+  `blank_dob_caption_mc.txt` + golden (variant caption, fictional name,
+  normal body → status parsed, sole BLANK_DOB_CAPTION, review_needed false,
+  normal charge/disposition/sentence capture, name-only hash verified against
+  `hash_defendant_name_only` under the tier-1 salt) + index entry (45 → 46).
+  (6) Unit tests: variant parse + payload + hash basis; name-absent still
+  ParseError; three near-miss arms (no merged label / date token in section /
+  non-letter after label) still ParseError; DOB-present sheet hashes exactly
+  as before with no new warning; deliberate-failure lock (predicate
+  monkeypatched False → the variant sheet reproduces ParseError); privacy
+  lock (no name in record or warnings payload, sentinel coverage intact, no
+  None sentinel); `hash_defendant_name_only` determinism / salt-required /
+  normalization parity / distinct-from-full-basis-for-any-year;
+  warning-vocabulary thirteen + severity table.
+- **Golden write:** flag-gated `run_fixtures(update_goldens=True)` wrote the
+  ONE new tier-1 golden `blank_dob_caption_mc.json`
+  (`tier1: match=45 diverged=0 updated=0 new=1 missing=0`) — no existing
+  golden touched.
+- **In-task verification + STOP adjudication (checklist formally amended):**
+  the patched parser in-memory over the 5 stored artifacts (salt sourced
+  silently; zero DB writes): 5/5 parsed, 5/5 BLANK_DOB_CAPTION, 5/5 hashes
+  computed, zero errors, zero other-class shapes. Three docs additionally
+  carry standing-machinery warnings from first-ever parse output — 2×
+  NON_TERMINAL_CASE (info; zero disposed charges; pending cases observed by
+  design) and 1× UNKNOWN_NOT_FINAL_DISPOSITION (review; the 18.5 router on
+  first contact with novel vocabulary; the review item rides reflow through
+  the normal channel; the token stays out of this record). STOP raised,
+  finding accepted, causal attribution to 34.4 excluded (touch set cannot
+  emit either code; tier-1 match=45 diverged=0 proves zero behavior change on
+  parsing documents). AMENDMENT (ruled): for never-before-parsed documents,
+  "no unexpected warnings" means none attributable to the change beyond
+  BLANK_DOB_CAPTION; standing-machinery output on first parse is a recorded
+  finding, not a failure.
+- **Banked 34.5 ledger (complete ex-ante MC-class profile, doc-for-doc):**
+  5 docs failed → parsed; warnings 5× BLANK_DOB_CAPTION + 2×
+  NON_TERMINAL_CASE + 1× UNKNOWN_NOT_FINAL_DISPOSITION; exactly 1
+  review-needed document (+1 review-item motion at reflow); 2 zero-disposed
+  documents (no outcome facts at reflow); hash prefixes (artifact → parsed
+  identity): 1843aeb9 → bb1734a6, a0477b60 → f52591a5, a2779cd9 → f94523d5,
+  f16bd8b4 → 6587b0ee, f9bcc008 → 74d24882. Anything outside this profile at
+  the rerun/reflow is a STOP there. Tier-2 expectation: failed → 0,
+  `golden_missing` +5; the rerun's reloads of changed dockets take the
+  `(7,2) > (6,2)` replaced_newer_version arm; the 5 land as fresh `loaded`.
+- **Files touched:** `services/pipeline/src/pipeline/docket_parser.py`,
+  `services/pipeline/src/pipeline/identity.py`,
+  `services/pipeline/src/pipeline/warning_codes.py`,
+  `services/pipeline/src/pipeline/envelope.py`,
+  `services/pipeline/src/pipeline/load.py`,
+  `services/pipeline/tests/test_docket_parser.py`,
+  `services/pipeline/tests/test_identity.py`,
+  `services/pipeline/tests/test_warning_codes.py`,
+  `services/pipeline/tests/test_envelope.py`,
+  `services/pipeline/tests/test_load.py`,
+  `services/pipeline/tests/test_facts_build_facts.py`,
+  `services/pipeline/tests/test_run_fixtures.py`,
+  `services/pipeline/tests/tier1/fixtures/blank_dob_caption_mc.txt`,
+  `services/pipeline/tests/tier1/goldens/blank_dob_caption_mc.json`,
+  `services/pipeline/tests/tier1/fixture-index.yaml`, `tasks/worklog.md`.
+  (`identity.py`/`test_identity.py` and the `load.py:244` comment are the
+  plan-gate-adjudicated touches beyond recon R6's R5/bump columns.)
+- **Deviations from plan:** none in code. The verification checklist
+  amendment was ruled at the STOP adjudication (above), not self-applied.
+- **Notes for next task (34.5):** sequencing invariant holds — NO corpus
+  tooling between this commit and the batch rerun. Quarantine ledger after
+  reflow: parse_failed 9 → 0 (4 via 34.2's F-Q class, 5 via this task).
+  Delta attribution order and expected totals per recon R6 stand; the MC
+  class contributes ADDITIONS ONLY, keyed to the 5 prefixes above, with the
+  banked warning/review/zero-disposed profile as the per-doc expectation.

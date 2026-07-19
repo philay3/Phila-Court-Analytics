@@ -28,12 +28,18 @@ from pipeline.docket_parser import (
 )
 from pipeline.envelope import _charge_has_disposition
 from pipeline.helpers import ParseError
-from pipeline.identity import assert_related_cases_clean
+from pipeline.identity import (
+    assert_no_leak,
+    assert_related_cases_clean,
+    hash_defendant,
+    hash_defendant_name_only,
+)
 from pipeline.normalization.outcome_mapper import (
     DISPOSITION_OUTCOME_MAP,
     HELD_FOR_COURT_DISPOSITIONS,
 )
 from pipeline.warning_codes import (
+    BLANK_DOB_CAPTION,
     SENTINEL_COLLISION,
     SUSPECT_DISPOSITION_TOKEN,
     SUSPECT_JUDGE_LINE,
@@ -1658,3 +1664,133 @@ def test_concat_warning_payload_structural_only():
     assert warning["code"] == SUSPECT_DISPOSITION_TOKEN
     assert warning["section"] == "DISPOSITION SENTENCING/PENALTIES"
     assert warning["charge_sequence"] == 1
+
+
+# --- 34.4: MC blank-DOB caption variant (positive signature; fail-closed) ---
+#
+# The census (r5-supplement) proved the stored-corpus boundary population is
+# empty, so these near-miss arms are the ONLY active locks on the fail-closed
+# boundary — they carry that weight alone (34.4 adjudication record).
+
+VARIANT_DOB_LINE = "Date Of Birth:          City/State/Zip:  Faketown, PA 00000"
+
+
+def blank_dob_page(
+    *,
+    dob_line: str = VARIANT_DOB_LINE,
+    defendant_line: str | None = "Defendant Example, Chris",
+    extra_defendant_info: tuple[str, ...] = (),
+) -> str:
+    """An MC sheet bearing the blank-DOB caption signature (fictional): DOB
+    label with a blank value and the merged City/State/Zip column on one
+    DEFENDANT INFORMATION line, name present in CASE PARTICIPANTS, normal
+    charge and disposition body."""
+    lines = [
+        "MUNICIPAL COURT OF PHILADELPHIA COUNTY",
+        "DOCKET",
+        "Docket Number: MC-51-CR-0000000-2025",
+        "CASE INFORMATION",
+        "Judge Assigned: Date Filed: 01/06/2025",
+        "OTN: X 1234567-8",
+        "District Control Number 9988776655",
+        "STATUS INFORMATION",
+        "Case Status: Open",
+        "DEFENDANT INFORMATION",
+        dob_line,
+        *extra_defendant_info,
+        "CASE PARTICIPANTS",
+        "Participant Type Name",
+    ]
+    if defendant_line is not None:
+        lines.append(defendant_line)
+    lines += [
+        "CHARGES",
+        "Seq. Statute Grade Description",
+        "1 1 18 § 2701 M1 Simple Assault 01/01/2025 X1234567",
+        "DISPOSITION SENTENCING/PENALTIES",
+        "Preliminary Hearing",
+        "01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty Plea - Negotiated M1",
+        "Roberts, Pat J. 01/15/2025",
+        "Probation",
+        "Max of 12.00 Months",
+    ]
+    return "\n".join(lines)
+
+
+def test_blank_dob_variant_parses_with_warning_and_name_only_hash():
+    record, sentinels, warnings = parse_docket_text(
+        DOCKET_MC, [blank_dob_page()], salt=TEST_SALT
+    )
+    assert record["case"]["defendant_hash"] == hash_defendant_name_only(
+        "Example, Chris", salt=TEST_SALT
+    )
+    [warning] = warnings
+    assert set(warning) == {"code", "section", "field"}
+    assert warning["code"] == BLANK_DOB_CAPTION
+    assert warning["section"] == "DEFENDANT INFORMATION"
+    assert warning["field"] == "date_of_birth"
+    # Downstream capture is normal: the variant changes identity handling only.
+    [charge] = record["charges"]
+    assert charge["disposition_raw"] == "Guilty Plea - Negotiated M1"
+    assert charge["disposition_date"] == "2025-01-15"
+    assert len(charge["sentences"]) == 1
+
+
+def test_blank_dob_variant_name_absent_still_parse_error():
+    page = blank_dob_page(defendant_line=None)
+    with pytest.raises(ParseError, match="Missing defendant name or date of birth"):
+        parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+
+
+@pytest.mark.parametrize(
+    "dob_line, extra",
+    [
+        # Blank DOB value but NO merged City/State/Zip label on the line.
+        ("Date Of Birth:   Faketown, PA 00000", ()),
+        # Merged line intact but a date-shaped token elsewhere in the section:
+        # a relocated DOB can never slip past as "blank".
+        (VARIANT_DOB_LINE, ("Alias Review: 02/03/1991",)),
+        # First non-space after the label is neither a letter nor a DOB digit.
+        ("Date Of Birth: - City/State/Zip:  Faketown, PA 00000", ()),
+    ],
+)
+def test_blank_dob_near_miss_shapes_still_parse_error(dob_line, extra):
+    page = blank_dob_page(dob_line=dob_line, extra_defendant_info=extra)
+    with pytest.raises(ParseError, match="Missing defendant name or date of birth"):
+        parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+
+
+def test_dob_present_document_hashes_exactly_as_before():
+    record, sentinels, warnings = parse_docket_text(
+        DOCKET_MC, [mc_page()], salt=TEST_SALT
+    )
+    assert record["case"]["defendant_hash"] == hash_defendant(
+        "Example, Chris", 1990, salt=TEST_SALT
+    )
+    assert all(w["code"] != BLANK_DOB_CAPTION for w in warnings)
+    assert "01/01/1990" in sentinels
+
+
+def test_variant_path_neutralized_reproduces_parse_error(monkeypatch):
+    """Deliberate-failure verification: with the predicate forced False, the
+    variant sheet fails exactly as it did before 34.4 — the new path is the
+    only reason it parses."""
+    import pipeline.docket_parser as dp
+
+    monkeypatch.setattr(dp, "_blank_dob_caption_variant", lambda lines: False)
+    with pytest.raises(ParseError, match="Missing defendant name or date of birth"):
+        parse_docket_text(DOCKET_MC, [blank_dob_page()], salt=TEST_SALT)
+
+
+def test_blank_dob_variant_privacy_lock():
+    """Decision 4: no name reaches the record or the warnings payload; name
+    sentinel coverage is intact and the sentinel list never carries None."""
+    record, sentinels, warnings = parse_docket_text(
+        DOCKET_MC, [blank_dob_page()], salt=TEST_SALT
+    )
+    assert None not in sentinels
+    assert "Example, Chris" in sentinels
+    assert "Example" in sentinels and "Chris" in sentinels
+    assert_no_leak(sentinels, record)
+    assert_no_leak(sentinels, warnings)

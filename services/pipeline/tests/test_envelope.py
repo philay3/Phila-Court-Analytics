@@ -205,7 +205,7 @@ def _all_keys(obj) -> set:
 def test_envelope_shape_has_exactly_the_pinned_fields():
     envelope = make_envelope(DISPOSED_CLEAN)
     assert set(envelope) == EXPECTED_ENVELOPE_KEYS
-    assert envelope["parser_version"] == env.ENVELOPE_PARSER_VERSION == 6
+    assert envelope["parser_version"] == env.ENVELOPE_PARSER_VERSION == 7
     assert set(envelope["extraction_artifact"]) == {
         "artifact_id",
         "text_hash",
