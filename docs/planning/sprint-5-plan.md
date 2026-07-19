@@ -253,7 +253,7 @@ this sprint (and again at aggregation in Sprint 7):
    in `.env.example` (the local Postgres on port 5433).
 2. Decide COL Run cadence for the sprint window (the intake task consumes
    whatever the collector has landed in `~/court-data/intake/`; more runs =
-   more MC evidence). Per-operator caps and ADR 0002 conditions apply.
+   more MC evidence). Per-operator caps and the locked collection conditions apply.
 3. Roster review (mid-sprint, planning chat): approve the curated charge
    and judge rosters before they are committed (Standing Decision 7).
 4. Git/PR mechanics per task, as always.

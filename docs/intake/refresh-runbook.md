@@ -34,9 +34,9 @@ Nothing here contains docket-derived content. All per-run artifacts live outside
 - A refresh run is **not** window coverage: it writes no window-ledger entries and no miss-ledger
   entries, ever.
 
-## Counsel conditions (ADR 0002 — apply in full)
+## Collection conditions (apply in full)
 
-Refresh fetches are collection actions under all counsel conditions. Enforced **in code** (shared
+Refresh fetches are collection actions under all locked collection conditions. Enforced **in code** (shared
 with enumeration, flag-proof): the 240-minute session ceiling, the 300s post-block cooldown, the
 jittered 2.0–5.0s per-request delay, inter-batch cooldowns (60s floor), and the block/error
 streak stops (5) over fail-closed classification. Enforced **by this runbook** (operator
@@ -217,5 +217,5 @@ published run keeps serving throughout.
 1. Any step suggesting a loader change (COL-4a is complete; refresh never edits the loader).
 2. `no_results_anomalies > 0`, `loaded > 0` at step 7, `supersession_blocked_by_fact_rows`, a
    golden-drift report, a systematic quarantine cluster, or any reconciliation mismatch.
-3. Any ambiguity about whether an action is within the counsel conditions.
+3. Any ambiguity about whether an action is within the collection conditions.
 4. Any other unexplained anomaly in a first-of-kind cycle.

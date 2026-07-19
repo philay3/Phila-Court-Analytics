@@ -20,11 +20,11 @@ cycle's refresh dir instead: a target whose PDF is already there was fetched by
 an earlier session of this cycle and is skipped locally (``already_fetched``,
 no portal request, streak-neutral).
 
-All counsel conditions are REUSED from enumeration, never re-derived (pinned
-decision 2): the flag-proof 240-minute ceiling and 300s post-block cooldown,
-the jittered 2.0-5.0s delay after EVERY portal request, inter-batch cooldowns
-on real requests only, and the shared ``RunGuard`` block/error streak stops
-over the fail-closed ``classify`` path.
+All locked collection conditions are REUSED from enumeration, never re-derived
+(pinned decision 2): the flag-proof 240-minute ceiling and 300s post-block
+cooldown, the jittered 2.0-5.0s delay after EVERY portal request, inter-batch
+cooldowns on real requests only, and the shared ``RunGuard`` block/error
+streak stops over the fail-closed ``classify`` path.
 
 A refresh is not window coverage and not enumeration coverage: this module
 writes NO window-ledger entries and NO miss-ledger entries (pinned decision 3
@@ -155,7 +155,7 @@ def run(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # The 240-minute ceiling clamps the wall-clock budget: no flag can exceed
-    # it (counsel-locked). --max-minutes only ever shortens the run.
+    # it (policy-locked). --max-minutes only ever shortens the run.
     budget_seconds = min(params.max_minutes, HARD_CEILING_MINUTES) * 60
 
     guard = RunGuard()
@@ -303,7 +303,7 @@ def run(
         sleep(jitter())
         delays_taken += 1
 
-        # Post-block cooldown: 300s (≥2-minute counsel minimum) after ANY
+        # Post-block cooldown: 300s (≥2-minute policy minimum) after ANY
         # block, before the next request (on top of the per-request delay).
         if outcome == OUTCOME_BLOCKED:
             logger.info(

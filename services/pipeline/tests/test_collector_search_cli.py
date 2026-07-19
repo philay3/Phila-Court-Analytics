@@ -220,7 +220,7 @@ def test_migrate_ledger_refuses_in_ci(monkeypatch, capsys):
 
 
 def test_migrate_ledger_has_no_pacing_or_collection_flags(capsys):
-    # AC-8: no flag introduced for COL-3 reaches any pacing or counsel-locked
+    # AC-8: no flag introduced for COL-3 reaches any pacing or policy-locked
     # parameter — the subcommand rejects them all outright.
     for flag, value in (
         ("--batch-size", "5"),

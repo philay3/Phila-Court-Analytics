@@ -117,10 +117,10 @@ def test_five_blocks_stop_with_block_streak_and_cooldowns(tmp_path):
     assert clock.sleeps.count(POST_BLOCK_COOLDOWN_SECONDS) == 5
 
 
-def test_post_block_cooldown_meets_counsel_minimum():
-    # ADR 0002 (Amendment 2026-07-12) records the condition as a MINIMUM of 2
-    # minutes; we run the more-conservative 300s. Assert both the floor and the
-    # selected value so a regression below the minimum is caught.
+def test_post_block_cooldown_meets_policy_minimum():
+    # Project policy records the condition as a MINIMUM of 2 minutes; we run
+    # the more-conservative 300s. Assert both the floor and the selected value
+    # so a regression below the minimum is caught.
     assert POST_BLOCK_COOLDOWN_SECONDS >= 120
     assert POST_BLOCK_COOLDOWN_SECONDS == 300
 

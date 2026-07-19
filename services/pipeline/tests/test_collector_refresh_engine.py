@@ -270,10 +270,10 @@ def test_file_universe_is_exactly_pdfs_and_report_artifacts(tmp_path):
     assert created == expected
 
 
-# --- AC-4: counsel conditions, reused not re-derived ------------------------
+# --- AC-4: locked collection conditions, reused not re-derived ---------------
 
 
-def test_time_budget_clamped_to_counsel_ceiling(tmp_path):
+def test_time_budget_clamped_to_locked_ceiling(tmp_path):
     # --max-minutes can never exceed the 240-minute ceiling: with each request
     # consuming ~an hour of fake clock, the run caps after 4 requests even
     # though the flag asked for far more time.
@@ -368,7 +368,7 @@ def test_max_fetches_cap_stops_run(tmp_path):
 # --- AC-5: report shape + hygiene -------------------------------------------
 
 
-def test_report_parameters_echo_counsel_locked_values(tmp_path):
+def test_report_parameters_echo_policy_locked_values(tmp_path):
     clock = FakeClock()
     report = run_engine(
         make_params(tmp_path, court="CP"),

@@ -2,7 +2,7 @@
 
 The parallel of ``engine.run`` for Date-Filed search discovery. Enumeration mode
 (``engine.run``) is left byte-for-byte unchanged (AC-9); this module reuses its
-counsel-locked constants, the ``RunGuard`` streak logic, and the per-fetch
+policy-locked constants, the ``RunGuard`` streak logic, and the per-fetch
 ``FetchSignal``/``classify`` path rather than re-deriving any of them.
 
 Per calendar-day window (PD-1): one advanced search → ``classify_search`` →
@@ -13,11 +13,11 @@ fetched court has completed it, so an MC completion can never suppress a CP
 search, and vice versa). One search serves both courts' rows, so a
 ``--court both`` run collects MC and CP concurrently at strictly less portal
 load than two per-court passes, under ONE clock, ONE ``RunGuard``, and ONE
-cooldown — the counsel caps, block cooldown, and streak stops are aggregate
+cooldown — the locked caps, block cooldown, and streak stops are aggregate
 across courts by construction. All pacing/stop conditions are enforced in
 code and reused from enumeration:
 
-  - counsel-locked 240-minute ceiling and 300s post-block cooldown;
+  - policy-locked 240-minute ceiling and 300s post-block cooldown;
   - jittered 2.0-5.0s delay after EVERY portal request — searches AND fetches;
   - batch accounting counts ALL real portal requests, searches and fetches
     alike (skips excluded); the inter-batch cooldown fires on that combined

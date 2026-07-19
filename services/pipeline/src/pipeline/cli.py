@@ -550,7 +550,7 @@ def build_parser() -> argparse.ArgumentParser:
                 default=60,
                 help=(
                     "Wall-clock stop in minutes. Hard-capped at the "
-                    "counsel-locked 240-minute ceiling regardless of value. "
+                    "policy-locked 240-minute ceiling regardless of value. "
                     "Default: 60."
                 ),
             )
@@ -600,7 +600,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help=(
                     "Cooldown between batches, in seconds. Operational "
                     "parameter with an enforced 60s floor (may be raised, never "
-                    "lowered below it). Default: 120. The counsel-locked "
+                    "lowered below it). Default: 120. The policy-locked "
                     "240-minute ceiling and 300s post-block cooldown are NOT "
                     "flags and cannot be changed."
                 ),
@@ -629,7 +629,7 @@ def build_parser() -> argparse.ArgumentParser:
             )
         if name == "migrate-window-ledger":
             # Deliberately flag-minimal: two directories, no pacing or
-            # collection parameters — the counsel-locked values are not
+            # collection parameters — the policy-locked values are not
             # reachable from here (COL-3 AC-8).
             subparser.add_argument(
                 "--ledger-dir",
