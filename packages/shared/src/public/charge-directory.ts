@@ -6,9 +6,11 @@ import { sampleSizeSchema } from './common.js';
  *
  * Tagged union per the data-coverage precedent: "no active published run" is
  * the unavailable arm of an HTTP-200 response, never an error. Rows are
- * server-sorted alphabetically by normalized display name (slug tie-break);
- * the sample size rides the payload for featured-charge selection and future
- * sorting but is never rendered in v1.
+ * server-sorted by outcome sample size descending, then normalized display
+ * name ascending, then slug ascending (task DP-5, pinned; supersedes the
+ * DP-4 alphabetical order). The sample size renders on directory rows and
+ * homepage featured cards as the pinned `Sample size: N` line — the only
+ * statistic those surfaces carry.
  */
 
 /**

@@ -527,14 +527,21 @@ describe.skipIf(!hasDb)('GET /charges (directory) against the seeded database', 
     }
   });
 
-  it('serves rows sorted alphabetically by display name with slug tie-break', async () => {
+  it('serves rows sorted by sample size desc, then name asc, then slug asc (DP-5 pin)', async () => {
     const charges = await getAvailableCharges();
     expect(charges.length).toBeGreaterThan(1);
     const sorted = [...charges].sort((a, b) => {
+      if (a.outcomeSampleSize !== b.outcomeSampleSize) {
+        return b.outcomeSampleSize - a.outcomeSampleSize;
+      }
       const nameOrder = a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase());
       return nameOrder !== 0 ? nameOrder : a.slug.localeCompare(b.slug);
     });
     expect(charges.map((c) => c.slug)).toEqual(sorted.map((c) => c.slug));
+    // The served sample sizes are monotonically non-increasing — the ORDER BY
+    // key is the same expression that produces outcomeSampleSize.
+    const sizes = charges.map((c) => c.outcomeSampleSize);
+    expect(sizes).toEqual([...sizes].sort((a, b) => b - a));
   });
 
   it('carries both availability shapes on named fixtures', async () => {
