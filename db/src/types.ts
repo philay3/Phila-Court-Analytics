@@ -63,6 +63,9 @@ export interface AggregateRunsTable {
   invalidated_at: ColumnType<Date | null, Date | string | null, Date | string | null>;
   invalidated_reason: string | null;
   parser_version: string | null;
+  // Provenance only, deliberately FK-less (fact.* is outside the public
+  // dump/restore set); nullable because historical rows predate it.
+  build_run_id: string | null;
   taxonomy_version: string;
   data_range_start: ColumnType<Date, Date | string, Date | string>;
   data_range_end: ColumnType<Date, Date | string, Date | string>;
@@ -105,6 +108,64 @@ export interface JudgeOutcomeAggregatesTable extends AggregateRowBase {
 export interface JudgeSentencingAggregatesTable extends AggregateRowBase {
   judge_id: Immutable<string>;
   sentencing_sample_size: Immutable<number>;
+}
+
+/**
+ * Task 35.1 conviction-grain sentencing-index tables. Same immutability rules
+ * as the Sprint 2 aggregate tables. Percentages are `numeric(4,1)` and median
+ * day values `numeric(6,1)` — the `pg` driver returns numerics as strings;
+ * inserts accept numbers or strings.
+ */
+interface SentencingIndexSummaryBase {
+  id: Immutable<string, string | undefined>;
+  aggregate_run_id: Immutable<string>;
+  charge_id: Immutable<string>;
+  convictions: Immutable<number>;
+  sentenced_convictions: Immutable<number>;
+  wedge_count: Immutable<number>;
+  wedge_percentage: Immutable<string, number | string>;
+  is_thin_data: Immutable<boolean>;
+  date_range_start: Immutable<Date, Date | string>;
+  date_range_end: Immutable<Date, Date | string>;
+  taxonomy_version: Immutable<string>;
+  created_at: Immutable<Date, Date | string | undefined>;
+}
+
+interface SentencingIndexCategoryBase {
+  id: Immutable<string, string | undefined>;
+  aggregate_run_id: Immutable<string>;
+  charge_id: Immutable<string>;
+  category_code: Immutable<string>;
+  conviction_count: Immutable<number>;
+  percentage_of_sentenced: Immutable<string, number | string>;
+  median_min_days: Immutable<string | null, number | string | null>;
+  median_max_days: Immutable<string | null, number | string | null>;
+  min_assumed_percentage: Immutable<string | null, number | string | null>;
+  taxonomy_version: Immutable<string>;
+  created_at: Immutable<Date, Date | string | undefined>;
+}
+
+export type ChargeSentencingIndexSummariesTable = SentencingIndexSummaryBase;
+
+export type ChargeSentencingIndexAggregatesTable = SentencingIndexCategoryBase;
+
+export interface ChargeConvictionGradeAggregatesTable {
+  id: Immutable<string, string | undefined>;
+  aggregate_run_id: Immutable<string>;
+  charge_id: Immutable<string>;
+  grade: Immutable<string>;
+  conviction_count: Immutable<number>;
+  percentage_of_convictions: Immutable<string, number | string>;
+  taxonomy_version: Immutable<string>;
+  created_at: Immutable<Date, Date | string | undefined>;
+}
+
+export interface JudgeSentencingIndexSummariesTable extends SentencingIndexSummaryBase {
+  judge_id: Immutable<string>;
+}
+
+export interface JudgeSentencingIndexAggregatesTable extends SentencingIndexCategoryBase {
+  judge_id: Immutable<string>;
 }
 
 /**
@@ -358,4 +419,9 @@ export interface Database {
   'analytics.charge_sentencing_aggregates': ChargeSentencingAggregatesTable;
   'analytics.judge_outcome_aggregates': JudgeOutcomeAggregatesTable;
   'analytics.judge_sentencing_aggregates': JudgeSentencingAggregatesTable;
+  'analytics.charge_sentencing_index_summaries': ChargeSentencingIndexSummariesTable;
+  'analytics.charge_sentencing_index_aggregates': ChargeSentencingIndexAggregatesTable;
+  'analytics.charge_conviction_grade_aggregates': ChargeConvictionGradeAggregatesTable;
+  'analytics.judge_sentencing_index_summaries': JudgeSentencingIndexSummariesTable;
+  'analytics.judge_sentencing_index_aggregates': JudgeSentencingIndexAggregatesTable;
 }

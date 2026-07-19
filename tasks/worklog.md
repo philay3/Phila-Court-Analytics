@@ -7763,3 +7763,55 @@ the homepage copy-heavy phase per the amendment's for-the-record note.
 - **Notes for next task:** public-copy disclaimer vocabulary is deliberate
   product copy — inventoried as carved out, not scrubbed. Git history was
   not rewritten.
+
+## Task 35.1 — Conviction-Grain Sentencing Index Aggregates + Build-Run-Id Persistence (2026-07-19)
+
+- **What was built:** (1) Migration `20260719120000` — five conviction-grain
+  sentencing-index tables (`charge_sentencing_index_summaries`,
+  `charge_sentencing_index_aggregates`, `charge_conviction_grade_aggregates`,
+  `judge_sentencing_index_summaries`, `judge_sentencing_index_aggregates`)
+  per the Phase 35 design-gate rulings: wedge exclude-with-disclosure,
+  pooled rates + charge-grain grade mix with `ungraded` bucket, pair medians
+  (days, `min_assumed` included) + `min_assumed` share, thin flag on
+  sentenced convictions, categories from taxonomy only. Percentages
+  `numeric(4,1)` half-up; medians `numeric(6,1)`; summaries servable at zero
+  sentenced (`convictions > 0`, `sentenced_convictions >= 0`). Migration
+  `20260719120001` — nullable `aggregate_runs.build_run_id`, deliberately
+  FK-less (fact.* is outside the dump/restore set; rationale comment in the
+  migration). (2) Generator: `_build_sentencing_index` core + charge/judge
+  wrappers in the same single-run/single-transaction lifecycle; conviction
+  family via the new `pipeline/conviction_family.py` named constant; grades
+  from `parsed.charges.grade`; resolved build-run id now persisted on the run
+  row. (3) Validation extended over all nine tables: wedge identity,
+  category <= sentenced, grade-mix sums, 1-decimal percentage envelope,
+  cross-population conviction reconciliation (union of cells),
+  medians-present-iff-duration-bearing + component `min <= max` (via the
+  persisted build-run id), `build_run_id` presence; `completed` still means
+  validated. (4) Public-surface manifest 9 -> 14: `PublicApiDatabase` Pick,
+  `db/src/types.ts`, both runbooks' dump/TOC/count lists, schema doc, ADR
+  0004 amendment.
+- **Files touched:** `db/migrations/20260719120000_...ts`,
+  `db/migrations/20260719120001_...ts`, `db/src/types.ts`,
+  `apps/api/src/db.ts`, `services/pipeline/src/pipeline/conviction_family.py`,
+  `.../aggregates/generate.py`, `.../aggregates/validate.py`,
+  `services/pipeline/tests/test_aggregates_generate.py`,
+  `tests/test_aggregates_validate.py`, `docs/runbook-go-live.md`,
+  `docs/runbook-rollback-republish.md`, `docs/v1database-schema.md`,
+  `docs/decisions/0004-deployment.md`, `tasks/worklog.md`.
+- **Acceptance:** run `24184d68` against build `1767bea3` generated +
+  validated clean (9 tables, 0 violations); reconciled exactly: citywide
+  6782/5822/960, retail-theft 343/332/11, rates 72.2/41.0/12.4, retail grade
+  mix F3 56.0 / M1 23.9 / S 12.0 / M2 8.2, M4 medians 345/690 & 720/720 with
+  min_assumed 10.1/90.1 (citywide via verification rerun; per-specimen rows
+  exact), all five occurring categories present (costs_fees 10, other 1).
+  Never published; active run `82b6cc99` untouched.
+- **Deviations from plan:** none beyond the adjudicated approval fixes
+  (summary-table date ranges per Q4; ADR amendment as manifest surface).
+- **Notes for next task (35.2/35.3):** Q2 divergence measured ZERO both ways
+  on build `1767bea3` (public_eligible == judge_specific_eligible on all 7738
+  components of judge-eligible conviction parents) — definitions coincide on
+  this build; carry into the 35.3 label pass. Day->month conversion (/30) is
+  the 35.2 API layer's job; nothing stores months. The standing
+  `pca_pipeline_test` currency queue item is CLOSED: both new migrations
+  applied there and the down path round-trip verified; suite runs 1097
+  passed against it.

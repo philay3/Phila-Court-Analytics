@@ -33,6 +33,11 @@ Eligibility is READ, never recomputed (Sprint 6 SD 1): the generator selects
 public-visibility flag, and every other gate already live on the facts from Sprint 5
 — the aggregator re-applies none of them. There is no confidence threshold anywhere.
 
+Task 35.1 adds the conviction-grain sentencing index (five tables, charge and
+charge x judge grain) in the same invocation/run/transaction — see
+:func:`_build_sentencing_index` for the pinned semantics — and persists the
+resolved fact build-run id onto the ``analytics.aggregate_runs`` row.
+
 Run-status lifecycle mapping (Task 26.1, adjudicated in the planning chat). The
 ``analytics.aggregate_runs`` CHECK permits only ``in_progress|completed|failed``; the
 Sprint 6 plan's lifecycle labels are NOT DB enum values. They map onto existing
@@ -65,6 +70,8 @@ from decimal import ROUND_HALF_UP, Decimal
 
 import psycopg
 from psycopg.rows import dict_row
+
+from pipeline.conviction_family import CONVICTION_OUTCOME_CATEGORIES
 
 logger = logging.getLogger("pipeline.aggregates.generate")
 
@@ -142,6 +149,71 @@ _JUDGE_SENTENCING_INSERT_COLUMNS = (
     "taxonomy_version",
 )
 
+# Task 35.1 conviction-grain sentencing-index tables. Five write targets, one
+# generic delete-and-reinsert writer (:func:`_write_index_rows`); the judge
+# variants add ``judge_id`` and the grade table exists at charge grain only
+# (ruling 2 — judge grain carries no grade mix).
+_INDEX_SUMMARY_COLUMNS = (
+    "aggregate_run_id",
+    "charge_id",
+    "convictions",
+    "sentenced_convictions",
+    "wedge_count",
+    "wedge_percentage",
+    "is_thin_data",
+    "date_range_start",
+    "date_range_end",
+    "taxonomy_version",
+)
+_JUDGE_INDEX_SUMMARY_COLUMNS = (
+    "aggregate_run_id",
+    "charge_id",
+    "judge_id",
+    "convictions",
+    "sentenced_convictions",
+    "wedge_count",
+    "wedge_percentage",
+    "is_thin_data",
+    "date_range_start",
+    "date_range_end",
+    "taxonomy_version",
+)
+_INDEX_CATEGORY_COLUMNS = (
+    "aggregate_run_id",
+    "charge_id",
+    "category_code",
+    "conviction_count",
+    "percentage_of_sentenced",
+    "median_min_days",
+    "median_max_days",
+    "min_assumed_percentage",
+    "taxonomy_version",
+)
+_JUDGE_INDEX_CATEGORY_COLUMNS = (
+    "aggregate_run_id",
+    "charge_id",
+    "judge_id",
+    "category_code",
+    "conviction_count",
+    "percentage_of_sentenced",
+    "median_min_days",
+    "median_max_days",
+    "min_assumed_percentage",
+    "taxonomy_version",
+)
+_GRADE_MIX_COLUMNS = (
+    "aggregate_run_id",
+    "charge_id",
+    "grade",
+    "conviction_count",
+    "percentage_of_convictions",
+    "taxonomy_version",
+)
+
+# NULL parsed grades fold into this explicit bucket (ruling 2 — fail-soft,
+# never dropped, never conflated with a real grade).
+UNGRADED_BUCKET = "ungraded"
+
 
 class NoCompletedBuildRunError(RuntimeError):
     """No completed ``fact.fact_build_runs`` run to aggregate from (STOP)."""
@@ -177,6 +249,36 @@ def _percentage(count: int, sample_size: int) -> str:
         Decimal("0.01"), rounding=ROUND_HALF_UP
     )
     return str(value)
+
+
+def _percentage_1dp(count: int, denominator: int) -> str:
+    """``count / denominator`` as a 1-decimal percent string (``numeric(4,1)``).
+
+    Explicitly half-up ``Decimal`` quantization (Phase 35 required fix) —
+    matching SQL ``round(numeric, 1)``, never float ``round()``, whose
+    half-even ties would silently diverge from the SQL-rounded report figures.
+    """
+    value = (Decimal(count) * 100 / Decimal(denominator)).quantize(
+        Decimal("0.1"), rounding=ROUND_HALF_UP
+    )
+    return str(value)
+
+
+def _median_days(values: Sequence[int]) -> str:
+    """Median of integer day values as a 1-decimal string (``numeric(6,1)``).
+
+    The interpolated (``percentile_cont(0.5)``) convention: odd count -> the
+    middle value; even count -> the exact mean of the two middle values (always
+    ``.0`` or ``.5`` over integers, so ``Decimal`` keeps it exact). Half-up
+    quantization for the same SQL-parity reason as :func:`_percentage_1dp`.
+    """
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        median = Decimal(ordered[mid])
+    else:
+        median = (Decimal(ordered[mid - 1]) + Decimal(ordered[mid])) / 2
+    return str(median.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
 
 
 def _resolve_build_run(
@@ -234,13 +336,22 @@ def _load_outcome_facts(
     no aggregate column consumes it, and the fact layer already folded attribution
     validity into ``judge_specific_eligible`` (SD 1 — read eligibility, never
     re-apply attribution rules).
+
+    Task 35.1 additions: ``id`` (the conviction anchor the sentencing-index
+    pass joins components to via ``charge_outcome_id``) and ``grade``, read
+    from the PARSED grain (``parsed.charges.grade`` via ``parsed_charge_id`` —
+    the R-series recon convention; the join is on a NOT NULL FK, so it never
+    drops facts). Grade is data, not eligibility — nothing is recomputed.
     """
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
-            "SELECT normalized_charge_id, outcome_category_code, disposition_date, "
-            "public_eligible, ineligibility_reason_codes, "
-            "normalized_judge_id, judge_specific_eligible "
-            "FROM fact.charge_outcomes WHERE build_run_id = %s",
+            "SELECT co.id, co.normalized_charge_id, co.outcome_category_code, "
+            "co.disposition_date, co.public_eligible, "
+            "co.ineligibility_reason_codes, co.normalized_judge_id, "
+            "co.judge_specific_eligible, pc.grade "
+            "FROM fact.charge_outcomes co "
+            "JOIN parsed.charges pc ON pc.id = co.parsed_charge_id "
+            "WHERE co.build_run_id = %s",
             (build_run_id,),
         )
         return list(cur.fetchall())
@@ -260,10 +371,17 @@ def _load_sentence_facts(
     outcome loader. ``judge_attribution_method`` is deliberately NOT selected:
     the fact layer already folded attribution validity into
     ``judge_specific_eligible`` (SD 1).
+
+    Task 35.1 additions: ``charge_outcome_id`` (the conviction anchor for the
+    sentencing-index pass) and the component duration columns
+    (``min_days`` / ``max_days`` / ``min_assumed``), carried as parsed — never
+    re-derived.
     """
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
-            "SELECT normalized_charge_id, sentencing_category_code, sentence_date, "
+            "SELECT charge_outcome_id, normalized_charge_id, "
+            "sentencing_category_code, sentence_date, "
+            "min_days, max_days, min_assumed, "
             "public_eligible, ineligibility_reason_codes, "
             "normalized_judge_id, judge_specific_eligible "
             "FROM fact.charge_sentences WHERE build_run_id = %s",
@@ -660,24 +778,315 @@ def build_judge_sentencing_aggregates(
     return rows, report
 
 
+def _build_sentencing_index(
+    outcome_facts: Sequence[Mapping[str, object]],
+    sentence_facts: Sequence[Mapping[str, object]],
+    *,
+    judge_grain: bool,
+    data_start_date: date,
+    thin_min_sample: int,
+    taxonomy_version: str,
+) -> tuple[
+    list[dict[str, object]],
+    list[dict[str, object]],
+    list[dict[str, object]],
+    dict[str, object],
+]:
+    """Build one grain of the conviction-grain sentencing index (pure; no DB).
+
+    Task 35.1 core, per the Phase 35 design-gate rulings. Anchors are
+    conviction-family outcome facts (:data:`CONVICTION_OUTCOME_CATEGORIES` —
+    the named constant, never an inline pair) that are ``public_eligible``
+    (charge grain) or ``judge_specific_eligible`` (judge grain — cell
+    membership by the outcome fact's eligibility). A conviction's SENTENCED
+    status is determined by its ``public_eligible`` sentence components at
+    BOTH grains (adjudicated Q2): the same conviction must never read
+    "sentenced" on one page and "unsentenced" on the other.
+
+    Per cell (charge, or charge+judge pair):
+
+    - summary row: convictions, sentenced convictions (>= 1 public-eligible
+      component via ``charge_outcome_id``), wedge = the rest (ruling 1 —
+      excluded-with-disclosure, never "no penalty"), wedge percentage, thin
+      flag on sentenced convictions < ``thin_min_sample`` (ruling 4 — the
+      threshold is threaded from the existing config path, no second
+      literal), and the cell's conviction disposition-date envelope. A cell
+      with convictions but ZERO sentenced convictions still gets its summary
+      row — servable per ruling 4.
+    - category rows (M3 conviction-grain semantics): a conviction counts once
+      per category it has >= 1 public-eligible component of; percentage of
+      sentenced convictions. Categories are whatever occurs (ruling 5 —
+      absence = zero, nothing hardcoded). For duration-bearing categories
+      (>= 1 component with both day bounds), the component-grain median pair
+      in days (``min_assumed`` rows included) plus the ``min_assumed`` share
+      over ALL the cell's public-eligible components of that category (the
+      M4 denominator); all three columns null otherwise (ruling 3).
+    - grade rows (charge grain only, ruling 2): conviction counts per parsed
+      grade, NULL folded into :data:`UNGRADED_BUCKET`; percentage of the
+      cell's convictions.
+
+    Integrity STOPs (:class:`FactIntegrityError`, surfaced pre-write): anchor
+    with null charge FK / null or pre-window disposition date (judge grain:
+    null judge FK too), and any component FEEDING a cell with a half-present
+    duration, negative days, or ``min_days > max_days`` — the component-grain
+    ``min <= max`` guarantee the medians rest on.
+
+    Returns ``(summary_rows, category_rows, grade_rows, report)``;
+    ``grade_rows`` is always empty at judge grain.
+    """
+    eligibility_key = "judge_specific_eligible" if judge_grain else "public_eligible"
+    anchors: list[Mapping[str, object]] = [
+        f
+        for f in outcome_facts
+        if f[eligibility_key]
+        and str(f["outcome_category_code"]) in CONVICTION_OUTCOME_CATEGORIES
+    ]
+
+    grain_label = "judge_specific_eligible" if judge_grain else "public_eligible"
+    by_cell: dict[tuple[str, ...], list[Mapping[str, object]]] = {}
+    for fact in anchors:
+        charge_id = fact["normalized_charge_id"]
+        disposition_date = fact["disposition_date"]
+        if charge_id is None:
+            raise FactIntegrityError(
+                f"{grain_label} conviction fact has a null normalized_charge_id"
+            )
+        if disposition_date is None:
+            raise FactIntegrityError(
+                f"{grain_label} conviction fact has a null disposition_date"
+            )
+        if disposition_date < data_start_date:
+            raise FactIntegrityError(
+                f"{grain_label} conviction fact predates the configured data start date"
+            )
+        if judge_grain:
+            judge_id = fact["normalized_judge_id"]
+            if judge_id is None:
+                raise FactIntegrityError(
+                    "judge_specific_eligible conviction fact has a null "
+                    "normalized_judge_id"
+                )
+            cell = (str(charge_id), str(judge_id))
+        else:
+            cell = (str(charge_id),)
+        by_cell.setdefault(cell, []).append(fact)
+
+    # Public-eligible components keyed by their conviction anchor (Q2: the
+    # component filter is public_eligible at both grains).
+    components_by_outcome: dict[str, list[Mapping[str, object]]] = {}
+    for component in sentence_facts:
+        if component["public_eligible"]:
+            components_by_outcome.setdefault(
+                str(component["charge_outcome_id"]), []
+            ).append(component)
+
+    def _check_component_durations(component: Mapping[str, object]) -> None:
+        min_days = component["min_days"]
+        max_days = component["max_days"]
+        if (min_days is None) != (max_days is None):
+            raise FactIntegrityError(
+                "public_eligible sentence component feeding the sentencing "
+                "index has a half-present duration"
+            )
+        if min_days is not None:
+            if int(min_days) < 0:  # type: ignore[call-overload]
+                raise FactIntegrityError(
+                    "public_eligible sentence component feeding the sentencing "
+                    "index has negative duration days"
+                )
+            if int(min_days) > int(max_days):  # type: ignore[call-overload]
+                raise FactIntegrityError(
+                    "public_eligible sentence component feeding the sentencing "
+                    "index has min_days > max_days"
+                )
+
+    summary_rows: list[dict[str, object]] = []
+    category_rows: list[dict[str, object]] = []
+    grade_rows: list[dict[str, object]] = []
+    total_convictions = 0
+    total_sentenced = 0
+    thin_cells = 0
+
+    for cell, cell_anchors in by_cell.items():
+        convictions = len(cell_anchors)
+        total_convictions += convictions
+
+        cell_categories: dict[str, set[str]] = {}
+        cell_components: dict[str, list[Mapping[str, object]]] = {}
+        sentenced = 0
+        for anchor in cell_anchors:
+            anchor_components = components_by_outcome.get(str(anchor["id"]), ())
+            if anchor_components:
+                sentenced += 1
+            for component in anchor_components:
+                _check_component_durations(component)
+                category = str(component["sentencing_category_code"])
+                cell_categories.setdefault(category, set()).add(str(anchor["id"]))
+                cell_components.setdefault(category, []).append(component)
+        total_sentenced += sentenced
+        wedge = convictions - sentenced
+        is_thin = sentenced < thin_min_sample
+        if is_thin:
+            thin_cells += 1
+
+        dates = [f["disposition_date"] for f in cell_anchors]
+        cell_key = (
+            {"charge_id": cell[0], "judge_id": cell[1]}
+            if judge_grain
+            else {"charge_id": cell[0]}
+        )
+        summary_rows.append(
+            {
+                **cell_key,
+                "convictions": convictions,
+                "sentenced_convictions": sentenced,
+                "wedge_count": wedge,
+                "wedge_percentage": _percentage_1dp(wedge, convictions),
+                "is_thin_data": is_thin,
+                "date_range_start": min(dates),  # type: ignore[type-var]
+                "date_range_end": max(dates),  # type: ignore[type-var]
+                "taxonomy_version": taxonomy_version,
+            }
+        )
+
+        for category in sorted(cell_categories):
+            category_components = cell_components[category]
+            duration_components = [
+                c for c in category_components if c["min_days"] is not None
+            ]
+            if duration_components:
+                median_min: str | None = _median_days(
+                    [int(c["min_days"]) for c in duration_components]  # type: ignore[call-overload]
+                )
+                median_max: str | None = _median_days(
+                    [int(c["max_days"]) for c in duration_components]  # type: ignore[call-overload]
+                )
+                min_assumed_pct: str | None = _percentage_1dp(
+                    sum(1 for c in category_components if c["min_assumed"]),
+                    len(category_components),
+                )
+            else:
+                median_min = median_max = min_assumed_pct = None
+            category_rows.append(
+                {
+                    **cell_key,
+                    "category_code": category,
+                    "conviction_count": len(cell_categories[category]),
+                    "percentage_of_sentenced": _percentage_1dp(
+                        len(cell_categories[category]), sentenced
+                    ),
+                    "median_min_days": median_min,
+                    "median_max_days": median_max,
+                    "min_assumed_percentage": min_assumed_pct,
+                    "taxonomy_version": taxonomy_version,
+                }
+            )
+
+        if not judge_grain:
+            grade_counts = Counter(
+                str(f["grade"]) if f["grade"] is not None else UNGRADED_BUCKET
+                for f in cell_anchors
+            )
+            for grade, count in sorted(grade_counts.items()):
+                grade_rows.append(
+                    {
+                        **cell_key,
+                        "grade": grade,
+                        "conviction_count": count,
+                        "percentage_of_convictions": _percentage_1dp(
+                            count, convictions
+                        ),
+                        "taxonomy_version": taxonomy_version,
+                    }
+                )
+
+    report: dict[str, object] = {
+        "index_cells": len(by_cell),
+        "index_convictions": total_convictions,
+        "index_sentenced_convictions": total_sentenced,
+        "index_wedge": total_convictions - total_sentenced,
+        "index_category_rows": len(category_rows),
+        "index_grade_rows": len(grade_rows),
+        "index_thin_cells": thin_cells,
+    }
+    return summary_rows, category_rows, grade_rows, report
+
+
+def build_charge_sentencing_index(
+    outcome_facts: Sequence[Mapping[str, object]],
+    sentence_facts: Sequence[Mapping[str, object]],
+    *,
+    data_start_date: date,
+    thin_min_sample: int,
+    taxonomy_version: str,
+) -> tuple[
+    list[dict[str, object]],
+    list[dict[str, object]],
+    list[dict[str, object]],
+    dict[str, object],
+]:
+    """Charge-grain sentencing index: summaries, category rows, grade mix."""
+    return _build_sentencing_index(
+        outcome_facts,
+        sentence_facts,
+        judge_grain=False,
+        data_start_date=data_start_date,
+        thin_min_sample=thin_min_sample,
+        taxonomy_version=taxonomy_version,
+    )
+
+
+def build_judge_sentencing_index(
+    outcome_facts: Sequence[Mapping[str, object]],
+    sentence_facts: Sequence[Mapping[str, object]],
+    *,
+    data_start_date: date,
+    thin_min_sample: int,
+    taxonomy_version: str,
+) -> tuple[
+    list[dict[str, object]],
+    list[dict[str, object]],
+    dict[str, object],
+]:
+    """Judge-grain sentencing index: summaries and category rows (no grade mix)."""
+    summary_rows, category_rows, grade_rows, report = _build_sentencing_index(
+        outcome_facts,
+        sentence_facts,
+        judge_grain=True,
+        data_start_date=data_start_date,
+        thin_min_sample=thin_min_sample,
+        taxonomy_version=taxonomy_version,
+    )
+    assert not grade_rows  # structural: ruling 2, no grade mix at judge grain
+    return summary_rows, category_rows, report
+
+
 def _create_run(
     conn: psycopg.Connection,
     *,
+    build_run_id: str,
     taxonomy_version: str,
     parser_version: int,
     data_range_start: date,
     data_range_end: date,
     started_at: datetime,
 ) -> str:
-    """Insert the ``in_progress`` ("generated") run row and commit it (history)."""
+    """Insert the ``in_progress`` ("generated") run row and commit it (history).
+
+    Task 35.1: the resolved fact build-run id is PERSISTED on the run row (the
+    ops-track item — the resolution :func:`_resolve_build_run` already performs
+    is now written, not just printed). The column is provenance without an FK
+    (see the 35.1 migration's rationale); every new run writes it.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO analytics.aggregate_runs
               (status, started_at, parser_version, taxonomy_version,
-               data_range_start, data_range_end)
+               data_range_start, data_range_end, build_run_id)
             VALUES (%(status)s, %(started_at)s, %(parser_version)s,
-                    %(taxonomy_version)s, %(data_range_start)s, %(data_range_end)s)
+                    %(taxonomy_version)s, %(data_range_start)s,
+                    %(data_range_end)s, %(build_run_id)s)
             RETURNING id
             """,
             {
@@ -687,6 +1096,7 @@ def _create_run(
                 "taxonomy_version": taxonomy_version,
                 "data_range_start": data_range_start,
                 "data_range_end": data_range_end,
+                "build_run_id": build_run_id,
             },
         )
         row = cur.fetchone()
@@ -808,6 +1218,38 @@ def _write_judge_sentencing_aggregates(
     return len(rows)
 
 
+def _write_index_rows(
+    conn: psycopg.Connection,
+    run_id: str,
+    table: str,
+    columns: Sequence[str],
+    rows: Sequence[Mapping[str, object]],
+) -> int:
+    """Delete-and-reinsert one sentencing-index table's rows (caller's tx).
+
+    The same immutable-safe write path as :func:`_write_aggregates` (SD 4),
+    generic over the five Task 35.1 tables — ``table`` and ``columns`` are
+    always module constants, never input. Does not commit; the caller owns the
+    transaction boundary, so every index write lands in the SAME transaction
+    as the four Sprint 6 passes for one atomic run.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            f"DELETE FROM analytics.{table} WHERE aggregate_run_id = %s",  # noqa: S608 - table names are module constants, never input
+            (run_id,),
+        )
+        if not rows:
+            return 0
+        column_list = ", ".join(columns)
+        placeholders = ", ".join(f"%({col})s" for col in columns)
+        cur.executemany(
+            f"INSERT INTO analytics.{table} ({column_list}) "  # noqa: S608 - table/columns are module constants, never input
+            f"VALUES ({placeholders})",
+            [{**row, "aggregate_run_id": run_id} for row in rows],
+        )
+    return len(rows)
+
+
 def _fail_run(conn: psycopg.Connection, run_id: str) -> None:
     """Mark a run ``failed`` in its own transaction (no partial rows persist)."""
     with conn.cursor() as cur:
@@ -831,6 +1273,8 @@ def _print_summary(
     judge_report: Mapping[str, object],
     judge_sentencing_report: Mapping[str, object],
     charges_outcomes_no_sentencing: int,
+    index_report: Mapping[str, object],
+    judge_index_report: Mapping[str, object],
 ) -> None:
     """Counts-only run report (fixed codes + hash-prefix run ids; no docket data)."""
     source = "default" if is_default_build_run else "forced"
@@ -901,6 +1345,34 @@ def _print_summary(
         f"thin_data_sentencing_pairs={thin_sentencing_pairs} "
         f"({BELOW_MINIMUM_SAMPLE}; min_sample={thin_min_sample})"
     )
+    # Conviction-grain sentencing index (Task 35.1): counts only, both grains,
+    # same run and transaction.
+    print(
+        f"index_charges={index_report['index_cells']} "
+        f"index_convictions={index_report['index_convictions']} "
+        f"index_sentenced_convictions={index_report['index_sentenced_convictions']} "
+        f"index_wedge={index_report['index_wedge']}"
+    )
+    print(
+        f"index_category_rows={index_report['index_category_rows']} "
+        f"index_grade_rows={index_report['index_grade_rows']}"
+    )
+    print(
+        f"index_thin_charges={index_report['index_thin_cells']} "
+        f"({BELOW_MINIMUM_SAMPLE}; min_sample={thin_min_sample})"
+    )
+    print(
+        f"judge_index_pairs={judge_index_report['index_cells']} "
+        f"judge_index_convictions={judge_index_report['index_convictions']} "
+        "judge_index_sentenced_convictions="
+        f"{judge_index_report['index_sentenced_convictions']} "
+        f"judge_index_wedge={judge_index_report['index_wedge']}"
+    )
+    print(
+        f"judge_index_category_rows={judge_index_report['index_category_rows']} "
+        f"judge_index_thin_pairs={judge_index_report['index_thin_cells']} "
+        f"({BELOW_MINIMUM_SAMPLE}; min_sample={thin_min_sample})"
+    )
     print(f"data_range: {data_range_start.isoformat()}..{data_range_end.isoformat()}")
 
 
@@ -961,6 +1433,31 @@ def generate_aggregates(
                 taxonomy_version=taxonomy_version,
             )
         )
+        # Task 35.1: the conviction-grain sentencing index, both grains, same
+        # pre-write STOP phase as the four Sprint 6 passes.
+        (
+            index_summary_rows,
+            index_category_rows,
+            index_grade_rows,
+            index_report,
+        ) = build_charge_sentencing_index(
+            facts,
+            sentence_facts,
+            data_start_date=data_start_date,
+            thin_min_sample=thin_min_sample,
+            taxonomy_version=taxonomy_version,
+        )
+        (
+            judge_index_summary_rows,
+            judge_index_category_rows,
+            judge_index_report,
+        ) = build_judge_sentencing_index(
+            facts,
+            sentence_facts,
+            data_start_date=data_start_date,
+            thin_min_sample=thin_min_sample,
+            taxonomy_version=taxonomy_version,
+        )
     except FactIntegrityError as exc:
         logger.error(
             "refusing to generate aggregates", extra={"reason": type(exc).__name__}
@@ -996,6 +1493,7 @@ def generate_aggregates(
     started_at = datetime.now(UTC)
     run_id = _create_run(
         conn,
+        build_run_id=build_run_id,
         taxonomy_version=taxonomy_version,
         parser_version=parser_version,
         data_range_start=data_start_date,
@@ -1009,6 +1507,41 @@ def generate_aggregates(
             _write_sentencing_aggregates(conn, run_id, sentencing_rows)
             _write_judge_outcome_aggregates(conn, run_id, judge_rows)
             _write_judge_sentencing_aggregates(conn, run_id, judge_sentencing_rows)
+            _write_index_rows(
+                conn,
+                run_id,
+                "charge_sentencing_index_summaries",
+                _INDEX_SUMMARY_COLUMNS,
+                index_summary_rows,
+            )
+            _write_index_rows(
+                conn,
+                run_id,
+                "charge_sentencing_index_aggregates",
+                _INDEX_CATEGORY_COLUMNS,
+                index_category_rows,
+            )
+            _write_index_rows(
+                conn,
+                run_id,
+                "charge_conviction_grade_aggregates",
+                _GRADE_MIX_COLUMNS,
+                index_grade_rows,
+            )
+            _write_index_rows(
+                conn,
+                run_id,
+                "judge_sentencing_index_summaries",
+                _JUDGE_INDEX_SUMMARY_COLUMNS,
+                judge_index_summary_rows,
+            )
+            _write_index_rows(
+                conn,
+                run_id,
+                "judge_sentencing_index_aggregates",
+                _JUDGE_INDEX_CATEGORY_COLUMNS,
+                judge_index_category_rows,
+            )
     except Exception:
         conn.rollback()
         with conn.transaction():
@@ -1032,6 +1565,8 @@ def generate_aggregates(
         judge_report=judge_report,
         judge_sentencing_report=judge_sentencing_report,
         charges_outcomes_no_sentencing=charges_outcomes_no_sentencing,
+        index_report=index_report,
+        judge_index_report=judge_index_report,
     )
     logger.info("aggregate generation complete", extra={"run": run_id[:16]})
     return 0

@@ -68,6 +68,22 @@ The nine tables (the compile-enforced public API surface,
 8. `analytics.judge_outcome_aggregates`
 9. `analytics.judge_sentencing_aggregates`
 
+**Amendment (2026-07-19, Task 35.1):** the public table set is now FOURTEEN
+tables — the nine above plus the conviction-grain sentencing-index tables:
+
+10. `analytics.charge_sentencing_index_summaries`
+11. `analytics.charge_sentencing_index_aggregates`
+12. `analytics.charge_conviction_grade_aggregates`
+13. `analytics.judge_sentencing_index_summaries`
+14. `analytics.judge_sentencing_index_aggregates`
+
+The compile-enforced manifest (`apps/api/src/db.ts`) and both runbooks carry
+the same fourteen. `analytics.aggregate_runs` additionally gained a
+`build_run_id` column that is DELIBERATELY FK-less: `fact.*` is outside this
+dump set, so a foreign key to `fact.fact_build_runs` would break the restore
+path (see the 35.1 migration's rationale comment). "Nine-table" phrasing
+elsewhere in this ADR reads as this fourteen-table set from Task 35.1 onward.
+
 Republishing to production is a re-run of the same dump/restore procedure.
 Migration bookkeeping tables (`public.kysely_migration`,
 `public.kysely_migration_lock`) always come from running the migrator,
