@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useId, useRef, useState } from 'react';
 import { CHARGE_DIRECTORY_UNAVAILABLE_MESSAGE, type ChargeDirectoryResponse } from '@pca/shared';
 import { formatSampleSize } from '../lib/formatters';
-import { CHARGES_COPY, formatChargeCountLine } from './charges-copy';
+import { CHARGES_COPY, availabilityText, formatChargeCountLine } from './charges-copy';
 
 /**
  * Charges directory view (task DP-4): h1 + lead → filter → count line → row
@@ -35,17 +35,6 @@ import { CHARGES_COPY, formatChargeCountLine } from './charges-copy';
  */
 interface ChargesDirectoryViewProps {
   data: ChargeDirectoryResponse;
-}
-
-/**
- * The availability line as rendered on rows, exactly two states keyed off
- * hasSentencing. Exported for the DP-5 homepage featured cards, which must
- * render the line byte-identically with directory rows (reuse-first).
- */
-export function availabilityText(hasSentencing: boolean): string {
-  return hasSentencing
-    ? CHARGES_COPY.availabilityWithSentencing
-    : CHARGES_COPY.availabilityOutcomesOnly;
 }
 
 export function ChargesDirectoryView({ data }: ChargesDirectoryViewProps) {
@@ -132,7 +121,9 @@ export function ChargesDirectoryView({ data }: ChargesDirectoryViewProps) {
               <p className="mt-1.5 text-sm text-muted">{availabilityText(charge.hasSentencing)}</p>
               {/* DP-5 pin 3: the sample-size line is the ONLY statistic rows
                   carry, rendered through the pinned formatter convention. */}
-              <p className="mt-1 text-sm text-faint">{formatSampleSize(charge.outcomeSampleSize)}</p>
+              <p className="mt-1 text-sm text-faint">
+                {formatSampleSize(charge.outcomeSampleSize)}
+              </p>
               <span className="row-action-arrow mt-3 self-start text-[0.9375rem] font-semibold text-accent group-hover:underline desktop:absolute desktop:top-[1.125rem] desktop:right-6 desktop:mt-0">
                 {CHARGES_COPY.rowAction}
               </span>

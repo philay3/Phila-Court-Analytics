@@ -94,9 +94,11 @@ describe('ChargesDirectoryView', () => {
     // Present direction: each row carries exactly the pinned noun-free line,
     // formatted through the 11.4 formatter (en-US grouping).
     const items = within(screen.getByRole('list')).getAllByRole('listitem');
-    expect(
-      items.map((item) => within(item).getByText(/^Sample size: /).textContent),
-    ).toEqual(['Sample size: 8,412', 'Sample size: 517', 'Sample size: 1,206']);
+    expect(items.map((item) => within(item).getByText(/^Sample size: /).textContent)).toEqual([
+      'Sample size: 8,412',
+      'Sample size: 517',
+      'Sample size: 1,206',
+    ]);
     // Absent direction: no outcome/sentencing statistic renders — no
     // percentages, no counts outside the sample-size lines. Stripping the
     // sample-size lines leaves no digits from the payload values.
