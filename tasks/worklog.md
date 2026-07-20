@@ -8290,3 +8290,152 @@ the homepage copy-heavy phase per the amendment's for-the-record note.
   Delta attribution order and expected totals per recon R6 stand; the MC
   class contributes ADDITIONS ONLY, keyed to the 5 prefixes above, with the
   banked warning/review/zero-disposed profile as the per-doc expectation.
+## Task 34.5 — Phase 34 Batch Corpus Rerun, Delta Attribution + Tier-2 Golden Refresh (2026-07-19/20)
+
+- **Verdict (adjudicated 2026-07-19): the batch is PROVEN.** The combined
+  corpus effect of 34.1–34.4 equals exactly the union of the adjudicated
+  delta classes; every diff attributed to exactly one class; zero
+  unattributable motion; totals reconcile exactly at every seam. Zero DB
+  writes end-to-end (two read-only consultations, posture echoed
+  `default_transaction_read_only=on`).
+- **Instruments (per R7 + the S1 ruling):** tier-2 drift authority =
+  `run-fixtures --corpus-dir ~/court-data/intake` (NOT the 1,603-fixture
+  dir — the approved plan named `fixtures` in error; corrected mid-run,
+  ruling S1: read-only/no-flag corrections are within the corrected-command
+  norm; ANY correction involving a write flag is a hard STOP first).
+  Equivalence instrument = `equivalence-check` over the 1,603 fixtures vs
+  the capstone baseline, salt-parity default posture (hash excluded).
+- **Drift run (verbatim, `34.5-tier2-drift-intake-console-20260719T221825Z.txt`):**
+  `tier1: match=46 diverged=0 updated=0 new=0 missing=0`
+  `tier2: match=15969 diverged=38 updated=0 new=0 golden_missing=11581 failed=0`
+  (exit 1 = dirty-on-diverged/missing, attributed). Comparator conserved
+  exactly: 11,346+4,661 = 15,969+38 = 16,007. Envelope 6→7 bump: zero
+  version-driven divergence across all 16,007 (34.1 neutrality proof,
+  empirical).
+- **Equivalence run (verbatim, `34.5-equivalence-console-20260719T221825Z.txt`):**
+  `equivalent=227 divergent=1369 parse_failed=0 extraction_failed=0
+  baseline_missing=7 corpus_missing=0`, `reconciled: True`,
+  `held_value_gate: PASS (held=464 populated=464 violations=0)`,
+  `un_disposal: FAIL (charges=1 dockets=1)` (exit 1). Extraction untouched
+  by the batch — extraction equivalence holds trivially.
+- **Two-instrument union, exact:** 38 intake-diverged + 8 fixture-side
+  class members (absent from intake by hash — proven via full-corpus hash
+  index; their goldens are Jul-11-era, outside the intake comparator;
+  their 34.x delta isolated by the 32.2→34.5 equivalence-artifact delta)
+  = 46 = 12 R600 + 4 F-V + 4 F-C + 26 C. Zero overlap, zero multi-class
+  membership — the open R600×F-C/F-Q overlap question resolves to NONE.
+  Row grain exact: R600 76 raw-only rows (68+8); F-V 4; F-C 4 dockets
+  (sentence-component motion only); C 28 rows (23 raw/date→null incl. the
+  3 C-H, 5 C-U-P re-disposed to the surviving mapped sibling with dates
+  kept), `e760e676` warning-only. Warnings `SUSPECT_DISPOSITION_TOKEN`
+  +38 on 26 dockets, doc-for-doc per the r4supp A3 figure.
+- **Failed set (S2, adjudicated):** at intake grain the pre-batch failed
+  set was 11 = the named nine + two non-DB CP extras (`ee393768`,
+  `24f9661d`) invisible to the DB-grain r3supp sweep. Both carry the exact
+  34.2 fragment crash signature (phantom-month predicate lines: {2,11} vs
+  seq {1}; {5,6,11} vs seqs {1,2,3}) and parse clean post-guard. RULED:
+  F-Q extends to 6 at intake grain; failed restates 11→0; DB grain
+  unchanged (quarantine 9); init set = 11. Nothing entered the failed set;
+  no new failure signature.
+- **`golden_missing` motion, exact decomposition:** 3,302 + 11 ex-failed
+  + 8,268 collector arrivals = 11,581 (the intake corpus is LIVE — 27,588
+  files at drift-run start vs 19,320 at the 32.2 refresh; S6: tier-2
+  golden-coverage policy for collector arrivals is a Phase-2-cycle
+  decision, not invented here).
+- **Ledger amendments (S5, all demonstrated):** (1) review_needed +12 on C
+  dockets, false→true — mechanical severity consequence
+  (SUSPECT_DISPOSITION_TOKEN is review-severity); (2) F-C class definition
+  amended: re-splits may RESOLVE warnings (UNPARSEABLE_DURATION −1 on
+  `11cca63f`, the re-split component's duration now parses); (3) the
+  r4supp NON_TERMINAL_CASE +9 ripple prediction is STRUCK — +0 observed;
+  `envelope._charge_has_disposition` counts retained sentences, and 34.3
+  leaves sentence flow untouched (sim mis-modeled the envelope predicate).
+  Meta-point (ruled): two sim mis-models, both caught by the rerun — sims
+  are planning instruments, the rerun is the authority (§6.8 hierarchy).
+- **Instrument motion (S3, adjudicated as expected state):** un_disposal
+  FAIL 1/1 and held-gate 463→464 are the SAME row — `e3b9112c` seq 2
+  (C-U), raw/date/judge all null, event keys retained; reproduced with the
+  tool's own predicates. The instrument fired correctly on a designed
+  un-disposal; this adjudication is the required review. Dated-null
+  invariant holds on the row.
+- **Invariants:** (1) fixtures 1,603 / baseline_missing exactly 7 /
+  corpus_missing 0 / reconciled ✓; (2)–(4) dated-held 0, dated-null 0,
+  date-without-string 0 — BEFORE: scan over all 17,611 goldens
+  (`34.5-golden-invariant-scan-BEFORE-20260719T221825Z.txt`), AFTER: scan
+  over all 17,622 (`...-AFTER-20260720T003357Z.txt`), plus diff-grain
+  checks (0 candidates); (5) superseded form: exactly the adjudicated
+  eleven transitioned failed→parsed, nothing else moved, no new signature;
+  (6) zero diffs outside the ledger union (0 unattributable, both
+  instruments).
+- **Nine named additions doc-for-doc:** MC 5/5 per the banked 34.4 profile
+  (5× BLANK_DOB_CAPTION + 2× NON_TERMINAL_CASE + 1×
+  UNKNOWN_NOT_FINAL_DISPOSITION; 1 review_needed = `1843aeb9`; 2
+  zero-disposed = `a0477b60`, `a2779cd9`; identity mapping exact:
+  1843aeb9→bb1734a6, a0477b60→f52591a5, a2779cd9→f94523d5,
+  f16bd8b4→6587b0ee, f9bcc008→74d24882). F-Q 4/4 parsed clean
+  (`cb57fc53` +1 info UNPARSEABLE_DURATION; others zero warnings).
+- **GOLDEN WRITE NOTE (required per protocol):** two flag-gated writes,
+  post-adjudication only. (1) `pipeline run-fixtures --corpus-dir
+  ~/court-data/intake --update-goldens` → `tier2: match=15969 diverged=0
+  updated=38 new=0 golden_missing=12020 failed=0` — updated set verified
+  EQUAL to the adjudicated 38 (symmetric diff empty); golden_missing
+  12,020 = 11,581 + 439 further arrivals (restated). (2) `pipeline
+  run-fixtures --corpus-dir ~/court-data/intake-staging-34.5-init11
+  --init-goldens` over the 11-file staging dir → `tier2: match=0
+  diverged=0 updated=0 new=11 golden_missing=0 failed=0`, exit 0 — exactly
+  the adjudicated eleven, stored contents verified against the banked
+  profiles (`34.5-init-golden-verification-20260720T003357Z.txt`). No
+  other golden touched; fixture-hash goldens untouched (S4: 34.6 gains
+  "fixture-corpus golden set — refresh, retire, or re-scope" as a named
+  decision item).
+- **Post-refresh clean run (verbatim, `34.5-tier2-clean-console-20260720T003357Z.txt`):**
+  `tier1: match=46 diverged=0 updated=0 new=0 missing=0`
+  `tier2: match=16018 diverged=0 updated=0 new=0 golden_missing=12287 failed=0`
+  (exit 1 = dirty-on-missing only; zero diverged/failed entries in the
+  report JSON). Reconciles exactly against the adjudicated expected shape:
+  match 16,018 = 15,969 + 38 refreshed + 11 initialized; golden_missing
+  12,287 = 12,020 − 11 + 278 arrivals since the refresh run (corpus 28,305
+  at clean-run start vs 28,027 at refresh vs 27,588 at the drift run — the
+  live-collector arrival delta, named per S6).
+- **Intake-cycle verification ledger (for the next cycle's worklog to
+  check against; review mechanics stated from the review-generation
+  code):** DB-grain reflow: `parse_failed_documents` 9→0, `loaded` +9 via
+  reflow (changed dockets take the `(7,2)>(6,2)` replaced_newer_version
+  arm; the 9 land as fresh `loaded`); the two extras ride ordinary import
+  among collector arrivals; `parsed.dockets` +9; envelope
+  `parser_version=7` uniform on reflowed docs. Facts at rebuild: 4 F-V
+  `unknown`→mapped facts; 23 C rows undisposed (no outcome fact); 5 C-U-P
+  `unknown`→mapped; MC adds 1 `unknown` fact (novel token) + 2
+  zero-disposed docs contribute no outcome facts. Review motion: the
+  queue is persistent and status-preserving (SD 6) — `build_facts`
+  inserts via `ON CONFLICT (dedup_key) DO NOTHING` (key =
+  source_document_id + item_type + charge locator); NOTHING auto-closes.
+  The 32 open `unmapped_disposition` items (4 F-V + 28 C) STOP
+  REGENERATING (`build_outcome_review_item` returns None for mapped
+  results; undisposed rows produce no outcome result); their closure to
+  `superseded` is a conscious key-scoped operation — the 29.3 tool's
+  pinned scope covers held-form populations only, so the cycle needs an
+  adjudicated extension or an analogous key-scoped pass. NEW at reflow:
+  +1 `unmapped_disposition` (MC `1843aeb9`, unknown routing via
+  `build_outcome_review_item`). The 12 C review flips and SUSPECT warnings
+  create NO queue items (`_collect_warning_review_items` routes only
+  MISSING_DISPOSITION_DATE and SENTINEL_COLLISION); "13 review-flagged
+  docs" (12 C + 1 MC) is the envelope `review_needed` flag, not queue
+  volume. `unknown`-fact corrections land at rebuild, not before.
+- **Files touched:** `tasks/worklog.md` only (this entry). All run
+  artifacts under `~/court-data/` (reports listed above; attribution
+  `34.5-attribution-20260719T221825Z.txt`, warning audit
+  `34.5-warning-audit-envelope-20260719T221825Z.txt`, additions profile
+  `34.5-additions-profile-20260719T221825Z.txt`). The fixtures-dir drift
+  console (`34.5-tier2-drift-console-20260719T213543Z.txt`,
+  `tier2: match=1068 diverged=535 ... golden_missing=0 failed=0`) is
+  retained as EVIDENCE ONLY of the S1 corpus-dir error and the stale
+  fixture-golden finding — not a delta instrument.
+- **Deviations from plan:** the S1 corpus-dir correction (adjudicated,
+  accepted); no code changes; no other deviations.
+- **Notes for next task (34.6):** riders now three — (existing two) +
+  "fixture-corpus golden set: refresh, retire, or re-scope" (agent recon
+  on what still consumes the 1,603 Jul-11-era fixture-hash goldens; the
+  34.5 wrong-corpus trap is the exhibit). Ops track carries the S6
+  collector-arrival golden-coverage policy for the Phase-2 cycle.
+
