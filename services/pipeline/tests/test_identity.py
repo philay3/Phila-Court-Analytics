@@ -4,6 +4,7 @@ from pipeline.identity import (
     assert_no_leak,
     assert_related_cases_clean,
     hash_defendant,
+    hash_defendant_name_only,
 )
 
 TEST_SALT = "test-salt"
@@ -73,6 +74,47 @@ def test_hash_defendant_salt_changes_output():
     assert hash_defendant("Smith, John", 1990, salt="salt-a") != hash_defendant(
         "Smith, John", 1990, salt="salt-b"
     )
+
+
+# --- hash_defendant_name_only (34.4 blank-DOB caption variant basis) ---
+
+
+@pytest.mark.parametrize("bad_salt", ["", "   ", None])
+def test_hash_name_only_rejects_missing_salt(bad_salt):
+    with pytest.raises(ValueError) as excinfo:
+        hash_defendant_name_only("Smith, John", salt=bad_salt)
+    message = str(excinfo.value)
+    assert "DEFENDANT_HASH_SALT" in message
+    assert "Smith" not in message
+
+
+def test_hash_name_only_requires_salt_keyword():
+    with pytest.raises(TypeError):
+        hash_defendant_name_only("Smith, John", TEST_SALT)
+
+
+def test_hash_name_only_deterministic_and_salt_sensitive():
+    assert hash_defendant_name_only(
+        "Smith, John", salt=TEST_SALT
+    ) == hash_defendant_name_only("Smith, John", salt=TEST_SALT)
+    assert hash_defendant_name_only(
+        "Smith, John", salt="salt-a"
+    ) != hash_defendant_name_only("Smith, John", salt="salt-b")
+
+
+def test_hash_name_only_normalization_parity_with_full_basis():
+    # Same normalization as hash_defendant: case, punctuation, and whitespace
+    # variants of the same name collapse to one hash.
+    assert hash_defendant_name_only(
+        "SMITH,  JOHN", salt=TEST_SALT
+    ) == hash_defendant_name_only("smith john", salt=TEST_SALT)
+
+
+def test_hash_name_only_differs_from_full_basis_for_any_year():
+    # The name-only basis is not any year's name+year basis (no sentinel year).
+    name_only = hash_defendant_name_only("Smith, John", salt=TEST_SALT)
+    for year in (0, 1900, 1990, 2025):
+        assert name_only != hash_defendant("Smith, John", year, salt=TEST_SALT)
 
 
 # --- assert_no_leak key-allowlist rule (dict keys are never scanned) ---

@@ -4,6 +4,7 @@ import { sql, type Kysely } from 'kysely';
 
 import { createDb } from '../src/connection.js';
 import { describeError } from '../src/errors.js';
+import { assertLocalDatabaseUrl } from '../src/local-db-guard.js';
 import type { Database } from '../src/types.js';
 
 /**
@@ -64,6 +65,19 @@ export async function checkSeedTarget(db: Kysely<Database>): Promise<SeedGuardVe
 }
 
 export async function guardMain(): Promise<number> {
+  // Local-host guard (task 34.6): pre-connection, and deliberately WITHOUT
+  // the remote override — remote seeding is prohibited unconditionally
+  // (34.6 plan-gate ruling; the prod data path is dump/restore, never seeds).
+  const connectionString = process.env.DATABASE_URL;
+  if (connectionString) {
+    try {
+      assertLocalDatabaseUrl(connectionString, 'db:seed', { allowRemoteOverride: false });
+    } catch (error) {
+      console.error(describeError(error));
+      return 2;
+    }
+  }
+
   let db: Kysely<Database>;
   try {
     db = createDb();

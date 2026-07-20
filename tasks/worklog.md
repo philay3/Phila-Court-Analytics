@@ -7955,3 +7955,587 @@ the homepage copy-heavy phase per the amendment's for-the-record note.
   the judge cell. `pca_e2e` scratch-DB convention exercised as established
   — formal promotion recorded at phase close. Drop the review clone after
   the Chops review: `DROP DATABASE pca_35_3_review`.
+
+## Task 34.0 — Phase 34 Pipeline-Hardening Recon (2026-07-19, adjudicated summary)
+
+- **What was done:** Read-only recon over code, DB, and audited sheets for
+  the four Phase 34 hardening classes; no repo or DB writes. Full report:
+  `~/court-data/reports/phase34-recon-20260719/report.md` (+ SQL/console
+  artifacts alongside).
+- **Findings (per class):** R2 Rule 600 — the 18.2 Item-2 line-wrap class;
+  truncated capture `Dismissed - Rule 600 (Speedy` (28 bytes), 76 rows /
+  12 CP dockets, all post-32.2; fix = repair-table entry + map key swap;
+  routing-list token must survive (pre-repair stream). R3 fragment — 4
+  victims absorbed by the charge-line regex on slash-date condition lines
+  (not the sentence-continuation heuristic). R4 concat — `§`-bearing
+  tokens, 28 rows / 25 dockets. R5 MC missing-caption — 5 docs, blank-DOB
+  caption layout; identity-basis decision flagged for adjudication.
+- **Cross-cutting:** docket-grain overlap between classes is zero on all
+  pairs; per-class row-grain delta signatures defined for single-rerun
+  attribution (anything unattributed = STOP). Version implications: one
+  envelope bump 6→7 for the whole batch, record parser_version stays 2,
+  `ACCEPTED_ENVELOPE_VERSIONS` → {7} with the bump. Ruled build order:
+  Rule 600 → fragment guard → concat reject → MC caption; bump rides the
+  final change. Tier-1 sketch: 4 additive fixture/golden pairs, no
+  existing fixture or golden changes.
+
+## Task 34.1 — Rule 600 Truncation Repair + Map-Key Reconciliation (2026-07-19)
+
+- **What was built:** (1) `_TRUNCATED_DISPOSITION_REPAIRS` gains its second
+  corpus-evidenced entry: `Dismissed - Rule 600 (Speedy` (28 bytes) →
+  `Dismissed - Rule 600 (Speedy Trial)` (35 bytes); existing post-parse
+  exact-match sweep, no mechanism change, silent (no warning/annotation —
+  current behavior, unchanged). (2) `DISPOSITION_OUTCOME_MAP` key swap:
+  truncated key retired, full form added → `dismissed` (category
+  invariant; 22.4 fresh-map principle). The truncated token STAYS in
+  `NON_TERMINAL_DISPOSITIONS` with an in-code comment naming the reason
+  (routing consumes pre-repair stream tokens; not a map key; deliberate
+  22.4 carve-out). (3) Tier-1 additive pair `rule600_truncation_cp.txt` +
+  golden (polluted-continuation shape proving no continuation read) +
+  index entry (42 → 43). (4) Unit tests: repair applied
+  (`test_truncated_rule600_disposition_repaired`), routing unchanged
+  (`test_rule600_token_routing_unchanged`), truncated key absent + full
+  key → `dismissed` (`test_truncated_rule600_key_absent`, replacing the
+  now-obsolete 22.4 verbatim-mapping test).
+- **Golden write:** `pipeline run-fixtures --update-goldens` wrote the ONE
+  new tier-1 golden `rule600_truncation_cp.json`
+  (`tier1: match=42 diverged=0 updated=0 new=1 missing=0`) — no existing
+  golden touched.
+- **Files touched:** `services/pipeline/src/pipeline/docket_parser.py`,
+  `src/pipeline/normalization/outcome_mapper.py`,
+  `tests/test_docket_parser.py`, `tests/test_outcome_mapper.py`,
+  `tests/tier1/fixtures/rule600_truncation_cp.txt`,
+  `tests/tier1/goldens/rule600_truncation_cp.json`,
+  `tests/tier1/fixture-index.yaml`, `tasks/worklog.md`.
+- **Deviations from plan:** none in code. One plan-text correction ruled at
+  the gate: the full form is 35 bytes, not 36 (plan arithmetic error, not
+  an observation).
+- **Notes for next task (34.2–34.4):** envelope bump placement RULED at the
+  34.1 plan gate: 6→7 + `ACCEPTED_ENVELOPE_VERSIONS` → {7} ride 34.4, so
+  the acceptance set stays {6} until then — now a sequencing INVARIANT:
+  no corpus tooling runs between 34.1 and the batch rerun (34.5 follows
+  34.4 in the ruled order). Expected 34.1 delta class at the rerun:
+  raw-string change only on exactly the 76 truncation-class rows.
+
+## Task 34.2 — Sentence-Condition Fragment Guard (2026-07-19)
+
+- **Pre-build mini-gate (adjudicated plan amendment):** a read-only corpus
+  scan (`r3supp_fragment_scan.py` + console + `r3-supplement.md` in
+  `~/court-data/reports/phase34-recon-20260719/`) simulated the disposition
+  loop pre- and post-guard over all 17,619 stored extraction artifacts,
+  quarantined docs included. Findings, CONFIRMED as 34.2's expected delta
+  class: 27 docs / 60 predicate-matching lines → F-V victim recovery
+  (4 CP dockets, disposition_raw restoration ONLY — R3's component
+  re-attachment claim formally withdrawn), F-C component recovery (4 CP
+  dockets gain components on the real charge), F-Q quarantine exit (the
+  4 CP KeyError docs crash on a fragment-set phantom sequence and PARSE
+  post-guard), F-0 verified inert (15 docs, zero diffs proven). Fidelity:
+  0 replica mismatches, 4/4 victim agreement with zero extras, crash
+  reproduced on exactly the production quartet.
+- **Quarantine adjudication restated (ruled at the mini-gate):** the
+  28.2/aug2025 "isolated expected CP KeyError class" is no longer isolated
+  or unexplained — mechanism: fragment-set phantom sequence KeyError at the
+  component save; exit: this guard. Batch-rerun ledger: parse_failed 9→5
+  from 34.2's effect, 5→0 after 34.4 + reflow; loaded +4 (F-Q) at the rerun
+  cycle and +5 (MC) at reflow. 34.5's spec carries the updated ledger.
+- **What was built:** (1) `_CONDITION_DATE_FRAGMENT_RE` =
+  `^\d{1,2}/\d{1,2}/\d{2,4}(?!\d)` (recon-exact boundary, ruled) and a
+  match-rejection gate at the disposition charge-line branch: a slash-date-
+  leading line no longer matches as a charge line and follows the natural
+  non-charge-line flow, SILENTLY (ruled — a warning would write envelope
+  diffs across healthy dockets; the scan confirmed zero warning motion
+  corpus-wide). No repair table, no adjacent-line reads. (2) Tier-1
+  additive pair `condition_date_fragment_cp.txt` + golden (two charges,
+  plea/nolle forms, fragment whose month digit = sequence 1, trailing
+  component proving true-owner attachment) + index entry (43 → 44).
+  (3) Unit tests: victim shape preserved + silent
+  (`test_fragment_guard_rejects_slash_date_line_preserves_disposition`),
+  rejection boundary shapes (`test_fragment_shapes_rejected_at_charge_match`),
+  false-positive lock (`test_genuine_charge_lines_still_match`),
+  cross-sequence steal (`test_fragment_guard_preserves_component_attachment`),
+  crash class parses — pre-guard KeyError shape
+  (`test_fragment_guard_phantom_sequence_with_component_line_parses`),
+  post-rejection duration-arm raw_text join
+  (`test_rejected_fragment_with_duration_units_joins_component_raw_text`),
+  judge-slot arm (`test_rejected_fragment_in_judge_slot_leaves_judge_capture_intact`).
+  Lock verification: with the predicate neutralized in-memory, the victim
+  overwrite and the phantom KeyError both reproduce.
+- **Golden write:** `pipeline run-fixtures --update-goldens` wrote the ONE
+  new tier-1 golden `condition_date_fragment_cp.json`
+  (`tier1: match=43 diverged=0 updated=0 new=1 missing=0`) — no existing
+  golden touched.
+- **Files touched:** `services/pipeline/src/pipeline/docket_parser.py`,
+  `tests/test_docket_parser.py`,
+  `tests/tier1/fixtures/condition_date_fragment_cp.txt`,
+  `tests/tier1/goldens/condition_date_fragment_cp.json`,
+  `tests/tier1/fixture-index.yaml`, `tasks/worklog.md`.
+- **Deviations from plan:** none in code. Plan amendments all ruled at the
+  mini-gate: scan-before-build; amended delta enumeration (above); phantom
+  test gains a following component-start line.
+- **Notes for next tasks (34.3–34.5):** shared-branch adjacency honored —
+  the 34.3 token gate lands in the same branch with a disjoint predicate
+  (`§`-in-token, after token derivation); no restructuring was done for it.
+  Sequencing invariant continues: `ACCEPTED_ENVELOPE_VERSIONS` stays {6};
+  envelope 6→7 rides 34.4. Expected 34.2 delta at the batch rerun: F-V /
+  F-C / F-Q / F-0 exactly (tier-2 diverged +8, failed 9→5, golden_missing
+  +4); anything outside those signatures is unattributed → STOP. If any F-C
+  docket also carries Rule 600 / concat class membership, per-diff
+  attribution handles co-membership (ruled — expected handling, not
+  anomaly).
+
+## Task 34.3 — Column-Concatenation Guard (2026-07-19)
+
+- **Two planning-chat gates, as ruled.** (1) Plan gate: approved with three
+  open items ruled — ARD/Not-Final judge-line corner gets NO code guard
+  (scan-proven-empty named residual; the post-guard dated-null=0 check is its
+  permanent tripwire), two-charge fixture approved, NON_TERMINAL_CASE ripple
+  accepted ex ante. Formal record correction accepted: the C-H rows land in
+  the existing NULL-disposition non-terminal path (same end state and code
+  path as C-U); recon R4's "held arm" phrasing superseded; C-H/C-U are
+  provenance labels. (2) Mandatory replica scan (r4-supplement:
+  `r4supp_concat_scan.py` + `r4supp-concat-scan-console.txt` +
+  `r4supp_priorwriter_probe.py` + probe console + `r4-supplement.md` in
+  `~/court-data/reports/phase34-recon-20260719/`): full corpus (17,619
+  artifacts, 17,614 sims, 0 fidelity mismatches), predicate coverage 28/28
+  rows on 25 dockets, zero extras, C-R EMPTY; invariants proven (post-guard
+  dated-null 0, dated-held 0 sim AND production; ard_routed co-occurrence 0);
+  MC missing-caption 5 and F-Q 4 all zero predicate lines; F-class overlap 0
+  on both grains.
+- **Scan-gate adjudications (all accepted):** A1 — discovered class C-M
+  (masked-overwrite, 10 instances / 3 CP dockets): gate warns, DB inert;
+  `e760e676` is a warning-only 26th envelope-drift docket outside the
+  25-docket production class. A2 — C-U-P prior-writer unmask sub-class
+  ratified (5 of the 25 C-U rows, 2 CP dockets): a clean same-event sibling
+  row survives rejection, raw swaps concat-string → genuine MAPPED token
+  (nolle ×4, dismissed ×1), dates kept, unknown facts → mapped facts at
+  rebuild; NOT repair — existing latest-writer semantics. A3 — warning
+  volume 38 on 26 docs supersedes 28/25. Amended ledger (r4-supplement.md)
+  is the task's ex-ante delta record per AC2: 28 DB-changed rows on 25
+  dockets = 3 C-H + 20 C-U (→ undisposed/dateless) + 5 C-U-P (→ re-disposed,
+  dates kept); 38 warnings / 26 drift dockets; tier-2 diverged expectation
+  from 34.3 alone: 26; 9 docs gain NON_TERMINAL_CASE; 28
+  unmapped_disposition items stop regenerating (close at rebuild); no new
+  review-item type.
+- **What was built:** (1) the token gate at the routed-event assignment block
+  in `docket_parser.py`: predicate `'§' in token` (byte containment ONLY —
+  never `is_statute_token`, whose digit/single-char arms would false-positive
+  on e.g. "Rule 546 - Open"), placed POST-routing so the six legitimate
+  §-bearing `NON_TERMINAL_DISPOSITIONS` members stay unreachable; rejection
+  leaves `disposition_raw` UNASSIGNED (never forced None — an earlier valid
+  event's disposition survives, the C-U-P mechanism), never reaches the 32.2
+  event-line date, emits the new warning, and leaves
+  current_charge_seq/judge/sentence flow untouched. (2)
+  `SUSPECT_DISPOSITION_TOKEN` in `warning_codes.py` (vocabulary 11 → 12,
+  severity `review`; justification: review swap — 38 warnings replace the 28
+  unmapped_disposition items that stop regenerating; `EMITTED_CODES` picks it
+  up derivationally, envelope untouched). (3) Tier-1 additive pair
+  `concat_row_reject_mc.txt` + golden (two charges: healthy Guilty
+  disposed+dated sibling; boundary-lost row with embedded mapped phrase,
+  statute cue, trailing columns → raw NULL, date NULL, judge capture intact,
+  the warning with structural payload) + index entry (44 → 45). (4) Unit
+  tests: `test_concat_token_rejected_undisposed_with_warning` (C-U arm +
+  containment), `test_concat_held_embedding_rejected_dateless_held_arm` (C-H
+  arm; `_charge_has_disposition` false), 
+  `test_concat_guard_never_overwrites_earlier_disposition` (C-U-P shape),
+  `test_disposition_vocabulary_never_contains_statute_cue` (false-positive
+  lock + six-member premise), 
+  `test_nonterminal_statute_tokens_unaffected_at_routing` (parametrized over
+  the six; placement lock, silent hold preserved),
+  `test_rejected_charge_keeps_nonterminal_event_keys` (18.3 placement),
+  `test_concat_warning_payload_structural_only`; `test_warning_codes.py`
+  vocabulary/severity updated to twelve.
+- **Lock verification (34.2 style):** with the predicate neutralized
+  in-memory (token '§' masked), the whole-row capture (46-char token) AND its
+  event-line date both reproduce; with the real parser the row is rejected +
+  warned. Verified in-session; not a committed test (no patchable seam is
+  worth adding for it).
+- **Golden write:** `pipeline run-fixtures --update-goldens` wrote the ONE
+  new tier-1 golden `concat_row_reject_mc.json`
+  (`tier1: match=44 diverged=0 updated=0 new=1 missing=0`) — no existing
+  golden touched.
+- **Files touched:** `services/pipeline/src/pipeline/docket_parser.py`,
+  `services/pipeline/src/pipeline/warning_codes.py`,
+  `services/pipeline/tests/test_docket_parser.py`,
+  `services/pipeline/tests/test_warning_codes.py`,
+  `services/pipeline/tests/tier1/fixtures/concat_row_reject_mc.txt`,
+  `services/pipeline/tests/tier1/goldens/concat_row_reject_mc.json`,
+  `services/pipeline/tests/tier1/fixture-index.yaml`, `tasks/worklog.md`.
+  (`test_warning_codes.py` was the plan-gate-adjudicated touch-set inclusion
+  beyond recon R6's R4 column.)
+- **Deviations from plan:** none in code. Ledger amendments all ruled at the
+  scan gate (A1/A2/A3 above).
+- **Notes for next tasks (34.4–34.5):** `ACCEPTED_ENVELOPE_VERSIONS` stays
+  {6}; envelope 6 → 7 rides 34.4 (single batch bump; the vocabulary addition
+  is covered by it — no separate version implication). Expected 34.3 delta at
+  the batch rerun, by row-grain signature (old raw contains '§'): exactly the
+  amended ledger — anything outside it is unattributed → STOP. Attribution
+  note: `e760e676` diffs are warning-array-only; C-U-P rows re-dispose
+  (mapped) rather than going NULL — the rerun classifier must expect BOTH
+  shapes inside the concat signature. The ARD/Not-Final corner's tripwire
+  (dated-null row) rides every future rerun.
+
+## Task 34.4 — MC Blank-DOB Caption Variant + Envelope Bump (2026-07-19)
+
+- **Three planning-chat gates, as ruled.** (1) Plan gate: approved with five
+  rulings — severity `info` for the new code (ongoing-volume analysis;
+  MISSING_SENTENCE_DATE precedent: review cannot recover a DOB the sheet does
+  not print); name `BLANK_DOB_CAPTION` (marks the observation, not the design
+  consequence); fixture `blank_dob_caption_mc.txt` (tree convention over the
+  R6 sketch string); `identity.py` + `test_identity.py` confirmed as
+  adjudicated touch-set inclusions (identity logic lives in the designated
+  module, `hash_defendant` byte-untouched); `load.py` stale vocabulary-count
+  comment folded in count-free (points at the module, no restated number).
+  (2) Census gate: r5-supplement accepted as the task's ex-ante boundary
+  record (AC2). (3) In-task-verification STOP: finding accepted, no build
+  change (below).
+- **Pre-build census (r5-supplement; recon dir):** the approved four-conjunct
+  predicate run verbatim over all 17,619 stored extraction artifacts
+  (quarantined included; 0 missing, 0 extraction-failed). Full-signature
+  bearers: exactly 5, doc-for-doc the quarantined MC prefixes; name capture
+  5/5 with BOTH paths available (Defendant line AND v.-block fallback — the
+  variant path never depends on the fallback); zero currently-parsing
+  bearers; near-miss population EMPTY across all six classes. Adjudicated:
+  conjunct C4 currently excludes nothing — pure forward protection; the unit
+  tests' near-miss arms are therefore the ONLY active locks on the
+  fail-closed boundary and carry that weight alone. Files:
+  `r5supp_variant_census.py`, `r5supp-variant-census-console.txt`,
+  `r5-supplement.md`.
+- **What was built:** (1) `_blank_dob_caption_variant` in `docket_parser.py` —
+  positive-signature predicate (DOB label + City/State/Zip label on one
+  DEFENDANT INFORMATION line, letter as first non-space after the label, no
+  date-shaped token anywhere in the section), gated on today's failure
+  condition (`dob_str is None`) AND a present name; the DOB-optional arm
+  computes the name-only hash, emits the new warning (structural payload:
+  section + field), and leaves every other caption anomaly raising
+  `ParseError` exactly as before. Sentinel arm: DOB string included only when
+  the sheet printed one — never `None` in the list; name coverage unchanged
+  for `assert_no_leak`. (2) `hash_defendant_name_only` in `identity.py`: same
+  normalization, same required-salt guard, DOB component omitted — no
+  sentinel year; `hash_defendant` byte-identical; collision note recorded in
+  the docstring (name-only collides more; inert — nothing keys on the hash).
+  (3) `BLANK_DOB_CAPTION` in `warning_codes.py` (vocabulary 12 → 13, severity
+  `info` as ruled; `EMITTED_CODES` picks it up derivationally). (4) Envelope
+  bump: `ENVELOPE_PARSER_VERSION` 6 → 7, `ACCEPTED_ENVELOPE_VERSIONS`
+  {6} → {7} (comments updated; record `parser_version` stays 2 — the 32.2
+  precedent; no basis-marker field, post-load identifiability is
+  `parsed.warnings.code = 'BLANK_DOB_CAPTION'`); version-pinned tests updated
+  (`test_envelope.py` ==7, `test_load.py` helper default 7 + NEW literal pin
+  `ACCEPTED_ENVELOPE_VERSIONS == frozenset({7})`,
+  `test_facts_build_facts.py` ==7, `test_run_fixtures.py` wrapper literal 7);
+  `load.py:244` comment now count-free. (5) Tier-1 additive pair
+  `blank_dob_caption_mc.txt` + golden (variant caption, fictional name,
+  normal body → status parsed, sole BLANK_DOB_CAPTION, review_needed false,
+  normal charge/disposition/sentence capture, name-only hash verified against
+  `hash_defendant_name_only` under the tier-1 salt) + index entry (45 → 46).
+  (6) Unit tests: variant parse + payload + hash basis; name-absent still
+  ParseError; three near-miss arms (no merged label / date token in section /
+  non-letter after label) still ParseError; DOB-present sheet hashes exactly
+  as before with no new warning; deliberate-failure lock (predicate
+  monkeypatched False → the variant sheet reproduces ParseError); privacy
+  lock (no name in record or warnings payload, sentinel coverage intact, no
+  None sentinel); `hash_defendant_name_only` determinism / salt-required /
+  normalization parity / distinct-from-full-basis-for-any-year;
+  warning-vocabulary thirteen + severity table.
+- **Golden write:** flag-gated `run_fixtures(update_goldens=True)` wrote the
+  ONE new tier-1 golden `blank_dob_caption_mc.json`
+  (`tier1: match=45 diverged=0 updated=0 new=1 missing=0`) — no existing
+  golden touched.
+- **In-task verification + STOP adjudication (checklist formally amended):**
+  the patched parser in-memory over the 5 stored artifacts (salt sourced
+  silently; zero DB writes): 5/5 parsed, 5/5 BLANK_DOB_CAPTION, 5/5 hashes
+  computed, zero errors, zero other-class shapes. Three docs additionally
+  carry standing-machinery warnings from first-ever parse output — 2×
+  NON_TERMINAL_CASE (info; zero disposed charges; pending cases observed by
+  design) and 1× UNKNOWN_NOT_FINAL_DISPOSITION (review; the 18.5 router on
+  first contact with novel vocabulary; the review item rides reflow through
+  the normal channel; the token stays out of this record). STOP raised,
+  finding accepted, causal attribution to 34.4 excluded (touch set cannot
+  emit either code; tier-1 match=45 diverged=0 proves zero behavior change on
+  parsing documents). AMENDMENT (ruled): for never-before-parsed documents,
+  "no unexpected warnings" means none attributable to the change beyond
+  BLANK_DOB_CAPTION; standing-machinery output on first parse is a recorded
+  finding, not a failure.
+- **Banked 34.5 ledger (complete ex-ante MC-class profile, doc-for-doc):**
+  5 docs failed → parsed; warnings 5× BLANK_DOB_CAPTION + 2×
+  NON_TERMINAL_CASE + 1× UNKNOWN_NOT_FINAL_DISPOSITION; exactly 1
+  review-needed document (+1 review-item motion at reflow); 2 zero-disposed
+  documents (no outcome facts at reflow); hash prefixes (artifact → parsed
+  identity): 1843aeb9 → bb1734a6, a0477b60 → f52591a5, a2779cd9 → f94523d5,
+  f16bd8b4 → 6587b0ee, f9bcc008 → 74d24882. Anything outside this profile at
+  the rerun/reflow is a STOP there. Tier-2 expectation: failed → 0,
+  `golden_missing` +5; the rerun's reloads of changed dockets take the
+  `(7,2) > (6,2)` replaced_newer_version arm; the 5 land as fresh `loaded`.
+- **Files touched:** `services/pipeline/src/pipeline/docket_parser.py`,
+  `services/pipeline/src/pipeline/identity.py`,
+  `services/pipeline/src/pipeline/warning_codes.py`,
+  `services/pipeline/src/pipeline/envelope.py`,
+  `services/pipeline/src/pipeline/load.py`,
+  `services/pipeline/tests/test_docket_parser.py`,
+  `services/pipeline/tests/test_identity.py`,
+  `services/pipeline/tests/test_warning_codes.py`,
+  `services/pipeline/tests/test_envelope.py`,
+  `services/pipeline/tests/test_load.py`,
+  `services/pipeline/tests/test_facts_build_facts.py`,
+  `services/pipeline/tests/test_run_fixtures.py`,
+  `services/pipeline/tests/tier1/fixtures/blank_dob_caption_mc.txt`,
+  `services/pipeline/tests/tier1/goldens/blank_dob_caption_mc.json`,
+  `services/pipeline/tests/tier1/fixture-index.yaml`, `tasks/worklog.md`.
+  (`identity.py`/`test_identity.py` and the `load.py:244` comment are the
+  plan-gate-adjudicated touches beyond recon R6's R5/bump columns.)
+- **Deviations from plan:** none in code. The verification checklist
+  amendment was ruled at the STOP adjudication (above), not self-applied.
+- **Notes for next task (34.5):** sequencing invariant holds — NO corpus
+  tooling between this commit and the batch rerun. Quarantine ledger after
+  reflow: parse_failed 9 → 0 (4 via 34.2's F-Q class, 5 via this task).
+  Delta attribution order and expected totals per recon R6 stand; the MC
+  class contributes ADDITIONS ONLY, keyed to the 5 prefixes above, with the
+  banked warning/review/zero-disposed profile as the per-doc expectation.
+## Task 34.5 — Phase 34 Batch Corpus Rerun, Delta Attribution + Tier-2 Golden Refresh (2026-07-19/20)
+
+- **Verdict (adjudicated 2026-07-19): the batch is PROVEN.** The combined
+  corpus effect of 34.1–34.4 equals exactly the union of the adjudicated
+  delta classes; every diff attributed to exactly one class; zero
+  unattributable motion; totals reconcile exactly at every seam. Zero DB
+  writes end-to-end (two read-only consultations, posture echoed
+  `default_transaction_read_only=on`).
+- **Instruments (per R7 + the S1 ruling):** tier-2 drift authority =
+  `run-fixtures --corpus-dir ~/court-data/intake` (NOT the 1,603-fixture
+  dir — the approved plan named `fixtures` in error; corrected mid-run,
+  ruling S1: read-only/no-flag corrections are within the corrected-command
+  norm; ANY correction involving a write flag is a hard STOP first).
+  Equivalence instrument = `equivalence-check` over the 1,603 fixtures vs
+  the capstone baseline, salt-parity default posture (hash excluded).
+- **Drift run (verbatim, `34.5-tier2-drift-intake-console-20260719T221825Z.txt`):**
+  `tier1: match=46 diverged=0 updated=0 new=0 missing=0`
+  `tier2: match=15969 diverged=38 updated=0 new=0 golden_missing=11581 failed=0`
+  (exit 1 = dirty-on-diverged/missing, attributed). Comparator conserved
+  exactly: 11,346+4,661 = 15,969+38 = 16,007. Envelope 6→7 bump: zero
+  version-driven divergence across all 16,007 (34.1 neutrality proof,
+  empirical).
+- **Equivalence run (verbatim, `34.5-equivalence-console-20260719T221825Z.txt`):**
+  `equivalent=227 divergent=1369 parse_failed=0 extraction_failed=0
+  baseline_missing=7 corpus_missing=0`, `reconciled: True`,
+  `held_value_gate: PASS (held=464 populated=464 violations=0)`,
+  `un_disposal: FAIL (charges=1 dockets=1)` (exit 1). Extraction untouched
+  by the batch — extraction equivalence holds trivially.
+- **Two-instrument union, exact:** 38 intake-diverged + 8 fixture-side
+  class members (absent from intake by hash — proven via full-corpus hash
+  index; their goldens are Jul-11-era, outside the intake comparator;
+  their 34.x delta isolated by the 32.2→34.5 equivalence-artifact delta)
+  = 46 = 12 R600 + 4 F-V + 4 F-C + 26 C. Zero overlap, zero multi-class
+  membership — the open R600×F-C/F-Q overlap question resolves to NONE.
+  Row grain exact: R600 76 raw-only rows (68+8); F-V 4; F-C 4 dockets
+  (sentence-component motion only); C 28 rows (23 raw/date→null incl. the
+  3 C-H, 5 C-U-P re-disposed to the surviving mapped sibling with dates
+  kept), `e760e676` warning-only. Warnings `SUSPECT_DISPOSITION_TOKEN`
+  +38 on 26 dockets, doc-for-doc per the r4supp A3 figure.
+- **Failed set (S2, adjudicated):** at intake grain the pre-batch failed
+  set was 11 = the named nine + two non-DB CP extras (`ee393768`,
+  `24f9661d`) invisible to the DB-grain r3supp sweep. Both carry the exact
+  34.2 fragment crash signature (phantom-month predicate lines: {2,11} vs
+  seq {1}; {5,6,11} vs seqs {1,2,3}) and parse clean post-guard. RULED:
+  F-Q extends to 6 at intake grain; failed restates 11→0; DB grain
+  unchanged (quarantine 9); init set = 11. Nothing entered the failed set;
+  no new failure signature.
+- **`golden_missing` motion, exact decomposition:** 3,302 + 11 ex-failed
+  + 8,268 collector arrivals = 11,581 (the intake corpus is LIVE — 27,588
+  files at drift-run start vs 19,320 at the 32.2 refresh; S6: tier-2
+  golden-coverage policy for collector arrivals is a Phase-2-cycle
+  decision, not invented here).
+- **Ledger amendments (S5, all demonstrated):** (1) review_needed +12 on C
+  dockets, false→true — mechanical severity consequence
+  (SUSPECT_DISPOSITION_TOKEN is review-severity); (2) F-C class definition
+  amended: re-splits may RESOLVE warnings (UNPARSEABLE_DURATION −1 on
+  `11cca63f`, the re-split component's duration now parses); (3) the
+  r4supp NON_TERMINAL_CASE +9 ripple prediction is STRUCK — +0 observed;
+  `envelope._charge_has_disposition` counts retained sentences, and 34.3
+  leaves sentence flow untouched (sim mis-modeled the envelope predicate).
+  Meta-point (ruled): two sim mis-models, both caught by the rerun — sims
+  are planning instruments, the rerun is the authority (§6.8 hierarchy).
+- **Instrument motion (S3, adjudicated as expected state):** un_disposal
+  FAIL 1/1 and held-gate 463→464 are the SAME row — `e3b9112c` seq 2
+  (C-U), raw/date/judge all null, event keys retained; reproduced with the
+  tool's own predicates. The instrument fired correctly on a designed
+  un-disposal; this adjudication is the required review. Dated-null
+  invariant holds on the row.
+- **Invariants:** (1) fixtures 1,603 / baseline_missing exactly 7 /
+  corpus_missing 0 / reconciled ✓; (2)–(4) dated-held 0, dated-null 0,
+  date-without-string 0 — BEFORE: scan over all 17,611 goldens
+  (`34.5-golden-invariant-scan-BEFORE-20260719T221825Z.txt`), AFTER: scan
+  over all 17,622 (`...-AFTER-20260720T003357Z.txt`), plus diff-grain
+  checks (0 candidates); (5) superseded form: exactly the adjudicated
+  eleven transitioned failed→parsed, nothing else moved, no new signature;
+  (6) zero diffs outside the ledger union (0 unattributable, both
+  instruments).
+- **Nine named additions doc-for-doc:** MC 5/5 per the banked 34.4 profile
+  (5× BLANK_DOB_CAPTION + 2× NON_TERMINAL_CASE + 1×
+  UNKNOWN_NOT_FINAL_DISPOSITION; 1 review_needed = `1843aeb9`; 2
+  zero-disposed = `a0477b60`, `a2779cd9`; identity mapping exact:
+  1843aeb9→bb1734a6, a0477b60→f52591a5, a2779cd9→f94523d5,
+  f16bd8b4→6587b0ee, f9bcc008→74d24882). F-Q 4/4 parsed clean
+  (`cb57fc53` +1 info UNPARSEABLE_DURATION; others zero warnings).
+- **GOLDEN WRITE NOTE (required per protocol):** two flag-gated writes,
+  post-adjudication only. (1) `pipeline run-fixtures --corpus-dir
+  ~/court-data/intake --update-goldens` → `tier2: match=15969 diverged=0
+  updated=38 new=0 golden_missing=12020 failed=0` — updated set verified
+  EQUAL to the adjudicated 38 (symmetric diff empty); golden_missing
+  12,020 = 11,581 + 439 further arrivals (restated). (2) `pipeline
+  run-fixtures --corpus-dir ~/court-data/intake-staging-34.5-init11
+  --init-goldens` over the 11-file staging dir → `tier2: match=0
+  diverged=0 updated=0 new=11 golden_missing=0 failed=0`, exit 0 — exactly
+  the adjudicated eleven, stored contents verified against the banked
+  profiles (`34.5-init-golden-verification-20260720T003357Z.txt`). No
+  other golden touched; fixture-hash goldens untouched (S4: 34.6 gains
+  "fixture-corpus golden set — refresh, retire, or re-scope" as a named
+  decision item).
+- **Post-refresh clean run (verbatim, `34.5-tier2-clean-console-20260720T003357Z.txt`):**
+  `tier1: match=46 diverged=0 updated=0 new=0 missing=0`
+  `tier2: match=16018 diverged=0 updated=0 new=0 golden_missing=12287 failed=0`
+  (exit 1 = dirty-on-missing only; zero diverged/failed entries in the
+  report JSON). Reconciles exactly against the adjudicated expected shape:
+  match 16,018 = 15,969 + 38 refreshed + 11 initialized; golden_missing
+  12,287 = 12,020 − 11 + 278 arrivals since the refresh run (corpus 28,305
+  at clean-run start vs 28,027 at refresh vs 27,588 at the drift run — the
+  live-collector arrival delta, named per S6).
+- **Intake-cycle verification ledger (for the next cycle's worklog to
+  check against; review mechanics stated from the review-generation
+  code):** DB-grain reflow: `parse_failed_documents` 9→0, `loaded` +9 via
+  reflow (changed dockets take the `(7,2)>(6,2)` replaced_newer_version
+  arm; the 9 land as fresh `loaded`); the two extras ride ordinary import
+  among collector arrivals; `parsed.dockets` +9; envelope
+  `parser_version=7` uniform on reflowed docs. Facts at rebuild: 4 F-V
+  `unknown`→mapped facts; 23 C rows undisposed (no outcome fact); 5 C-U-P
+  `unknown`→mapped; MC adds 1 `unknown` fact (novel token) + 2
+  zero-disposed docs contribute no outcome facts. Review motion: the
+  queue is persistent and status-preserving (SD 6) — `build_facts`
+  inserts via `ON CONFLICT (dedup_key) DO NOTHING` (key =
+  source_document_id + item_type + charge locator); NOTHING auto-closes.
+  The 32 open `unmapped_disposition` items (4 F-V + 28 C) STOP
+  REGENERATING (`build_outcome_review_item` returns None for mapped
+  results; undisposed rows produce no outcome result); their closure to
+  `superseded` is a conscious key-scoped operation — the 29.3 tool's
+  pinned scope covers held-form populations only, so the cycle needs an
+  adjudicated extension or an analogous key-scoped pass. NEW at reflow:
+  +1 `unmapped_disposition` (MC `1843aeb9`, unknown routing via
+  `build_outcome_review_item`). The 12 C review flips and SUSPECT warnings
+  create NO queue items (`_collect_warning_review_items` routes only
+  MISSING_DISPOSITION_DATE and SENTINEL_COLLISION); "13 review-flagged
+  docs" (12 C + 1 MC) is the envelope `review_needed` flag, not queue
+  volume. `unknown`-fact corrections land at rebuild, not before.
+- **Files touched:** `tasks/worklog.md` only (this entry). All run
+  artifacts under `~/court-data/` (reports listed above; attribution
+  `34.5-attribution-20260719T221825Z.txt`, warning audit
+  `34.5-warning-audit-envelope-20260719T221825Z.txt`, additions profile
+  `34.5-additions-profile-20260719T221825Z.txt`). The fixtures-dir drift
+  console (`34.5-tier2-drift-console-20260719T213543Z.txt`,
+  `tier2: match=1068 diverged=535 ... golden_missing=0 failed=0`) is
+  retained as EVIDENCE ONLY of the S1 corpus-dir error and the stale
+  fixture-golden finding — not a delta instrument.
+- **Deviations from plan:** the S1 corpus-dir correction (adjudicated,
+  accepted); no code changes; no other deviations.
+- **Notes for next task (34.6):** riders now three — (existing two) +
+  "fixture-corpus golden set: refresh, retire, or re-scope" (agent recon
+  on what still consumes the 1,603 Jul-11-era fixture-hash goldens; the
+  34.5 wrong-corpus trap is the exhibit). Ops track carries the S6
+  collector-arrival golden-coverage policy for the Phase-2 cycle.
+
+
+## Task 34.6 — Housekeeping Riders + Phase 34 Close (2026-07-20)
+
+**What was built.** Three riders per the plan-gate rulings, one commit on
+`phase-34`; this entry carries the phase-close record.
+
+**R-1 — local DATABASE_URL guard (migrate + seed boundary, both ruled in).**
+New `db/src/local-db-guard.ts`: host-shaped, pre-connection, fail-closed —
+the 29.2 test-db-guard pattern on the host axis. A connection URL passes
+only if its host is `localhost`, `127.0.0.1`, or `::1`; undeterminable host
+(unparseable URL, unix-socket shorthand) refuses. Wired into
+`db/src/migrate.ts` (all four commands, before `createDb()`) and
+`db/scripts/seed-guard.ts` `guardMain()` (exit 2, before any connection).
+Override `PCA_REMOTE_DB_OK=1` (exact-value match) is honored by the
+MIGRATOR ONLY — the one documented remote path, runbook-go-live Step 3,
+whose command now arms it explicitly. The seed boundary never consults the
+variable: remote seeding refuses unconditionally (§6.11 "permanently
+prohibited" made structural; prod data path is dump/restore, never seeds).
+Error messages name host + dbname only, never the URL. 11 unit tests in
+`db/src/local-db-guard.test.ts` (co-located, the 29.2 pattern). CI
+unaffected (all CI URLs are localhost). Proven by deliberate failure in the
+completion report: migrate refusal (exit 1), seed refusal with the override
+ARMED (exit 2, no escape), override reaching past the migrate guard
+(refusal replaced by ENOTFOUND at connection), local happy path unchanged
+(exit 0). ACCEPTED NAMED EXPOSURE (ruled, not built): `apps/api` dev/start
+auto-load the root .env and connect unguarded — read-path, lower stakes;
+revisit trigger: any incident, or remote URLs becoming routine in local
+`.env`.
+
+**R-2 — `tasks/current-task.md` untracked + ignored.** `git rm --cached`
+with the working tree INTACT — sha256 identical before/after
+(`fe24721a…4ad0`); the tracked blob had been stale since sprint-3 close
+(`3acdc84`), so only the working-tree copy was ever real. Ignore entry at
+`.gitignore:38`; `git ls-files tasks/current-task.md` returns nothing;
+`git check-ignore -v` positive. Reference recon: `current-task` appears
+only in CLAUDE.md (workflow pointers at the working-tree file, which
+persists — benign), this worklog (historical record — kept), and the file
+itself; zero CI/tooling references; `.prettierignore` already excludes
+`tasks/`. TWO CONVENTIONS UPDATED: (a) `git status` no longer shows
+` M tasks/current-task.md` — its absence is the new expected shape, not a
+missed disclosure; (b) the handoff loop is unchanged — Chops still pastes
+specs into the file; it simply stops being repo content.
+
+**R-3 — fixture-corpus golden set: RETIRED/ARCHIVED (the S4 ruling,
+option 2).** Consumer recon: the only reader of `~/court-data/goldens/`
+is `run-fixtures` tier 2 keyed by source-PDF sha256; no repo test, tooling
+path, runbook, or doc points it at the fixtures dir; CI references nothing
+under `~/court-data/` (re-confirmed, zero hits in `.github/`). Full
+partition proof (pre-move, `34.6-golden-partition-20260720T034305Z.txt`):
+17,621 hash goldens = 16,018 live (corpus ∩ goldens — equals the 34.5
+clean-run match total exactly) ⊔ 1,603 fixture-era (fixtures ∩ goldens),
+disjoint, ZERO orphans; pinned pre-move safety fixture ∩ corpus = 0. The
+34.5 invariant-scan ±1 (17,611/17,622 vs hash arithmetic 17,610/17,621)
+reconciled: the scans' root-`*.json` count included the single non-golden
+stray `run-fixtures-tier2-report.json` (240 B, 2026-07-11T20:34Z,
+corpus_dir=fixtures, dockets=[]) — the first-generation tier-2 report,
+written to the goldens root before the run-unique `reports/` path landed;
+no hash golden was unexplained. Move: 1,603 fixture-hash goldens + the
+stray report (disposition follows its explanation: fixture-era run
+artifact) → `~/court-data/goldens-fixture-archive-20260720/` (1,604
+entries). Post-move: goldens root = exactly the 16,018 live set; archive ∩
+live = 0. Effect: a future wrong-corpus run reports
+`match=0 golden_missing=1603` — unmistakably not the drift instrument.
+REFRESH REJECTED (would make a wrong-corpus run read as a PASSING drift
+check). RE-SCOPE recorded as a named future affordance, NOT built —
+trigger: a second wrong-corpus occurrence.
+
+**Verification-method note.** An initial parallelized corpus hash pass
+(`xargs -P 8` appending to one file) silently lost lines and manufactured a
+phantom one-golden orphan; the definitive pass is serial with stderr
+captured (0 errors, 28,706/28,706 files) and is what the proof file
+records. Lesson recorded: hash inventories for partition proofs run
+serially or per-file-atomic, never parallel-append.
+
+**Deviations from plan.** None. (The phantom-orphan detour was
+verification-method error, corrected in-method; no scope change.)
+
+**Files touched.** `db/src/local-db-guard.ts` (new),
+`db/src/local-db-guard.test.ts` (new), `db/src/migrate.ts`,
+`db/scripts/seed-guard.ts`, `docs/runbook-go-live.md`, `.gitignore`,
+`tasks/current-task.md` (untracked — index removal only, working tree
+intact), this worklog. Run artifacts under `~/court-data/`:
+`reports/34.6-golden-partition-20260720T034305Z.txt`,
+`goldens-fixture-archive-20260720/`.
+
+**Phase 34 close record.** Phase complete: 34.1 (Rule 600 truncation repair
++ map-key reconciliation), 34.2 (sentence-condition fragment guard), 34.3
+(column-concatenation guard), 34.4 (MC blank-DOB caption variant + envelope
+bump), 34.5 (batch corpus rerun, delta attribution PROVEN, tier-2 golden
+refresh), 34.6 (this task). One phase PR (34.1–34.6) opens on acceptance of
+the 34.6 report; merge non-squash per §6.2; merge verification lands as the
+phase-close addendum to this entry.
+
+**For the next task.** Sprint 9 continues: Phase 35 opens with the
+stage-two design gate (post-32.4 diagnostics session first, SD-14). Ops
+track still carries: COL-4b pending-docket refresh, audit round-1
+continuation, collection cadence/republish rhythm decision, raw-PDF
+retention decision, S6 collector-arrival golden-coverage policy (Phase-2
+cycle). The accepted R-1 exposure (api dev/start) and the R-3 re-scope
+affordance sit with their named triggers above.

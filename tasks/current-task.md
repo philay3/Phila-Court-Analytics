@@ -1,1 +1,0 @@
-No active task — Sprint 3 closed; Sprint 4 planning in progress.

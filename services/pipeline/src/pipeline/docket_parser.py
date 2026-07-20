@@ -41,6 +41,7 @@ from pipeline.identity import (
     assert_related_cases_clean,
     collides_with_sentinels,
     hash_defendant,
+    hash_defendant_name_only,
 )
 
 # 32.2: the held-form vocabulary is the 29.3 SINGLE authority — imported, never
@@ -48,7 +49,9 @@ from pipeline.identity import (
 # import adds no DB or pdfplumber path to the parser.
 from pipeline.normalization.outcome_mapper import HELD_FOR_COURT_DISPOSITIONS
 from pipeline.warning_codes import (
+    BLANK_DOB_CAPTION,
     SENTINEL_COLLISION,
+    SUSPECT_DISPOSITION_TOKEN,
     SUSPECT_JUDGE_LINE,
     SUSPECTED_AMENDED_CHARGE,
     UNKNOWN_NOT_FINAL_DISPOSITION,
@@ -96,6 +99,23 @@ DISPO_SKIP_HEADERS = {
     "Sentence/Diversion Program Type Incarceration/Diversionary Period Start Date",
     "Sentence Conditions",
 }
+
+# --- 34.2 fragment guard -----------------------------------------------------
+# A sentence-condition line that BEGINS with a slash-date (D/DD/YY or
+# D/DD/YYYY) also matches the disposition charge-line regex: its month digit
+# parses as a charge sequence and the date tail plus condition text becomes
+# that sequence's disposition_raw — overwriting a real capture when the
+# sequence exists, or leaving a phantom current_charge_seq that KeyErrors at
+# the component save when it does not (the quarantined CP KeyError class).
+# The guard rejects the charge-line MATCH when the line itself is a slash-date
+# head; the line then follows the natural non-charge-line flow, silently, like
+# every other condition line. Structural shape only — no string table, no
+# adjacent-line reads. The boundary is non-digit after the year (recon-exact,
+# R3 supplement): a genuine charge line prints "<seq> / <offense…>" with
+# whitespace-separated columns and can never satisfy the zero-whitespace date
+# head; any junk shape the predicate misses keeps today's behavior
+# (false-negative bias, deliberate).
+_CONDITION_DATE_FRAGMENT_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}(?!\d)")
 
 
 # --- Item 1: junk judge guard (Task 18.2) -----------------------------------
@@ -147,6 +167,7 @@ def _is_junk_judge(value: str) -> bool:
 # downstream map (false-negative bias, deliberate).
 _TRUNCATED_DISPOSITION_REPAIRS = {
     "Transferred to Another": "Transferred to Another Jurisdiction",
+    "Dismissed - Rule 600 (Speedy": "Dismissed - Rule 600 (Speedy Trial)",
 }
 
 
@@ -221,6 +242,12 @@ NON_TERMINAL_DISPOSITIONS = frozenset(
         "DUI: Highest Rte of Alc (BAC .16+) 1st Off Held for Court M 75 § 3802 §§ C*",  # noqa: E501
         "DUI: Highest Rte of Alc (BAC .16+) 1st Off Proceed to Court M 75 § 3802 §§ C*",  # noqa: E501
         "Dismissed - LOE",
+        # Stays despite the Task 34.1 truncation repair: routing consumes
+        # PRE-repair stream tokens (the repair sweep runs after event routing),
+        # so a wrapped Rule 600 row under a Not-Final event still presents this
+        # truncated token at the decision point — removing it would newly emit
+        # UNKNOWN_NOT_FINAL_DISPOSITION. Not a map key; deliberate carve-out
+        # from the 22.4 fresh-map retirement, which reaches only the outcome map.
         "Dismissed - Rule 600 (Speedy",
         "Guilty",
         "Guilty Plea - Negotiated",
@@ -392,6 +419,36 @@ def detect_court_type(docket_number: str) -> str:
     return "Common Pleas"
 
 
+# 34.4: the CONFIRMED MC blank-DOB caption variant (recon R5). These express
+# the variant's POSITIVE structural signature; anything that fails a conjunct
+# raises exactly as before, so every other caption anomaly still quarantines.
+_DOB_LABEL_RE = re.compile(r"Date\s+[Oo]f\s+Birth:")
+_CSZ_LABEL = "City/State/Zip:"
+_DATE_TOKEN_RE = re.compile(r"\d{1,2}/\d{1,2}/\d{4}")
+
+
+def _blank_dob_caption_variant(defendant_info_lines: list[str]) -> bool:
+    """True iff DEFENDANT INFORMATION bears the blank-DOB caption signature:
+    a line carrying BOTH the DOB and City/State/Zip labels whose first
+    non-space character after the DOB label is a letter (the merged
+    neighboring column — a blank DOB value), and no date-shaped token
+    anywhere in the section (so a relocated DOB can never slip past as
+    "blank"). Section-scoped on purpose: the stray CASE PARTICIPANTS date
+    token is a rejected identity source and is never consulted.
+    """
+    merged_blank_line = False
+    for line in defendant_info_lines:
+        m = _DOB_LABEL_RE.search(line)
+        if not m:
+            continue
+        after = line[m.end() :]
+        if _CSZ_LABEL in after and after.strip()[:1].isalpha():
+            merged_blank_line = True
+    if not merged_blank_line:
+        return False
+    return not any(_DATE_TOKEN_RE.search(line) for line in defendant_info_lines)
+
+
 def parse_docket_text(
     docket_number: str, pages_text: list[str], *, salt: str
 ) -> tuple[dict, list[str], list[dict[str, object]]]:
@@ -508,18 +565,42 @@ def parse_docket_text(
     if not defendant_name and v_names:
         defendant_name = sorted(list(v_names))[0]
 
-    if not defendant_name or not dob_str:
+    # 34.4: DOB becomes optional ONLY under the positively identified blank-DOB
+    # caption variant. The gate requires today's failure condition (no DOB
+    # captured anywhere in the name sections) AND a present name AND the
+    # structural signature — so the path is unreachable for any document that
+    # parses today, and every other caption anomaly raises exactly as before.
+    blank_dob_variant = (
+        dob_str is None
+        and bool(defendant_name)
+        and _blank_dob_caption_variant(sections["DEFENDANT INFORMATION"])
+    )
+
+    if not defendant_name or (not dob_str and not blank_dob_variant):
         raise ParseError("Missing defendant name or date of birth")
 
-    try:
-        birth_year = int(dob_str.split("/")[-1])
-    except Exception as exc:
-        raise ParseError("Invalid date of birth format") from exc
+    if blank_dob_variant:
+        # Name-only, salted basis for this class (34.4 adjudication): same
+        # normalization and salt flow, DOB component omitted, no sentinel year.
+        defendant_hash = hash_defendant_name_only(defendant_name, salt=salt)
+        warnings.append(
+            make_warning(
+                BLANK_DOB_CAPTION,
+                section="DEFENDANT INFORMATION",
+                field="date_of_birth",
+            )
+        )
+    else:
+        try:
+            birth_year = int(dob_str.split("/")[-1])
+        except Exception as exc:
+            raise ParseError("Invalid date of birth format") from exc
 
-    defendant_hash = hash_defendant(defendant_name, birth_year, salt=salt)
+        defendant_hash = hash_defendant(defendant_name, birth_year, salt=salt)
 
-    # Compile privacy sentinels
-    sentinels = [dob_str, defendant_name]
+    # Compile privacy sentinels (the DOB string only when the sheet printed one
+    # — never None in the list; name coverage identical on both arms)
+    sentinels = [defendant_name] if dob_str is None else [dob_str, defendant_name]
     for part in re.split(r"[^a-zA-Z]", defendant_name):
         if len(part) >= 3:
             sentinels.append(part)
@@ -826,6 +907,10 @@ def parse_docket_text(
             continue
 
         charge_match = re.match(r"^(\d+)\s*/\s*(.*)$", line_str)
+        if charge_match and _CONDITION_DATE_FRAGMENT_RE.match(line_str):
+            # 34.2: a slash-date-leading condition line is not a charge line.
+            # Reject the match; the line takes the non-charge-line flow below.
+            charge_match = None
         if charge_match:
             save_current_sentence()
             seq = int(charge_match.group(1))
@@ -881,6 +966,24 @@ def parse_docket_text(
             current_charge_seq = seq
             expecting_judge_line = True
             if seq in parsed_charges:
+                # 34.3 concatenation guard: a stripped token still carrying the
+                # statute cue is a boundary-lost whole-row capture (offense
+                # re-print + disposition + statute concatenated by column loss).
+                # Reject the capture — disposition_raw is left UNASSIGNED (never
+                # forced None, so an earlier valid event's disposition survives)
+                # and the event-line date below is never reached. Byte-level
+                # containment only, and only HERE, post-routing: the legitimate
+                # §-bearing NON_TERMINAL_DISPOSITIONS members are consulted only
+                # under unrouted Not-Final events and stay unreachable.
+                if "§" in token:
+                    warnings.append(
+                        make_warning(
+                            SUSPECT_DISPOSITION_TOKEN,
+                            section="DISPOSITION SENTENCING/PENALTIES",
+                            charge_sequence=seq,
+                        )
+                    )
+                    continue
                 parsed_charges[seq]["disposition_raw"] = token if token else None
                 # 32.2: the disposition date is the Final Disposition EVENT-line
                 # date (already captured above), assigned here so the string and

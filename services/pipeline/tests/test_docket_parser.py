@@ -19,16 +19,29 @@ import json
 import pytest
 
 from pipeline.docket_parser import (
+    ARD_CLASS_DISPOSITIONS,
+    NON_TERMINAL_DISPOSITIONS,
     detect_court_type,
     parse_docket_checked,
     parse_docket_text,
     parse_related_cases,
 )
+from pipeline.envelope import _charge_has_disposition
 from pipeline.helpers import ParseError
-from pipeline.identity import assert_related_cases_clean
-from pipeline.normalization.outcome_mapper import HELD_FOR_COURT_DISPOSITIONS
+from pipeline.identity import (
+    assert_no_leak,
+    assert_related_cases_clean,
+    hash_defendant,
+    hash_defendant_name_only,
+)
+from pipeline.normalization.outcome_mapper import (
+    DISPOSITION_OUTCOME_MAP,
+    HELD_FOR_COURT_DISPOSITIONS,
+)
 from pipeline.warning_codes import (
+    BLANK_DOB_CAPTION,
     SENTINEL_COLLISION,
+    SUSPECT_DISPOSITION_TOKEN,
     SUSPECT_JUDGE_LINE,
     SUSPECTED_AMENDED_CHARGE,
     UNKNOWN_NOT_FINAL_DISPOSITION,
@@ -548,6 +561,27 @@ def test_truncated_disposition_repaired_ignoring_polluted_continuation():
     assert not any(w["code"] == SUSPECTED_AMENDED_CHARGE for w in warnings)
 
 
+def test_truncated_rule600_disposition_repaired():
+    """The Rule 600 wrap capture ("Dismissed - Rule 600 (Speedy") is repaired to
+    the full string (Task 34.1, same Item-2 class as Transferred). The
+    continuation line carrying the tail is polluted with a charge-name wrap;
+    the repair reads no continuation line, so the pollution never leaks, the
+    judge line is still read, and the event-line date is kept."""
+    page = build_mc(
+        "Trial",
+        "01/15/2025 Final Disposition",
+        "1 / Simple Assault Dismissed - Rule 600 (Speedy",
+        "Manufacture or Deliver Trial)",
+        "Smith, Judge A. 01/15/2025",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Dismissed - Rule 600 (Speedy Trial)"
+    assert charge["disposition_judge_raw"] == "Smith, Judge A."
+    assert charge["disposition_date"] == "2025-01-15"
+    assert warnings == []
+
+
 def test_charge_description_wrap_not_appended():
     """A charge-description wrap after an ordinary disposition is NOT appended;
     the ordinary disposition (not a repair-table key) is left untouched."""
@@ -823,6 +857,23 @@ def test_wrap_token_proceed_to_court_ard_stays_non_terminal():
     charge = record["charges"][0]
     assert charge["disposition_raw"] is None
     assert charge["event_name"] == "Violation of Probation"
+    assert not any(w["code"] == UNKNOWN_NOT_FINAL_DISPOSITION for w in warnings)
+
+
+def test_rule600_token_routing_unchanged():
+    """Routing consumes PRE-repair stream tokens, so the truncated Rule 600 wrap
+    token stays in NON_TERMINAL_DISPOSITIONS despite the Task 34.1 repair: a
+    first-line "Dismissed - Rule 600 (Speedy" under a Not-Final event does not
+    route (charge stays held) and warns nothing — known vocabulary."""
+    page = build_mc(
+        "Status 03/10/2025 Not Final",
+        "1 / Simple Assault Dismissed - Rule 600 (Speedy",
+        "Trial)",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None
+    assert charge["event_name"] == "Status"
     assert not any(w["code"] == UNKNOWN_NOT_FINAL_DISPOSITION for w in warnings)
 
 
@@ -1293,3 +1344,453 @@ def test_disposition_section_placeholder_lines_stay_inert():
     with_lines.pop("parsed_at")
     without_lines.pop("parsed_at")
     assert with_lines == without_lines
+
+
+# ===========================================================================
+# Task 34.2: sentence-condition fragment guard. A condition line beginning
+# with a slash-date also matches the disposition charge-line regex (month
+# digit = sequence); pre-guard it overwrote a real capture (fragment-victim
+# class) or left a phantom current_charge_seq that KeyError'd at the
+# component save (the quarantined CP KeyError class). The guard rejects the
+# match on the structural date-head shape; the line follows the natural
+# non-charge-line flow, silently. Synthetic text only.
+# ===========================================================================
+
+_MC_HEAD_TWO_CHARGES = [
+    *_MC_HEAD[:-1],
+    "1 1 18 § 2701 M1 Simple Assault 01/01/2025 X1234567",
+    "2 2 18 § 3921 M2 Theft 01/01/2025 X1234567",
+]
+
+
+def build_mc_two_charges(*disposition_body: str) -> str:
+    """An MC sheet with two charges plus a DISPOSITION section body."""
+    return "\n".join(
+        [*_MC_HEAD_TWO_CHARGES, "DISPOSITION SENTENCING/PENALTIES", *disposition_body]
+    )
+
+
+def test_fragment_guard_rejects_slash_date_line_preserves_disposition():
+    """The victim shape: a slash-date condition line whose month digit equals
+    an existing sequence no longer overwrites that charge's real disposition,
+    re-dates it, or joins the component raw_text. Silent — no warning."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Reyes, Judge M. 01/15/2025",
+        "Probation",
+        "Min of 6.00 Months Max of 12.00 Months",
+        "1/20/25 Report to courtroom 402",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    assert len(record["charges"]) == 1
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    assert charge["disposition_date"] == "2025-01-15"
+    assert charge["disposition_judge_raw"] == "Reyes, Judge M."
+    [sentence] = charge["sentences"]
+    assert "courtroom" not in sentence["raw_text"]
+    assert warnings == []
+
+
+@pytest.mark.parametrize(
+    "fragment_line",
+    [
+        "1/20/25 Report to courtroom 402",
+        "1/20/2025 Surrender by noon",
+        "1/20/25",
+        "1/20/25, then report",
+    ],
+)
+def test_fragment_shapes_rejected_at_charge_match(fragment_line):
+    """Rejection boundary: D/DD/YY and D/DD/YYYY heads, bare fragments, and
+    non-digit boundaries after the year (recon-exact ``(?!\\d)``) all reject.
+    Month digit 1 = the real sequence, so any miss would overwrite Guilty."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Reyes, Judge M. 01/15/2025",
+        fragment_line,
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    assert charge["disposition_date"] == "2025-01-15"
+    assert warnings == []
+
+
+@pytest.mark.parametrize(
+    ("charge_line", "expected_disposition"),
+    [
+        ("1 / Simple Assault Guilty", "Guilty"),
+        ("1/Simple Assault Guilty", "Guilty"),
+        ("1/15 Grams Possession Guilty", "15 Grams Possession Guilty"),
+        ("1/15/20261 Count Guilty", "15/20261 Count Guilty"),
+    ],
+)
+def test_genuine_charge_lines_still_match(charge_line, expected_disposition):
+    """The false-positive lock: canonical spaced columns, tight spacing, a
+    numeric two-segment head (no second slash), and a 5-digit run after the
+    second slash (not a year) all still match as charge lines."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        charge_line,
+    )
+    record, _, _ = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == expected_disposition
+
+
+def test_fragment_guard_preserves_component_attachment():
+    """The cross-sequence steal (F-C class): a component line after the
+    fragment stays with the true owner (charge 2), not the month-digit
+    charge (charge 1)."""
+    page = build_mc_two_charges(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Reyes, Judge M. 01/15/2025",
+        "2 / Theft Guilty",
+        "Reyes, Judge M. 01/15/2025",
+        "Probation",
+        "Min of 6.00 Months Max of 12.00 Months",
+        "1/20/25 Report to courtroom 402",
+        "Fines and Costs",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    first, second = record["charges"]
+    assert first["disposition_raw"] == "Guilty"
+    assert first["sentences"] == []
+    assert [s["sentence_type"] for s in second["sentences"]] == [
+        "Probation",
+        "Fines and Costs",
+    ]
+    assert warnings == []
+
+
+def test_fragment_guard_phantom_sequence_with_component_line_parses():
+    """The crash class (F-Q): a fragment whose month digit matches NO charge,
+    followed by a component block. Pre-guard this KeyError'd at the component
+    save (phantom current_charge_seq); post-guard it parses and the component
+    attaches to the real current charge."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Reyes, Judge M. 01/15/2025",
+        "9/20/25 Report to courtroom 402",
+        "Probation",
+        "Min of 6.00 Months Max of 12.00 Months",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    [sentence] = charge["sentences"]
+    assert sentence["sentence_type"] == "Probation"
+    assert warnings == []
+
+
+def test_rejected_fragment_with_duration_units_joins_component_raw_text():
+    """The natural non-charge-line flow, duration arm: a rejected fragment
+    carrying duration units joins the OPEN component's raw_text via the
+    existing continuation heuristic — the pinned raw_text delta arm."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Reyes, Judge M. 01/15/2025",
+        "Probation",
+        "Min of 6.00 Months Max of 12.00 Months",
+        "1/20/25 surrender within 10 days",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    [sentence] = charge["sentences"]
+    assert "surrender within 10 days" in sentence["raw_text"]
+    assert warnings == []
+
+
+def test_rejected_fragment_in_judge_slot_leaves_judge_capture_intact():
+    """The natural non-charge-line flow, judge-slot arm: a fragment between
+    the charge line and its judge line is skipped with the slot still open —
+    the judge is captured from the next line as before."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "1/20/25 Report to courtroom 402",
+        "Reyes, Judge M. 01/15/2025",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    assert charge["disposition_judge_raw"] == "Reyes, Judge M."
+    assert warnings == []
+
+
+# ===========================================================================
+# Task 34.3: column-concatenation guard. A boundary-lost disposition row hands
+# the charge-line strip a token that still CONTAINS its statute (offense
+# re-print + disposition phrase + statute + trailing columns concatenated by
+# column loss); pre-guard the whole row became disposition_raw and took the
+# event date. The gate rejects the capture at the routed-event assignment —
+# raw left unassigned, date never reached, SUSPECT_DISPOSITION_TOKEN emitted.
+# Placement is load-bearing: the legitimate §-bearing NON_TERMINAL vocabulary
+# is consulted only under unrouted Not-Final events and stays unreachable.
+# Synthetic text only (fictional offenses/statutes, placeholder docket).
+# ===========================================================================
+
+
+def test_concat_token_rejected_undisposed_with_warning():
+    """The C-U arm: the defect row's charge ends undisposed and dateless with
+    the structural warning; the healthy sibling in the same event is untouched
+    (containment)."""
+    page = build_mc_two_charges(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "2 / Thft By Unlwf Tkg Dismissed M2 18 § 3921 §§ A Trial Div",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    healthy, rejected = record["charges"]
+    assert healthy["disposition_raw"] == "Guilty"
+    assert healthy["disposition_date"] == "2025-01-15"
+    assert rejected["disposition_raw"] is None
+    assert rejected["disposition_date"] is None
+    [warning] = warnings
+    assert warning["code"] == SUSPECT_DISPOSITION_TOKEN
+    assert warning["charge_sequence"] == 2
+
+
+def test_concat_held_embedding_rejected_dateless_held_arm():
+    """The C-H arm: a rejected token EMBEDDING a held form ends exactly where
+    a held charge ends — null disposition, dateless, not disposed in the
+    envelope's eyes (the existing null-disposition non-terminal path; no held
+    machinery is modified, the row simply reaches it)."""
+    page = build_mc(
+        "Preliminary Hearing 09/11/2025 Final Disposition",
+        "1 / Smpl Aslt Held for Court M1 18 § 2701 §§ A Trial Div",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None
+    assert charge["disposition_date"] is None
+    assert not _charge_has_disposition(charge)
+    [warning] = warnings
+    assert warning["code"] == SUSPECT_DISPOSITION_TOKEN
+
+
+def test_concat_guard_never_overwrites_earlier_disposition():
+    """The C-U-P unmask shape: a rejected line never masks a genuine earlier
+    writer — raw is left UNASSIGNED on rejection (not forced None), so the
+    earlier valid block's string AND date both survive (contrast
+    test_latest_final_block_wins_string_and_date_together)."""
+    page = build_mc(
+        "Waiver Trial 05/01/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Status 05/15/2025 Final Disposition",
+        "1 / Smpl Aslt Nolle Prossed M1 18 § 2701 §§ A Trial Div",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    assert charge["disposition_date"] == "2025-05-01"
+    [warning] = warnings
+    assert warning["code"] == SUSPECT_DISPOSITION_TOKEN
+
+
+def test_disposition_vocabulary_never_contains_statute_cue():
+    """The false-positive boundary: no member of any vocabulary the gate can
+    see as an ACCEPTED disposition carries '§' — so no legitimate capture can
+    ever satisfy the predicate. The six §-bearing NON_TERMINAL members exist
+    (premise of the placement argument) but are routing-suppression
+    vocabulary, unreachable by the post-routing gate."""
+    for vocab in (
+        DISPOSITION_OUTCOME_MAP.keys(),
+        HELD_FOR_COURT_DISPOSITIONS,
+        ARD_CLASS_DISPOSITIONS,
+    ):
+        assert not [v for v in vocab if "§" in v]
+    assert [v for v in NON_TERMINAL_DISPOSITIONS if "§" in v]
+
+
+@pytest.mark.parametrize(
+    "member",
+    sorted(v for v in NON_TERMINAL_DISPOSITIONS if "§" in v),
+)
+def test_nonterminal_statute_tokens_unaffected_at_routing(member):
+    """Placement lock: a legitimate §-bearing NON_TERMINAL token as the FIRST
+    charge line of a Not-Final event behaves exactly as before the guard —
+    the event stays held SILENTLY (no UNKNOWN_NOT_FINAL_DISPOSITION, no
+    SUSPECT_DISPOSITION_TOKEN) and the charge keeps its held-event keys."""
+    page = build_mc(
+        "Preliminary Hearing 09/11/2025 Not Final",
+        f"1 / {member}",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None
+    assert charge["disposition_date"] is None
+    assert charge["event_name"] == "Preliminary Hearing"
+    assert warnings == []
+
+
+def test_rejected_charge_keeps_nonterminal_event_keys():
+    """18.3 event-key placement on a C-U row: a charge that ends the parse
+    undisposed because its Final-block capture was rejected KEEPS the event
+    keys recorded by an earlier non-terminal event (the placement sweep only
+    strips them from disposed charges)."""
+    page = build_mc(
+        "Preliminary Hearing 03/10/2025 Not Final",
+        "1 / Simple Assault Held for Court",
+        "Trial 05/15/2025 Final Disposition",
+        "1 / Smpl Aslt Dismissed M1 18 § 2701 §§ A Trial Div",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None
+    assert charge["event_name"] == "Preliminary Hearing"
+    assert charge["event_date"] == "2025-03-10"
+    [warning] = warnings
+    assert warning["code"] == SUSPECT_DISPOSITION_TOKEN
+
+
+def test_concat_warning_payload_structural_only():
+    """The warning carries structural context ONLY: code, section, charge
+    sequence — never text, never a captured span."""
+    page = build_mc(
+        "Trial 01/15/2025 Final Disposition",
+        "1 / Smpl Aslt Dismissed M1 18 § 2701 §§ A Trial Div",
+    )
+    _, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    [warning] = warnings
+    assert set(warning) == {"code", "section", "charge_sequence"}
+    assert warning["code"] == SUSPECT_DISPOSITION_TOKEN
+    assert warning["section"] == "DISPOSITION SENTENCING/PENALTIES"
+    assert warning["charge_sequence"] == 1
+
+
+# --- 34.4: MC blank-DOB caption variant (positive signature; fail-closed) ---
+#
+# The census (r5-supplement) proved the stored-corpus boundary population is
+# empty, so these near-miss arms are the ONLY active locks on the fail-closed
+# boundary — they carry that weight alone (34.4 adjudication record).
+
+VARIANT_DOB_LINE = "Date Of Birth:          City/State/Zip:  Faketown, PA 00000"
+
+
+def blank_dob_page(
+    *,
+    dob_line: str = VARIANT_DOB_LINE,
+    defendant_line: str | None = "Defendant Example, Chris",
+    extra_defendant_info: tuple[str, ...] = (),
+) -> str:
+    """An MC sheet bearing the blank-DOB caption signature (fictional): DOB
+    label with a blank value and the merged City/State/Zip column on one
+    DEFENDANT INFORMATION line, name present in CASE PARTICIPANTS, normal
+    charge and disposition body."""
+    lines = [
+        "MUNICIPAL COURT OF PHILADELPHIA COUNTY",
+        "DOCKET",
+        "Docket Number: MC-51-CR-0000000-2025",
+        "CASE INFORMATION",
+        "Judge Assigned: Date Filed: 01/06/2025",
+        "OTN: X 1234567-8",
+        "District Control Number 9988776655",
+        "STATUS INFORMATION",
+        "Case Status: Open",
+        "DEFENDANT INFORMATION",
+        dob_line,
+        *extra_defendant_info,
+        "CASE PARTICIPANTS",
+        "Participant Type Name",
+    ]
+    if defendant_line is not None:
+        lines.append(defendant_line)
+    lines += [
+        "CHARGES",
+        "Seq. Statute Grade Description",
+        "1 1 18 § 2701 M1 Simple Assault 01/01/2025 X1234567",
+        "DISPOSITION SENTENCING/PENALTIES",
+        "Preliminary Hearing",
+        "01/15/2025 Final Disposition",
+        "1 / Simple Assault Guilty Plea - Negotiated M1",
+        "Roberts, Pat J. 01/15/2025",
+        "Probation",
+        "Max of 12.00 Months",
+    ]
+    return "\n".join(lines)
+
+
+def test_blank_dob_variant_parses_with_warning_and_name_only_hash():
+    record, sentinels, warnings = parse_docket_text(
+        DOCKET_MC, [blank_dob_page()], salt=TEST_SALT
+    )
+    assert record["case"]["defendant_hash"] == hash_defendant_name_only(
+        "Example, Chris", salt=TEST_SALT
+    )
+    [warning] = warnings
+    assert set(warning) == {"code", "section", "field"}
+    assert warning["code"] == BLANK_DOB_CAPTION
+    assert warning["section"] == "DEFENDANT INFORMATION"
+    assert warning["field"] == "date_of_birth"
+    # Downstream capture is normal: the variant changes identity handling only.
+    [charge] = record["charges"]
+    assert charge["disposition_raw"] == "Guilty Plea - Negotiated M1"
+    assert charge["disposition_date"] == "2025-01-15"
+    assert len(charge["sentences"]) == 1
+
+
+def test_blank_dob_variant_name_absent_still_parse_error():
+    page = blank_dob_page(defendant_line=None)
+    with pytest.raises(ParseError, match="Missing defendant name or date of birth"):
+        parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+
+
+@pytest.mark.parametrize(
+    "dob_line, extra",
+    [
+        # Blank DOB value but NO merged City/State/Zip label on the line.
+        ("Date Of Birth:   Faketown, PA 00000", ()),
+        # Merged line intact but a date-shaped token elsewhere in the section:
+        # a relocated DOB can never slip past as "blank".
+        (VARIANT_DOB_LINE, ("Alias Review: 02/03/1991",)),
+        # First non-space after the label is neither a letter nor a DOB digit.
+        ("Date Of Birth: - City/State/Zip:  Faketown, PA 00000", ()),
+    ],
+)
+def test_blank_dob_near_miss_shapes_still_parse_error(dob_line, extra):
+    page = blank_dob_page(dob_line=dob_line, extra_defendant_info=extra)
+    with pytest.raises(ParseError, match="Missing defendant name or date of birth"):
+        parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+
+
+def test_dob_present_document_hashes_exactly_as_before():
+    record, sentinels, warnings = parse_docket_text(
+        DOCKET_MC, [mc_page()], salt=TEST_SALT
+    )
+    assert record["case"]["defendant_hash"] == hash_defendant(
+        "Example, Chris", 1990, salt=TEST_SALT
+    )
+    assert all(w["code"] != BLANK_DOB_CAPTION for w in warnings)
+    assert "01/01/1990" in sentinels
+
+
+def test_variant_path_neutralized_reproduces_parse_error(monkeypatch):
+    """Deliberate-failure verification: with the predicate forced False, the
+    variant sheet fails exactly as it did before 34.4 — the new path is the
+    only reason it parses."""
+    import pipeline.docket_parser as dp
+
+    monkeypatch.setattr(dp, "_blank_dob_caption_variant", lambda lines: False)
+    with pytest.raises(ParseError, match="Missing defendant name or date of birth"):
+        parse_docket_text(DOCKET_MC, [blank_dob_page()], salt=TEST_SALT)
+
+
+def test_blank_dob_variant_privacy_lock():
+    """Decision 4: no name reaches the record or the warnings payload; name
+    sentinel coverage is intact and the sentinel list never carries None."""
+    record, sentinels, warnings = parse_docket_text(
+        DOCKET_MC, [blank_dob_page()], salt=TEST_SALT
+    )
+    assert None not in sentinels
+    assert "Example, Chris" in sentinels
+    assert "Example" in sentinels and "Chris" in sentinels
+    assert_no_leak(sentinels, record)
+    assert_no_leak(sentinels, warnings)
