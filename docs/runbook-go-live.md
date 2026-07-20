@@ -88,12 +88,19 @@ The `?` joiner presumes the pasted external URL carries no existing
 query string (Render's currently does not). If it ever does, join with
 `&` instead of `?`.
 
+The migrator refuses non-local database hosts by default (task 34.6
+local-db guard — a mispointed root `.env` can no longer silently migrate
+a remote database). A deliberate production migration is the one
+documented exception and must arm the override explicitly with
+`PCA_REMOTE_DB_OK=1` (exact value), as below. The override exists for
+the migrator only; seeding a remote database has no override.
+
 From the repo root on `main` (fresh `git pull`; `pnpm install` current):
 
 ```sh
 read -s PROD_DATABASE_URL    # external connection string from Step 2
 export PROD_DATABASE_URL
-DATABASE_URL="${PROD_DATABASE_URL}?sslmode=verify-full" pnpm db:migrate:latest
+DATABASE_URL="${PROD_DATABASE_URL}?sslmode=verify-full" PCA_REMOTE_DB_OK=1 pnpm db:migrate:latest
 ```
 
 **Checkpoint:** the migrator reports every migration in `db/migrations/`

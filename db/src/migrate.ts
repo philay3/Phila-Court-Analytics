@@ -6,6 +6,7 @@ import { FileMigrationProvider, Migrator, type MigrationResultSet } from 'kysely
 
 import { createDb } from './connection.js';
 import { describeError } from './errors.js';
+import { assertLocalDatabaseUrl } from './local-db-guard.js';
 
 const COMMANDS = ['latest', 'up', 'down', 'status'] as const;
 type Command = (typeof COMMANDS)[number];
@@ -56,6 +57,15 @@ async function main(): Promise<void> {
   const command = process.argv[2];
   if (!isCommand(command)) {
     throw new Error(`unknown command "${command ?? ''}" — expected one of: ${COMMANDS.join(', ')}`);
+  }
+
+  // Local-host guard (task 34.6): pre-connection, before any pool exists. An
+  // unset DATABASE_URL falls through to createDb()'s own missing-URL error.
+  const connectionString = process.env.DATABASE_URL;
+  if (connectionString) {
+    assertLocalDatabaseUrl(connectionString, `db:migrate:${command}`, {
+      allowRemoteOverride: true,
+    });
   }
 
   const db = createDb();

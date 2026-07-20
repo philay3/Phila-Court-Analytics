@@ -8439,3 +8439,103 @@ the homepage copy-heavy phase per the amendment's for-the-record note.
   34.5 wrong-corpus trap is the exhibit). Ops track carries the S6
   collector-arrival golden-coverage policy for the Phase-2 cycle.
 
+
+## Task 34.6 — Housekeeping Riders + Phase 34 Close (2026-07-20)
+
+**What was built.** Three riders per the plan-gate rulings, one commit on
+`phase-34`; this entry carries the phase-close record.
+
+**R-1 — local DATABASE_URL guard (migrate + seed boundary, both ruled in).**
+New `db/src/local-db-guard.ts`: host-shaped, pre-connection, fail-closed —
+the 29.2 test-db-guard pattern on the host axis. A connection URL passes
+only if its host is `localhost`, `127.0.0.1`, or `::1`; undeterminable host
+(unparseable URL, unix-socket shorthand) refuses. Wired into
+`db/src/migrate.ts` (all four commands, before `createDb()`) and
+`db/scripts/seed-guard.ts` `guardMain()` (exit 2, before any connection).
+Override `PCA_REMOTE_DB_OK=1` (exact-value match) is honored by the
+MIGRATOR ONLY — the one documented remote path, runbook-go-live Step 3,
+whose command now arms it explicitly. The seed boundary never consults the
+variable: remote seeding refuses unconditionally (§6.11 "permanently
+prohibited" made structural; prod data path is dump/restore, never seeds).
+Error messages name host + dbname only, never the URL. 11 unit tests in
+`db/src/local-db-guard.test.ts` (co-located, the 29.2 pattern). CI
+unaffected (all CI URLs are localhost). Proven by deliberate failure in the
+completion report: migrate refusal (exit 1), seed refusal with the override
+ARMED (exit 2, no escape), override reaching past the migrate guard
+(refusal replaced by ENOTFOUND at connection), local happy path unchanged
+(exit 0). ACCEPTED NAMED EXPOSURE (ruled, not built): `apps/api` dev/start
+auto-load the root .env and connect unguarded — read-path, lower stakes;
+revisit trigger: any incident, or remote URLs becoming routine in local
+`.env`.
+
+**R-2 — `tasks/current-task.md` untracked + ignored.** `git rm --cached`
+with the working tree INTACT — sha256 identical before/after
+(`fe24721a…4ad0`); the tracked blob had been stale since sprint-3 close
+(`3acdc84`), so only the working-tree copy was ever real. Ignore entry at
+`.gitignore:38`; `git ls-files tasks/current-task.md` returns nothing;
+`git check-ignore -v` positive. Reference recon: `current-task` appears
+only in CLAUDE.md (workflow pointers at the working-tree file, which
+persists — benign), this worklog (historical record — kept), and the file
+itself; zero CI/tooling references; `.prettierignore` already excludes
+`tasks/`. TWO CONVENTIONS UPDATED: (a) `git status` no longer shows
+` M tasks/current-task.md` — its absence is the new expected shape, not a
+missed disclosure; (b) the handoff loop is unchanged — Chops still pastes
+specs into the file; it simply stops being repo content.
+
+**R-3 — fixture-corpus golden set: RETIRED/ARCHIVED (the S4 ruling,
+option 2).** Consumer recon: the only reader of `~/court-data/goldens/`
+is `run-fixtures` tier 2 keyed by source-PDF sha256; no repo test, tooling
+path, runbook, or doc points it at the fixtures dir; CI references nothing
+under `~/court-data/` (re-confirmed, zero hits in `.github/`). Full
+partition proof (pre-move, `34.6-golden-partition-20260720T034305Z.txt`):
+17,621 hash goldens = 16,018 live (corpus ∩ goldens — equals the 34.5
+clean-run match total exactly) ⊔ 1,603 fixture-era (fixtures ∩ goldens),
+disjoint, ZERO orphans; pinned pre-move safety fixture ∩ corpus = 0. The
+34.5 invariant-scan ±1 (17,611/17,622 vs hash arithmetic 17,610/17,621)
+reconciled: the scans' root-`*.json` count included the single non-golden
+stray `run-fixtures-tier2-report.json` (240 B, 2026-07-11T20:34Z,
+corpus_dir=fixtures, dockets=[]) — the first-generation tier-2 report,
+written to the goldens root before the run-unique `reports/` path landed;
+no hash golden was unexplained. Move: 1,603 fixture-hash goldens + the
+stray report (disposition follows its explanation: fixture-era run
+artifact) → `~/court-data/goldens-fixture-archive-20260720/` (1,604
+entries). Post-move: goldens root = exactly the 16,018 live set; archive ∩
+live = 0. Effect: a future wrong-corpus run reports
+`match=0 golden_missing=1603` — unmistakably not the drift instrument.
+REFRESH REJECTED (would make a wrong-corpus run read as a PASSING drift
+check). RE-SCOPE recorded as a named future affordance, NOT built —
+trigger: a second wrong-corpus occurrence.
+
+**Verification-method note.** An initial parallelized corpus hash pass
+(`xargs -P 8` appending to one file) silently lost lines and manufactured a
+phantom one-golden orphan; the definitive pass is serial with stderr
+captured (0 errors, 28,706/28,706 files) and is what the proof file
+records. Lesson recorded: hash inventories for partition proofs run
+serially or per-file-atomic, never parallel-append.
+
+**Deviations from plan.** None. (The phantom-orphan detour was
+verification-method error, corrected in-method; no scope change.)
+
+**Files touched.** `db/src/local-db-guard.ts` (new),
+`db/src/local-db-guard.test.ts` (new), `db/src/migrate.ts`,
+`db/scripts/seed-guard.ts`, `docs/runbook-go-live.md`, `.gitignore`,
+`tasks/current-task.md` (untracked — index removal only, working tree
+intact), this worklog. Run artifacts under `~/court-data/`:
+`reports/34.6-golden-partition-20260720T034305Z.txt`,
+`goldens-fixture-archive-20260720/`.
+
+**Phase 34 close record.** Phase complete: 34.1 (Rule 600 truncation repair
++ map-key reconciliation), 34.2 (sentence-condition fragment guard), 34.3
+(column-concatenation guard), 34.4 (MC blank-DOB caption variant + envelope
+bump), 34.5 (batch corpus rerun, delta attribution PROVEN, tier-2 golden
+refresh), 34.6 (this task). One phase PR (34.1–34.6) opens on acceptance of
+the 34.6 report; merge non-squash per §6.2; merge verification lands as the
+phase-close addendum to this entry.
+
+**For the next task.** Sprint 9 continues: Phase 35 opens with the
+stage-two design gate (post-32.4 diagnostics session first, SD-14). Ops
+track still carries: COL-4b pending-docket refresh, audit round-1
+continuation, collection cadence/republish rhythm decision, raw-PDF
+retention decision, S6 collector-arrival golden-coverage policy (Phase-2
+cycle). The accepted R-1 exposure (api dev/start) and the R-3 re-scope
+affordance sit with their named triggers above.
