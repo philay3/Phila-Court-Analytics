@@ -114,7 +114,7 @@ def make_envelope(
     status: str = "parsed",
     warnings: list | None = None,
     review_needed: bool = False,
-    parser_version: int = 7,
+    parser_version: int = 8,
     error: dict | None = None,
 ) -> dict:
     return {
@@ -135,9 +135,10 @@ def make_envelope(
 
 
 def test_accepted_envelope_versions_pinned_to_current_batch():
-    # 34.4: {6} -> {7} with the Phase 34 batch bump. Single-member by design;
-    # this literal pin forces a conscious test update on any future move.
-    assert ACCEPTED_ENVELOPE_VERSIONS == frozenset({7})
+    # 34.4: {6} -> {7} with the Phase 34 batch bump; Stage-D unblock:
+    # {7} -> {8} with the orphaned-sentence suppression. Single-member by
+    # design; this literal pin forces a conscious test update on any future move.
+    assert ACCEPTED_ENVELOPE_VERSIONS == frozenset({8})
 
 
 def make_import_record(source_sha256: str, **overrides: object) -> dict:

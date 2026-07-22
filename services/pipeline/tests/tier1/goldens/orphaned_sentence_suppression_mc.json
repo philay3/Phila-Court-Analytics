@@ -1,0 +1,56 @@
+{
+  "error": null,
+  "record": {
+    "case": {
+      "assigned_judge_raw": "Moreno, Judge R.",
+      "case_status": "Closed",
+      "county": "Philadelphia",
+      "court_type": "Municipal Court",
+      "cross_court_dockets": null,
+      "dc_number": null,
+      "defendant_hash": "bcc1de5a36c643e40f6220b5c00248ab9b1378e95cade8200a252d12066f33bb",
+      "filed_date": "2025-02-04",
+      "otn": "X 7531246-9"
+    },
+    "charges": [
+      {
+        "disposition_date": "2026-10-06",
+        "disposition_judge_raw": "Moreno, Judge R.",
+        "disposition_raw": "Guilty",
+        "grade": null,
+        "offense": "Simple Assault",
+        "sentences": [],
+        "sequence": 1,
+        "statute": "18 \u00a7 2701 M1"
+      },
+      {
+        "disposition_date": null,
+        "disposition_judge_raw": "Moreno, Judge R.",
+        "disposition_raw": null,
+        "grade": null,
+        "offense": "Criminal Mischief",
+        "sentences": [],
+        "sequence": 2,
+        "statute": "18 \u00a7 3304 M2"
+      }
+    ],
+    "docket_number": "MC-51-CR-0000000-2025",
+    "notes": [],
+    "parser_version": 2,
+    "related_cases": []
+  },
+  "review_needed": true,
+  "status": "parsed",
+  "warnings": [
+    {
+      "charge_sequence": 2,
+      "code": "SUSPECT_DISPOSITION_TOKEN",
+      "section": "DISPOSITION SENTENCING/PENALTIES"
+    },
+    {
+      "charge_sequence": 2,
+      "code": "ORPHANED_SENTENCE_SUPPRESSED",
+      "section": "DISPOSITION SENTENCING/PENALTIES"
+    }
+  ]
+}

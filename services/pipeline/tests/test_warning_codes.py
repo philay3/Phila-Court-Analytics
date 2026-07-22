@@ -20,12 +20,13 @@ EXPECTED_CODES = {
     "UNKNOWN_NOT_FINAL_DISPOSITION",
     "SUSPECT_DISPOSITION_TOKEN",
     "BLANK_DOB_CAPTION",
+    "ORPHANED_SENTENCE_SUPPRESSED",
 }
 
 
-def test_vocabulary_is_exactly_the_thirteen_codes():
+def test_vocabulary_is_exactly_the_fourteen_codes():
     assert wc.WARNING_CODES == EXPECTED_CODES
-    assert len(wc.WARNING_CODES) == 13
+    assert len(wc.WARNING_CODES) == 14
 
 
 def test_severity_map_covers_every_code_with_valid_levels():
@@ -46,6 +47,9 @@ def test_severity_map_matches_approved_table():
         wc.SENTINEL_COLLISION,
         wc.UNKNOWN_NOT_FINAL_DISPOSITION,
         wc.SUSPECT_DISPOSITION_TOKEN,
+        # Stage-D unblock: the charge's outcome AND sentence are unrecovered
+        # together — a human should see the document.
+        wc.ORPHANED_SENTENCE_SUPPRESSED,
     }
     assert info == {
         wc.UNPARSEABLE_DURATION,

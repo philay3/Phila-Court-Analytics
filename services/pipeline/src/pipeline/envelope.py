@@ -70,8 +70,10 @@ logger = logging.getLogger("pipeline.envelope")
 # 5 -> 6 in 32.2 for the event-line disposition-date capture + seq-99,999
 # charge guard (parse-behavior changes, no schema change); 6 -> 7 in 34.4 for
 # the Phase 34 hardening batch (Rule 600 repair, fragment guard, concatenation
-# guard, blank-DOB caption variant — parse-behavior changes, no schema change).
-ENVELOPE_PARSER_VERSION = 7
+# guard, blank-DOB caption variant — parse-behavior changes, no schema change);
+# 7 -> 8 in the Stage-D unblock for the 34.3-guard orphaned-sentence
+# suppression (parse-behavior change, no schema change).
+ENVELOPE_PARSER_VERSION = 8
 
 # Parse status vocabulary (decision 4/5): exactly one per envelope.
 PARSE_STATUS_PARSED = "parsed"

@@ -35,7 +35,10 @@ Severity map rationale:
   guard: a routed charge line's stripped disposition token still carried the
   statute cue — a boundary-lost whole-row capture was rejected rather than
   recorded, so the charge's true outcome is unrecovered and a human should see
-  the document).
+  the document), ORPHANED_SENTENCE_SUPPRESSED (Stage-D unblock: sentence
+  components under a guard-nulled held charge were suppressed rather than
+  orphaned; the charge's outcome AND its sentence are unrecovered together, and
+  a human should see the document).
 - ``info`` — a truthful observation that review cannot improve:
   UNPARSEABLE_DURATION (usually a legitimate non-numeric term such as "Life";
   raw_text is preserved), NON_TERMINAL_CASE (a held/non-terminal case legitimately
@@ -76,6 +79,11 @@ SUSPECT_DISPOSITION_TOKEN = "SUSPECT_DISPOSITION_TOKEN"
 # present with a blank value, merged City/State/Zip column following; the
 # document parses with the name-only identity basis.
 BLANK_DOB_CAPTION = "BLANK_DOB_CAPTION"
+# Stage-D unblock: sentence components parsed under a charge the 34.3
+# concatenation guard left held (null disposition) are suppressed — the fact
+# layer refuses sentences on held charges (orphan risk), and false-negative
+# bias governs (suppression, not repair). Recorded, never silently dropped.
+ORPHANED_SENTENCE_SUPPRESSED = "ORPHANED_SENTENCE_SUPPRESSED"
 
 # Severity levels.
 SEVERITY_REVIEW = "review"
@@ -92,6 +100,7 @@ SEVERITY: dict[str, str] = {
     SENTINEL_COLLISION: SEVERITY_REVIEW,
     UNKNOWN_NOT_FINAL_DISPOSITION: SEVERITY_REVIEW,
     SUSPECT_DISPOSITION_TOKEN: SEVERITY_REVIEW,
+    ORPHANED_SENTENCE_SUPPRESSED: SEVERITY_REVIEW,
     UNPARSEABLE_DURATION: SEVERITY_INFO,
     MISSING_SENTENCE_DATE: SEVERITY_INFO,
     NON_TERMINAL_CASE: SEVERITY_INFO,

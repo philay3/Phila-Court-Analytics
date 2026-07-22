@@ -90,8 +90,10 @@ logger = logging.getLogger("pipeline.load")
 # 32.2: moved {5} -> {6} with the event-line date fix, so the version tuple's
 # newer-version arm transactionally replaces each docket's parsed graph at the
 # 32.4 reload cycle. 34.4: moved {6} -> {7} with the Phase 34 hardening batch;
-# the 34.5 rerun's reloads take the newer-version arm the same way.
-ACCEPTED_ENVELOPE_VERSIONS: frozenset[int] = frozenset({7})
+# the 34.5 rerun's reloads take the newer-version arm the same way. Stage-D
+# unblock: moved {7} -> {8} with the 34.3-guard orphaned-sentence suppression;
+# the v8 full-corpus reload takes the newer-version arm the same way.
+ACCEPTED_ENVELOPE_VERSIONS: frozenset[int] = frozenset({8})
 
 # The raw.source_documents.status value the loader writes for a failed-parse
 # envelope. The 16.3 import-stage vocabulary (imported/duplicate/invalid/failed,
