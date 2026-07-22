@@ -50,6 +50,7 @@ from pipeline.identity import (
 from pipeline.normalization.outcome_mapper import HELD_FOR_COURT_DISPOSITIONS
 from pipeline.warning_codes import (
     BLANK_DOB_CAPTION,
+    ORPHANED_SENTENCE_SUPPRESSED,
     SENTINEL_COLLISION,
     SUSPECT_DISPOSITION_TOKEN,
     SUSPECT_JUDGE_LINE,
@@ -867,6 +868,10 @@ def parse_docket_text(
             current_sentence_comp = None
 
     disposition_lines = sections.get("DISPOSITION SENTENCING/PENALTIES", [])
+    # Stage-D unblock: sequences where the 34.3 concatenation guard fired.
+    # Consumed by the post-parse suppression pass below — a guard-fired charge
+    # that ends the parse held must not keep sentence components.
+    guard_fired_seqs: set[int] = set()
     for line in disposition_lines:
         line_str = line.strip()
         if not line_str:
@@ -983,6 +988,7 @@ def parse_docket_text(
                             charge_sequence=seq,
                         )
                     )
+                    guard_fired_seqs.add(seq)
                     continue
                 parsed_charges[seq]["disposition_raw"] = token if token else None
                 # 32.2: the disposition date is the Final Disposition EVENT-line
@@ -1134,6 +1140,31 @@ def parse_docket_text(
         if disposed:
             charge.pop("event_date", None)
             charge.pop("event_name", None)
+
+    # Stage-D unblock: 34.3-guard orphaned-sentence suppression. The guarded
+    # event's judge/sentence lines attach to the guarded sequence (control flow
+    # is unchanged at the guard), so a charge the guard left HELD can end the
+    # parse carrying sentence components — a state the fact layer refuses
+    # (sentences on a held charge, orphan risk). Suppress the components and
+    # record the suppression; a guard-fired charge disposed by an EARLIER valid
+    # event keeps its components (they belong to that disposition). A final
+    # sweep, like the placement invariant above, because held/disposed status
+    # is only known once the whole disposition section has been parsed.
+    # False-negative bias: suppression, not repair.
+    for charge in charges_list:
+        if (
+            charge["sequence"] in guard_fired_seqs
+            and charge["disposition_raw"] is None
+            and charge["sentences"]
+        ):
+            charge["sentences"] = []
+            warnings.append(
+                make_warning(
+                    ORPHANED_SENTENCE_SUPPRESSED,
+                    section="DISPOSITION SENTENCING/PENALTIES",
+                    charge_sequence=charge["sequence"],
+                )
+            )
 
     # District Control Number from the Case Local Number(s) table. Printed on
     # both CP and MC sheets; null when absent. Scanned across all sections

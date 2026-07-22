@@ -40,6 +40,7 @@ from pipeline.normalization.outcome_mapper import (
 )
 from pipeline.warning_codes import (
     BLANK_DOB_CAPTION,
+    ORPHANED_SENTENCE_SUPPRESSED,
     SENTINEL_COLLISION,
     SUSPECT_DISPOSITION_TOKEN,
     SUSPECT_JUDGE_LINE,
@@ -1794,3 +1795,76 @@ def test_blank_dob_variant_privacy_lock():
     assert "Example" in sentinels and "Chris" in sentinels
     assert_no_leak(sentinels, record)
     assert_no_leak(sentinels, warnings)
+
+
+# ===========================================================================
+# Stage-D unblock: 34.3-guard orphaned-sentence suppression. A guard-fired
+# charge that ends the parse HELD must not keep sentence components (the fact
+# layer refuses sentences on held charges); the suppression is recorded via
+# ORPHANED_SENTENCE_SUPPRESSED. A guard-fired charge disposed by an EARLIER
+# valid event keeps its components — they belong to that disposition.
+# ===========================================================================
+
+
+def test_orphaned_sentences_suppressed_on_guard_fired_held_charge():
+    """Guard fires, charge ends held, sentence lines attached to it: the
+    components are suppressed and the suppression is recorded with structural
+    context only."""
+    page = build_mc(
+        "Waiver Trial 05/01/2025 Final Disposition",
+        "1 / Smpl Aslt Nolle Prossed M1 18 § 2701 §§ A Trial Div",
+        "Moreno, Judge R. 05/01/2025",
+        "Probation",
+        "Min of 6.00 Months Max of 12.00 Months",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None
+    assert charge["sentences"] == []
+    codes = [w["code"] for w in warnings]
+    assert SUSPECT_DISPOSITION_TOKEN in codes
+    suppressed = [w for w in warnings if w["code"] == ORPHANED_SENTENCE_SUPPRESSED]
+    assert len(suppressed) == 1
+    assert suppressed[0]["charge_sequence"] == 1
+    assert suppressed[0]["section"] == "DISPOSITION SENTENCING/PENALTIES"
+    # Structural context only: no sentence text leaked into the warning payload.
+    assert "Probation" not in json.dumps(warnings)
+
+
+def test_guard_fired_but_earlier_disposed_charge_keeps_sentences():
+    """A guard-fired charge whose disposition SURVIVES from an earlier valid
+    event is not held — its components belong to that disposition and are
+    retained, with no suppression warning."""
+    page = build_mc(
+        "Waiver Trial 05/01/2025 Final Disposition",
+        "1 / Simple Assault Guilty",
+        "Moreno, Judge R. 05/01/2025",
+        "Probation",
+        "Min of 6.00 Months Max of 12.00 Months",
+        "Status 05/15/2025 Final Disposition",
+        "1 / Smpl Aslt Nolle Prossed M1 18 § 2701 §§ A Trial Div",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] == "Guilty"
+    assert len(charge["sentences"]) == 1
+    codes = [w["code"] for w in warnings]
+    assert SUSPECT_DISPOSITION_TOKEN in codes
+    assert ORPHANED_SENTENCE_SUPPRESSED not in codes
+
+
+def test_guard_fired_held_charge_without_sentences_emits_no_suppression():
+    """A guard-fired held charge with no attached components has nothing to
+    suppress: the existing C-U arm behavior is unchanged and no suppression
+    warning is emitted."""
+    page = build_mc(
+        "Preliminary Hearing 09/11/2025 Final Disposition",
+        "1 / Smpl Aslt Nolle Prossed M1 18 § 2701 §§ A Trial Div",
+    )
+    record, _, warnings = parse_docket_text(DOCKET_MC, [page], salt=TEST_SALT)
+    charge = record["charges"][0]
+    assert charge["disposition_raw"] is None
+    assert charge["sentences"] == []
+    codes = [w["code"] for w in warnings]
+    assert codes.count(SUSPECT_DISPOSITION_TOKEN) == 1
+    assert ORPHANED_SENTENCE_SUPPRESSED not in codes

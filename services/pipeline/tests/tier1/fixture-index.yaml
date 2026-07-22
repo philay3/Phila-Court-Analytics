@@ -443,3 +443,17 @@ fixtures:
     expected_warnings: [BLANK_DOB_CAPTION]
     layout_unverified: false
     synthetic: true
+
+  - filename: orphaned_sentence_suppression_mc.txt
+    court_type: Municipal Court
+    scenario: Stage-D unblock — the 34.3 concatenation guard rejects a
+      boundary-lost disposition row, leaving the charge held, but the guarded
+      event's judge and sentence lines attach to it; the orphaned sentence
+      components are suppressed (never loaded under a held charge) and the
+      suppression is recorded with ORPHANED_SENTENCE_SUPPRESSED alongside the
+      guard's own SUSPECT_DISPOSITION_TOKEN; the healthy sibling keeps its
+      disposition
+    expected_charge_count: 2
+    expected_warnings: [SUSPECT_DISPOSITION_TOKEN, ORPHANED_SENTENCE_SUPPRESSED]
+    layout_unverified: false
+    synthetic: true
