@@ -82,11 +82,14 @@ def seed_docket(
     docket_number: str,
     file_hash: str,
     dispositions: list[str | None],
+    filed_date: str | None = None,
 ) -> None:
     """Insert one fabricated source doc + parsed docket + its charges.
 
     ``dispositions`` holds one ``disposition_raw`` per charge (None = held);
-    an empty list seeds a zero-charge docket.
+    an empty list seeds a zero-charge docket. ``filed_date`` is nullable in
+    the schema and defaults to NULL here so existing tests exercise the
+    NULLS LAST + docket-number-tiebreak tail of the ordering.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -105,15 +108,16 @@ def seed_docket(
             INSERT INTO parsed.dockets
               (source_document_id, docket_number, record_parser_version,
                envelope_parser_version, parsed_at, county, defendant_hash,
-               envelope_status, review_needed)
+               envelope_status, review_needed, filed_date)
             VALUES (%(source_id)s, %(docket)s, 2, 5, now(), 'Philadelphia',
-                    %(defendant_hash)s, 'success', false)
+                    %(defendant_hash)s, 'success', false, %(filed_date)s)
             RETURNING id
             """,
             {
                 "source_id": source_id,
                 "docket": docket_number,
                 "defendant_hash": _FAKE_DEFENDANT_HASH,
+                "filed_date": filed_date,
             },
         )
         docket_id = cur.fetchone()[0]
@@ -175,6 +179,41 @@ def test_court_filter_and_ordering(refresh_conn):
     cp = derive_refresh_targets(refresh_conn, "CP")
     assert [t.docket_number for t in cp] == ["CP-51-CR-9000005-2025"]
     assert count_by_court(both) == {"MC": 2, "CP": 1}
+
+
+def test_ordering_oldest_first_nulls_last_docket_tiebreak(refresh_conn):
+    # Docket-number order alone over-samples the young cohort (right-censoring:
+    # undisposed-heavy = young-heavy), so the derivation must walk oldest
+    # filings first; NULL filed_dates sort last, docket number breaks ties.
+    seed_docket(
+        refresh_conn,
+        "MC-51-CR-9000011-2026",
+        "a1" * 32,
+        [None],
+        filed_date="2026-02-01",
+    )
+    seed_docket(
+        refresh_conn,
+        "CP-51-CR-9000012-2025",
+        "b1" * 32,
+        [None],
+        filed_date="2025-03-09",
+    )
+    seed_docket(refresh_conn, "CP-51-CR-9000013-2025", "c1" * 32, [None])
+    seed_docket(
+        refresh_conn,
+        "MC-51-CR-9000010-2025",
+        "d1" * 32,
+        [None],
+        filed_date="2025-03-09",
+    )
+    targets = derive_refresh_targets(refresh_conn, "both")
+    assert [t.docket_number for t in targets] == [
+        "CP-51-CR-9000012-2025",  # 2025-03-09 (docket-number tiebreak: CP < MC)
+        "MC-51-CR-9000010-2025",  # 2025-03-09
+        "MC-51-CR-9000011-2026",  # 2026-02-01 — young docket sorts AFTER old ones
+        "CP-51-CR-9000013-2025",  # NULL filed_date sorts last
+    ]
 
 
 def test_target_carries_current_source_hash(refresh_conn):

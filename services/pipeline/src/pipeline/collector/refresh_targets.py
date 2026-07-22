@@ -46,7 +46,7 @@ _TARGETS_SQL = """
         WHERE c.docket_id = d.id AND c.disposition_raw IS NULL
     )
 """
-_ORDER_SQL = " ORDER BY d.docket_number"
+_ORDER_SQL = " ORDER BY d.filed_date ASC NULLS LAST, d.docket_number"
 
 
 @dataclass(frozen=True)
@@ -60,9 +60,13 @@ class RefreshTarget:
 def derive_refresh_targets(conn: psycopg.Connection, court: str) -> list[RefreshTarget]:
     """Return the ordered refresh target list for ``court`` (MC/CP/both).
 
-    Deterministic (ordered by docket number) so an interrupted cycle's resumed
-    sessions walk the same sequence. Raises ``ValueError`` on an unknown court
-    rather than silently returning an empty (or unfiltered) set.
+    Ordered oldest-first (``filed_date ASC NULLS LAST``, docket-number
+    tiebreak): right-censoring makes the undisposed population young-heavy, so
+    a time-boxed partial pass must front-load the oldest dockets — the ones
+    most likely to have accumulated dispositions since fetch. Deterministic,
+    so an interrupted cycle's resumed sessions walk the same sequence. Raises
+    ``ValueError`` on an unknown court rather than silently returning an empty
+    (or unfiltered) set.
     """
     if court not in VALID_COURTS:
         valid = ", ".join(VALID_COURTS)
