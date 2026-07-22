@@ -8539,3 +8539,133 @@ continuation, collection cadence/republish rhythm decision, raw-PDF
 retention decision, S6 collector-arrival golden-coverage policy (Phase-2
 cycle). The accepted R-1 exposure (api dev/start) and the R-3 re-scope
 affordance sit with their named triggers above.
+
+## Phase-2 Data Cycle 1 — Frontier Intake, COL-4b First Refresh, v8 Reload, Publish (2026-07-21/23)
+
+**What was run.** The first steady-state data cycle, four dispatches (Stage
+A/B intake + derivation, refresh command relay, Stage C refresh-haul load +
+v7 reload, Stage D rebuild → validate → publish), plus two STOP-driven fix
+tasks adjudicated mid-cycle. All operations under committed runbooks
+(`docs/intake/col-intake-protocol.md`, `docs/intake/refresh-runbook.md`,
+`docs/runbook-rollback-republish.md`, `docs/runbook-verification.md`); all
+counts below are verbatim tool-output snapshots (SD-14); full accumulated
+run report: `~/court-data/reports/frontier-jun2026-cycle-intake-20260722T025149Z.txt`.
+
+**Stage A — frontier intake (corpus 17,610 → 37,369).** Freeze
+`staged_at_freeze=35813 mtime_guard_dropped=0 excluded_already_loaded=16054
+included=19759`; `imported=19750 duplicate=9 invalid=0 failed=0`; extraction
+`success=19759` (0 partial/failed); parse `parsed=19759 failed=0` — ZERO new
+quarantine; load `loaded=19759` (all other counters 0). Quarantine 9 → 0:
+the 34.5-banked deferred reflow landed doc-for-doc (the named nine re-drops
+died as import duplicates and reloaded via fresh envelopes; the two non-DB
+CP extras rode ordinary import). Duplicate docket numbers 0 → 0.
+
+**Ordering-fix rider (PR #69, merge 0b8c329).** STOP sustained on
+docket-number-ordered derivation; `filed_date ASC NULLS LAST` + docket
+tiebreak landed with a DB-backed ordering test before Stage B ran.
+
+**Stage B — COL-4b first derivation + prune.** Targets
+`refresh_targets_total=13331` (CP 5033 / MC 8298), filed 2023-01-03..
+2026-06-30, zero NULL filed_date, `ordering_monotone_oldest_first=True`; no
+target artifact by design (run-time derivation; ruled). Prune (runbook step
+1): `pruned=1 outcomes_deleted=22506 sentences_deleted=14384` (run
+1767bea3). Command relayed with batch-size 40; caps/cooldowns restated from
+`docs/collector-commands.md`.
+
+**Refresh pass (operator) + Stage C1 load.** Haul 1,121 of 13,331 targets
+(partial pass, oldest-first, stopped ~Apr-2025 cohort). Session 1 report:
+"627 fetched of 13331 targets (0 unchanged, 627 changed, 0 new); 44 already
+fetched this cycle" (time_cap, 4:01:38, max_block_streak=2). Session 2
+(450 PDFs by mtime accounting) wrote NO run artifacts — empty run dir; a
+confirmed instance for the run-report-emission defect queue item
+(adjudicated: import output + mtime accounting authoritative; 44+627+450 =
+1,121 reconciles). C1: `imported=1121 duplicate=0` (every re-fetched sheet
+changed bytes), extraction/parse clean, load `superseded=1121` single-arm.
+Refresh yield: `dockets_with_newly_disposed_charges=20`,
+`charges_newly_disposed=98` (89 newly dated, 20 dockets fully cleared, 0
+held added) — modest by snapshot-age, not docket-age: stored PDFs were ≤11
+days old, so the pass captured days of activity, not years.
+
+**Stage C2 — v7 reload + ledger addendum.** Post-C1 v6 cohort 16,489;
+artifacts 16,489/16,489 staged (no re-extraction, 17.1 seam); parse clean;
+tier-2 compare `diverged=0` (14,989 match / 1,500 legacy golden_missing);
+load `replaced_newer_version=16489` single-arm. Version census single pair
+(2,7)=37,369; held delta +23 attributed: 19 in the 34.5 38-docket ledger +
+4 addendum dockets (15e843f5/56882231/73c12d75/e3b9112c) proven
+34.3-guard-class by true-v6 (32.4-set) envelope diffs — ledger-invisible
+because golden-coverage gaps hid them from the 34.5 enumeration.
+
+**Stage D STOP 1 — SentenceIntegrityError → suppression fix (PR #70, merge
+1e1b247).** build-facts refused: 18 sentence rows on 15 held charges (11
+ledger class-C + the 4 addendum) — the 34.3 guard nulled dispositions but
+the guarded event's judge/sentence lines still attached. Adjudicated remedy
+(suppression, not repair; deletion and gate-relaxation rejected): post-parse
+suppression pass + new warning ORPHANED_SENTENCE_SUPPRESSED
+(SEVERITY_REVIEW, 13 → 14 codes); envelope 7 → 8 + ACCEPTED {7} → {8} per
+the version discipline; tier-1 fixture/golden + three unit-test shapes.
+Rerun compare over the full staged corpus: diverged exactly the 11 goldened
+class members, zero outside-class. Full-corpus v8 reload:
+`replaced_newer_version` 16489+19759+1121 = 37,369; census (2,8)=37,369;
+`sentences_on_held_charges=0`; all 18 suppressed rows attributed per-docket
+(15 warnings, one per affected charge; corpus-wide warning count = 15
+exactly).
+
+**Golden-writing invocations (protocol notes).** (1) Stage A frontier init:
+tier-2 `new=19748` (match=11 attributed: 9 quarantined re-drops + 2
+intake-staging-34.5-init11 extras). (2) C1 refresh init: `new=1121`,
+diverged=0. (3) Stage-D-unblock guard-class refresh: `updated=11` then
+absent-only init `new=4` (recompare 15/15 match, 0 missing). (4) Tier-1
+create: `orphaned_sentence_suppression_mc` golden (tier1 new=1; clean rerun
+match=47). The 1,500 legacy capstone hash-goldens remain the named Sprint-9
+item.
+
+**Stage D rebuild → validate → publish.** build-facts run
+ddb0fbd9-364d-444f-a342-ac6e6978c309 completed; reconciliation
+`42983 + 51608 + 41798 = 136389 == charges_processed` (facts +
+undisposed_skipped + held_for_court_skipped); sentence facts
+`17765 == components_on_disposed`; SD-15 `divergence=5062 straddle=195
+negative_lag=50 lag_days=-757..965`; review items generated=50193 /
+newly_inserted=23307. Aggregates run
+9b870800-7ee1-42af-920d-b6ce63b56ab4 validated (all nine populations
+violations=0), data_range 2025-01-01..2026-07-21; published — prior run
+82b6cc99 invalidated (superseded).
+
+**Stage D STOP 2 — republish runbook FK defect → amendment (PR #71, merge
+dc597b1).** First-ever execution of republish-to-prod: the fourteen-table
+TRUNCATE was refused by FKs from fact.charge_outcomes/fact.charge_sentences
+(full-migrator prod schema; empty tables) — a committed-but-never-run
+defect, the COL-4b first-execution pattern again. Adjudicated Option 1
+(CASCADE rejected): TRUNCATE set extended to all tables referencing the
+restore surface (pg_constraint recon against prod: 4 edges, 2 tables), plus
+a mandatory nonzero=STOP empty-precondition on outside-surface tables, plus
+explicit verify-full prefixes. Rerun: precondition 0/0, TRUNCATE ok,
+single-transaction restore exit 0, per-table counts identical local vs prod
+(all 14). Prod sync agent-executed end-to-end this cycle per planning-chat
+ruling (division-of-labor note; standing model NOT implied). The
+single-transaction rollback held during the failed first attempt — prod
+served 82b6cc99 uninterrupted throughout.
+
+**Post-publish verification (runbook AGENT half).** A1 all endpoints 200,
+data-coverage "available":true serving aggregateRunId 9b870800 (dataEnd
+2026-07-21); A2 noindex on all three surfaces; A3 scanForForbidden over 7
+bodies: 0 violations; A4 edge burst 58x200/67x429 with Cloudflare 1015 body.
+Copy surfaces verified against the new run: zero changes needed (dynamic
+API values; no corpus-contingent claims).
+
+**Formal restatement (D5).** Corpus 37,369 dockets / 136,389 charges;
+outcome facts 42,983 (32,942 public-eligible); sentence facts 17,765
+(10,649 public-eligible). Citywide public-eligible outcome mix:
+dismissed 13,932 (42.3%), withdrawn 7,952 (24.1%), guilty_plea 7,779
+(23.6%), guilty_verdict 1,605 (4.9%), acquittal 894 (2.7%), ard 754 (2.3%),
+other 26 (0.1%) — headline: dismissed+withdrawn 66.4%, guilty-family 28.5%,
+other 5.1%.
+
+**Out-of-cycle material (ruled).** Post-C1 arrivals in
+`refresh-intake-2026-07-22/` (953+ and growing at close) are NEXT-cycle
+material — never swept into this cycle at any stage.
+
+**For the next task.** Queue: committed full-corpus reload runbook (two
+executions now live only in worklog/dispatch text); collector run-report
+emission on interrupted sessions (second confirmed instance); stale
+never-published aggregate run 24184d68 housekeeping; legacy capstone golden
+set (1,500); next data cycle opens with the out-of-cycle refresh arrivals.
