@@ -41,19 +41,43 @@ fastest lever and reverses instantly.
 
 Re-runs the go-live fourteen-table dump/restore against a production database
 that already contains data. The restore is data-only, so the existing rows
-must be cleared first — one multi-table TRUNCATE handles the foreign keys
-because all fourteen tables are truncated together.
+must be cleared first — one multi-table TRUNCATE whose set covers **all
+tables referencing the restore surface**: the fourteen restored tables plus
+every outside table holding a foreign key into them, with the outside tables
+verified EMPTY first (the republish path must never destroy data it does not
+restore). Production runs the full migrator, so its schema is a superset of
+the mirrored data: `fact.charge_outcomes` and `fact.charge_sentences`
+reference `ref.normalized_charges` / `ref.normalized_judges` and block a
+surface-only TRUNCATE even when empty (first-execution finding, Phase-2
+cycle; FK set determined by pg_constraint recon against prod, not assumed).
 
 1. Produce/refresh the local publish (the normal local pipeline flow:
    generate → validate → publish; never on Render, never with `CI` set).
 2. Dump the fourteen tables and build the FK-ordered TOC exactly as in
    `docs/runbook-go-live.md` Step 4 (items 1–2).
-3. Clear and restore:
+3. **Precondition (mandatory, no override): every truncated table OUTSIDE
+   the fourteen-table restore surface must be empty.** Any nonzero count is
+   a STOP — adjudicate in planning chat; there is nothing on the production
+   side to salvage by improvising (R2), but a nonzero count here means the
+   deployment model changed and this runbook is stale:
+
+   ```sh
+   PGSSLMODE=verify-full PGSSLROOTCERT=system \
+     psql "$PROD_DATABASE_URL" -At -c "
+     select 'fact.charge_outcomes', count(*) from fact.charge_outcomes
+     union all
+     select 'fact.charge_sentences', count(*) from fact.charge_sentences;"
+   # both counts must print 0; any nonzero = STOP
+   ```
+
+4. Clear and restore (TLS: every libpq invocation against production takes
+   the verified-TLS prefix from `docs/runbook-go-live.md` Step 3):
 
    ```sh
    read -s PROD_DATABASE_URL
    export PROD_DATABASE_URL
-   psql "$PROD_DATABASE_URL" -c 'truncate
+   PGSSLMODE=verify-full PGSSLROOTCERT=system \
+     psql "$PROD_DATABASE_URL" -c 'truncate
      ref.normalized_charges, ref.charge_aliases,
      ref.normalized_judges, ref.judge_aliases,
      analytics.aggregate_runs,
@@ -65,8 +89,11 @@ because all fourteen tables are truncated together.
      analytics.charge_sentencing_index_aggregates,
      analytics.charge_conviction_grade_aggregates,
      analytics.judge_sentencing_index_summaries,
-     analytics.judge_sentencing_index_aggregates;'
-   pg_restore --single-transaction --data-only \
+     analytics.judge_sentencing_index_aggregates,
+     fact.charge_outcomes,
+     fact.charge_sentences;'
+   PGSSLMODE=verify-full PGSSLROOTCERT=system \
+     pg_restore --single-transaction --data-only \
      -L /tmp/toc.ordered \
      -d "$PROD_DATABASE_URL" \
      /tmp/pca-public-14table.dump
