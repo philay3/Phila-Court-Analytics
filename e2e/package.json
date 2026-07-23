@@ -7,6 +7,7 @@
     "node": ">=22.11"
   },
   "scripts": {
+    "capture": "tsx capture/demo-capture.ts",
     "test:e2e": "playwright test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -14,6 +15,8 @@
     "@axe-core/playwright": "^4.10.2",
     "@pca/shared": "workspace:*",
     "@playwright/test": "^1.56.0",
-    "@types/node": "^22.10.0"
+    "@types/node": "^22.10.0",
+    "ffmpeg-static": "^5.2.0",
+    "tsx": "^4.19.0"
   }
 }

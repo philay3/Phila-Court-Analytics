@@ -8797,3 +8797,51 @@ captures run against production: re-shoot only after this merge deploys, and
 note the `sentencing-return` segment now scrolls outcome → sentencing →
 back up to outcome. (3) The `lead`/`zero-sentenced`/`absent` arm names in
 `sentencing-index-display.ts` are historical; comments there explain.
+
+## Task B2 (video-v3) — Capture Tool Relayout Update + Landing (2026-07-22)
+
+**What was built.** One commit landing the staged-but-never-committed Task B1
+tool set together with the relayout choreography update. R1 found
+`e2e/capture/demo-capture.ts` staged on main with no commit, branch, or PR
+(the B1 worklog entry, by contrast, landed inside the prerecord-2 commit);
+R2 found every selector the tool uses intact at HEAD — the relayout reordered
+blocks and added content inside `section-outcome` /
+`section-sentencing-index` but renamed nothing, so the update is pure
+choreography. Deltas: `sentencing-return` inverted to charge-page-top hold
+(outcome mix in frame, no opening scroll) → sentencing detail (caption
+top-aligned, live-read hold) → rates block (explainer string guaranteed in
+frame) → return to the outcome mix; new named constants `CHARGE_TOP_HOLD_MS`
+(floor 3s) and `RATES_HOLD_MS` (floor 4s); fit-aware `frameBlock` framing for
+the outcome-group-display and rates holds that shrinks the top margin to a
+named minimum (`SCROLL_MIN_TOP_MARGIN_PX`) and records a FRAMING WARNING —
+reprinted in the end-of-run summary as a report item — when a block cannot
+fully fit; fail-fast guards when the rates block or explainer is absent
+(zero-sentenced / index-absent arm, per ruling); new `sentencing-rates.png`
+still; `search-outcomes` final hold fit-framed; `judge-view` unchanged.
+
+**Files touched.** `e2e/capture/demo-capture.ts` (B1 content + update),
+`e2e/package.json`, `e2e/tsconfig.json`, `pnpm-workspace.yaml`,
+`pnpm-lock.yaml` (all four B1, previously staged, unchanged here),
+`tasks/worklog.md`.
+
+**Deviations from plan.** None. The four planning rulings adopted as given:
+literal Beat-1 page-top hold; original-spec ACs proven against the B1 worklog
+record (cross-checked against the restated load-bearing list — no
+divergence); segment name `sentencing-return` kept; zero-sentenced fail-fast.
+The required fix (framing warnings as report items, never console-only noise)
+is the `framingWarnings` end-of-run summary.
+
+**Verification.** Full five-gate protocol plus touched-surface CI gates run
+fresh post-staging (verbatim in the completion report); `@pca/e2e` suite
+green against the scratch `pca_e2e` database; `playwright test --list`
+inventory unchanged (29 tests in 8 files — capture stays structurally
+excluded from CI).
+
+**For the next task / operator notes.** (1) The final capture run is gated on
+G1–G3 (relayout deploy live, new publish serving, staleness re-walk passed) —
+confirmed in planning chat, never self-adjudicated; it had NOT run as of this
+commit. (2) Run as ONE `--segment all` invocation with operator-supplied
+`--judge` and `--out-dir` (outside the repo); confirm the aggregate-run line
+matches across segments; report R3 (which sentencing caption arm renders
+live) alongside. (3) Any FRAMING WARNING lines in the run summary are report
+items — paste verbatim and adjudicate before the edit uses the footage.

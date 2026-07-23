@@ -10,5 +10,5 @@
     "module": "ESNext",
     "verbatimModuleSyntax": false
   },
-  "include": ["playwright.config.ts", "tests", "support"]
+  "include": ["playwright.config.ts", "tests", "support", "capture"]
 }
