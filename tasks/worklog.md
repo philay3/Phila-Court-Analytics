@@ -8669,3 +8669,131 @@ executions now live only in worklog/dispatch text); collector run-report
 emission on interrupted sessions (second confirmed instance); stale
 never-published aggregate run 24184d68 housekeeping; legacy capstone golden
 set (1,500); next data cycle opens with the out-of-cycle refresh arrivals.
+
+## Task B1 (video-v3) — Playwright Site-Capture Script for Demo Video (2026-07-22)
+
+**What was built.** `e2e/capture/demo-capture.ts` — a non-test entry point in
+the `@pca/e2e` workspace that records the demo video's three site segments
+(`search-outcomes`, `sentencing-return`, `judge-view`, or `all`) against
+production as read-only page loads. Per segment it produces a 1920×1080
+WebM/VP8 master via Playwright's per-page screencast API, an H.264 MP4
+(libx264, yuv420p, faststart — CapCut-ready) converted by the script itself
+via `ffmpeg-static`, and ≥2×-scale PNG stills of the outcome-distribution,
+sentencing (with conditional header), and judge-result blocks from the same
+deviceScaleFactor-2 context. Choreography: eased cursor glides driven by real
+mouse events with an injected DOM overlay pointer + click pulse, per-character
+typing, rAF-eased scrolls, autocomplete holds. All timing constants are named,
+documented in the script header, and tunable without other edits. Judge is a
+CLI argument (display name); charge slug is the committed demo-charge
+constant. The script refuses an `--out-dir` inside the repo tree; nothing it
+generates is committed. Invocation:
+`pnpm --filter @pca/e2e run capture -- --segment all --judge "<name>" --out-dir <dir>`.
+
+**Files touched.** `e2e/capture/demo-capture.ts` (new),
+`e2e/package.json` (capture script; `ffmpeg-static` + `tsx` devDeps — both
+plan-approved), `e2e/tsconfig.json` (include `capture`),
+`pnpm-workspace.yaml` (allowBuilds entry so ffmpeg-static's install step may
+download its binary — trivially necessary), `pnpm-lock.yaml`,
+`tasks/worklog.md`.
+
+**Adjudicated in planning before implementation.** (1) ffmpeg-static + tsx
+devDeps approved; (2) ship 25 fps MP4s, CapCut conforms to the 30 fps
+timeline (onFrame 30 fps fallback stays unbuilt unless review shows judder);
+(3) SEG-1 includes the real "View outcomes" submit click (homepage selection
+commits but does not navigate); (4) synthetic-cursor world, with the
+condition that no annotation chrome may appear in frame.
+
+**Deviations from the approved plan (all additive robustness).**
+(a) Playwright's `showActions` cursor was confirmed unusable by static probe
+of the installed 1.61.1 bundle — it passes `actionTitle` unconditionally and
+also always draws a highlight box, so per the approval condition the DOM
+overlay cursor shipped (this was the planned mandatory fallback, not a
+surprise path). (b) A `WAIT_TIMEOUT_MS` constant (60s default timeouts) was
+added after a cold production load exceeded Playwright's 30s default.
+(c) The judge segment fails fast with an actionable message when the chosen
+judge has no published aggregate for the charge (the autocomplete does not
+filter by availability). (d) The in-page scroll animation avoids named inner
+functions — tsx's keepNames transform injects a `__name` helper that does not
+exist after serialization into `page.evaluate`.
+
+**Verification highlights.** Sharpness path: single DSF-2 context confirmed —
+screencast emits exact 1920×1080 under deviceScaleFactor 2 (the script also
+asserts this every run); element stills come out at 2× CSS size. All three
+segments verified end-to-end against production; frames inspected for cursor
+cleanliness (no annotation chrome) and correct beats. CI exclusion is
+structural (`testDir: './tests'`, default spec pattern) and proven by
+`playwright test --list` (29 tests in 8 files, unchanged) plus a green suite
+run. The local e2e suite requires the seeded-fixture database; the root
+`.env` now points at the live corpus DB (seed guard correctly refuses it), so
+the suite was run against a scratch `pca_e2e` database — 29 passed.
+
+**For the next task / operator notes.** (1) A production republish rotated
+the data release mid-verification; captures from different invocations can
+straddle a release. Shoot final footage as ONE `--segment all` run and
+confirm the release id shown in the page aside is identical across segments.
+(2) Pick a judge with published results for the demo charge at run time; the
+script now names this failure explicitly. (3) Deliverables are 25 fps; conform
+in CapCut per the frame-rate ruling. (4) WebM masters sit beside the MP4s in
+the out-dir; stills land in `<out-dir>/stills/`.
+
+## Pre-Recording Frontend Session — Step 2: Display/Copy/Favicon (2026-07-22)
+
+**What was built.** The six adjudicated display rulings on the charge result
+pages. (1) Canonical section order at every render site and arm: outcome mix
+first, then sentencing detail, then the sentencing index (rates) or its
+zero-sentenced fallback line where the index exists; the
+sentencing-unavailable sub-case keeps outcome-first with the notice below.
+Implemented across the charge-page three-arm switch, the judge-scope arms,
+and the shared baseline/absent order (`canonicalOrder`, formerly the
+conditional `legacyOrder`). Caption selection untouched. (2) ARD unchanged
+(ruling retired). (3) Visual-only outcome group headings — "Dismissed or
+withdrawn" over dismissed+withdrawn, "Guilty plea or verdict" over
+guilty_plea+guilty_verdict — via a new optional `groups` prop on
+`DistributionSection`: served rows are partitioned into CONSECUTIVE RUNS by
+membership (pure forward walk, no sort), each grouped run rendering under a
+`scope="rowgroup"` heading row in its own tbody plus a mirrored heading in
+the aria-hidden bar stack. A heading renders when ≥1 member is present; rows
+keep served order/percentages; no summed figures. Group definition lives in
+`outcome-display-groups.ts`; both views pass it at their kind="outcome"
+sites; sentencing sections unchanged. (4) Rates explainer rendered as the
+FIRST trailing note of `SentencingIndexSection` (explainer → wedge → grade
+mix), so it appears at every index site and never on the fallback arm.
+(5) All three new strings homed in `@pca/shared` `result-display.ts`
+(`SENTENCING_INDEX_PERCENTAGE_EXPLAINER`,
+`OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN`, `OUTCOME_GROUP_HEADING_GUILTY`)
+with SANCTIONED byte-pin entries; scanner-clean; no em dashes. (6) Favicon
+via the app-root file convention, zero code: `apps/web/app/icon.svg` is the
+supplied asset byte-verbatim; `apps/web/app/favicon.ico` is derived from it
+(16/32/48 multi-size, RGBA PNG entries). Both serve 200 from a production
+build with auto-injected link tags.
+
+**Files touched.** `packages/shared/src/public/result-display.ts` + test;
+`apps/web/app/components/`: `outcome-display-groups.ts` (new),
+`DistributionSection.tsx`, `SentencingIndexSection.tsx`,
+`ChargeOnlyResultView.tsx`, `JudgeSpecificResultView.tsx` (+ the four
+matching test files); `apps/web/app/lib/sentencing-index-display.ts`
+(comments only — arm names kept); `apps/web/app/favicon.ico` (new),
+`apps/web/app/icon.svg` (new); `e2e/tests/charge-only-result.spec.ts`,
+`e2e/tests/mobile.spec.ts`; `tasks/worklog.md`.
+
+**Deviations from plan.** (a) None to the pinned rulings. (b) The judge-view
+"server-authoritative order" unit test's `getAllByRole('rowheader')` query
+now also matched the new heading cells (a `scope="rowgroup"` th computes to
+role rowheader); the query was scoped to `th[scope="row"]` data rows — the
+protected `DistributionSection` served-order regression test needed no change
+and was not modified. (c) favicon.ico entries are canvas-exported RGBA PNGs:
+Turbopack's ICO decoder rejects RGB-format PNG entries, and plain chromium
+screenshots emit RGB (first build failed; regenerated RGBA; build green).
+
+**Verification.** `@pca/shared` 209 passed; `@pca/web` 278 passed; E2E 29
+passed against the scratch `pca_e2e` database (live `pca` DB untouched; seed
+guard honored). Favicon curl-verified from `next start` on the production
+build. Full gate block in the completion report.
+
+**For the next task / operator notes.** (1) This commit's `tasks/worklog.md`
+also carries the already-staged Task B1 (video-v3) entry above — same file,
+append-only; B1's code remains staged/uncommitted and untouched. (2) Demo
+captures run against production: re-shoot only after this merge deploys, and
+note the `sentencing-return` segment now scrolls outcome → sentencing →
+back up to outcome. (3) The `lead`/`zero-sentenced`/`absent` arm names in
+`sentencing-index-display.ts` are historical; comments there explain.

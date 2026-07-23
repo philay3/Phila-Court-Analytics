@@ -3,6 +3,8 @@ import {
   AGGREGATE_RUN_LABEL_PREFIX,
   CONVICTION_GRADES_ITEM_SEPARATOR,
   CONVICTION_GRADES_LABEL_PREFIX,
+  OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN,
+  OUTCOME_GROUP_HEADING_GUILTY,
   RECORDS_LABEL_PREFIX,
   SENTENCE_COMPONENTS_LABEL_PREFIX,
   SENTENCED_CONVICTIONS_LABEL_PREFIX,
@@ -11,6 +13,7 @@ import {
   SENTENCING_INDEX_CATEGORY_HEADER,
   SENTENCING_INDEX_COUNT_HEADER,
   SENTENCING_INDEX_MEDIAN_HEADER,
+  SENTENCING_INDEX_PERCENTAGE_EXPLAINER,
   SENTENCING_INDEX_PERCENTAGE_HEADER,
   SINGLE_GRADE_TEMPLATE,
   SINGLE_GRADE_UNGRADED_LINE,
@@ -23,9 +26,10 @@ import {
 import { scanPublicCopy } from './copy-safety.js';
 
 /**
- * Byte-pins for the 35.3 sanctioned string set. Every value here was
- * adjudicated in the framing review; a diff in this file means the copy
- * changed and must re-adjudicate.
+ * Byte-pins for the sanctioned string set (35.3 framing review, plus the
+ * pre-recording session's explainer and group headings). Every value here was
+ * adjudicated; a diff in this file means the copy changed and must
+ * re-adjudicate.
  */
 const SANCTIONED = {
   SENTENCING_INDEX_CAPTION:
@@ -52,6 +56,10 @@ const SANCTIONED = {
   RECORDS_LABEL_PREFIX: 'Records: ',
   SENTENCE_COMPONENTS_LABEL_PREFIX: 'Sentence components: ',
   AGGREGATE_RUN_LABEL_PREFIX: 'Data release: ',
+  SENTENCING_INDEX_PERCENTAGE_EXPLAINER:
+    'Percentages may add up to more than 100% because a single conviction can include more than one sentence type.',
+  OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN: 'Dismissed or withdrawn',
+  OUTCOME_GROUP_HEADING_GUILTY: 'Guilty plea or verdict',
 } as const;
 
 const ACTUAL: Record<keyof typeof SANCTIONED, string> = {
@@ -74,6 +82,9 @@ const ACTUAL: Record<keyof typeof SANCTIONED, string> = {
   RECORDS_LABEL_PREFIX,
   SENTENCE_COMPONENTS_LABEL_PREFIX,
   AGGREGATE_RUN_LABEL_PREFIX,
+  SENTENCING_INDEX_PERCENTAGE_EXPLAINER,
+  OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN,
+  OUTCOME_GROUP_HEADING_GUILTY,
 };
 
 describe('result-display pinned copy (35.3 sanctions)', () => {

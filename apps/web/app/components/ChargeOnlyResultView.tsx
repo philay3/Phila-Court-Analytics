@@ -18,16 +18,18 @@
  * (honesty-apparatus overrides 1–2: responsible-use and coverage-note
  * positions are unchanged).
  *
- * Distribution order (task 35.3, pins 1–3) branches on the sentencing-index
- * display arm derived in `sentencing-index-display.ts`:
- *   - lead: the index section leads, the component-grain sentencing block
- *     renders below it under the distinct detail caption, outcome below that.
- *   - zero-sentenced: outcome leads; the ruling-4 fallback line (carrying the
- *     served conviction count) replaces the generic sentencing-unavailable
- *     notice in the sentencing slot.
- *   - absent: today's post-Phase-33 conditional order, structurally unchanged
- *     (33.2 pinned decision 4): sentencing leads when `sentencing.available`,
- *     else outcome leads with the notice below.
+ * Distribution order (pre-recording session, pinned decision 1): the
+ * CANONICAL order on every arm is outcome mix first, then the component-grain
+ * sentencing detail, then the sentencing index (rates) or its fallback line
+ * where the index exists. The arms derived in `sentencing-index-display.ts`
+ * now differ only in which trailing index content renders:
+ *   - lead: outcome → sentencing detail (distinct detail caption, unchanged
+ *     caption pairing) → the index section.
+ *   - zero-sentenced: outcome → sentencing detail when available → the
+ *     ruling-4 fallback line (served conviction count), which still replaces
+ *     the generic sentencing-unavailable notice.
+ *   - absent: outcome → sentencing slot (distribution when available, else
+ *     the unavailable notice below — that sub-case keeps its prior behavior).
  * Every branch consumes API booleans/arrays only — no counts or thresholds
  * are evaluated here.
  *
@@ -47,6 +49,7 @@ import { DateRangeLabel } from './DateRangeLabel';
 import { ResponsibleUseNotice } from './ResponsibleUseNotice';
 import { ThinDataCallout } from './ThinDataCallout';
 import { DistributionSection } from './DistributionSection';
+import { OUTCOME_DISPLAY_GROUPS } from './outcome-display-groups';
 import { SentencingUnavailableNotice } from './SentencingUnavailableNotice';
 import { JudgeDisclosure } from './JudgeDisclosure';
 import { JudgeFilterEntry } from './JudgeFilterEntry';
@@ -77,6 +80,7 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
         rows={outcomes.rows}
         sampleSize={outcomes.sampleSize}
         thinData={outcomes.thinData}
+        groups={OUTCOME_DISPLAY_GROUPS}
       />
     </div>
   );
@@ -96,13 +100,16 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
     </div>
   );
 
-  // The three index arms (35.3 pins 1–3), exhaustively switched: a new arm
-  // must add a case rather than fall through.
+  // The three index arms, exhaustively switched (a new arm must add a case
+  // rather than fall through), all in the canonical order (pre-recording
+  // pinned decision 1): outcome → sentencing detail → index/fallback last.
   const distributionBlocks = (() => {
     switch (indexDisplay.kind) {
       case 'lead':
         return (
           <>
+            {outcomeBlock}
+            {sentencingBlock(SENTENCING_DETAIL_CAPTION)}
             <div data-testid="section-sentencing-index" className="overflow-x-auto">
               <SentencingIndexSection
                 summary={indexDisplay.index.summary}
@@ -110,16 +117,16 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
                 grades={indexDisplay.index.grades}
               />
             </div>
-            {sentencingBlock(SENTENCING_DETAIL_CAPTION)}
-            {outcomeBlock}
           </>
         );
       case 'zero-sentenced':
-        // Outcome-first; the ruling-4 fallback line (served conviction count)
-        // replaces the generic notice in the sentencing slot (ruling Q4).
+        // The ruling-4 fallback line (served conviction count) still replaces
+        // the generic notice (ruling Q4) and renders in the index's canonical
+        // trailing position.
         return (
           <>
             {outcomeBlock}
+            {sentencing.available && sentencingBlock()}
             <div
               data-testid="section-sentencing-index"
               className="space-y-3 border-t-3 border-double border-ink pt-3"
@@ -128,17 +135,12 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
                 {formatZeroSentencedFallback(indexDisplay.index.summary.convictions)}
               </p>
             </div>
-            {sentencing.available && sentencingBlock()}
           </>
         );
       case 'absent':
-        // Today's post-Phase-33 page, structurally unchanged (pin 2).
-        return sentencing.available ? (
-          <>
-            {sentencingBlock()}
-            {outcomeBlock}
-          </>
-        ) : (
+        // No index content; the sentencing slot renders the distribution when
+        // available, else the unavailable notice (prior sub-case behavior).
+        return (
           <>
             {outcomeBlock}
             {sentencingBlock()}

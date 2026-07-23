@@ -1,11 +1,14 @@
 import { expect, test } from '@playwright/test';
 import {
   AGGREGATE_RUN_LABEL_PREFIX,
+  OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN,
+  OUTCOME_GROUP_HEADING_GUILTY,
   RECORDS_LABEL_PREFIX,
   SENTENCED_CONVICTIONS_LABEL_PREFIX,
   SENTENCE_COMPONENTS_LABEL_PREFIX,
   SENTENCING_DETAIL_CAPTION,
   SENTENCING_INDEX_CAPTION,
+  SENTENCING_INDEX_PERCENTAGE_EXPLAINER,
 } from '@pca/shared';
 import { assertPageClean } from '../support/checks';
 import { DISPLAY_NAMES, SLUGS } from '../support/constants';
@@ -19,11 +22,13 @@ import {
 
 /**
  * Charge-only result page across its seeded scenarios (task 15.2 scope 2;
- * 35.3 index arms): the present arm (index lead block, detail block below,
- * outcome last), a thin-data charge, the zero-sentenced fallback arm, and the
- * absent-arm stability lock (today's post-Phase-33 page). Each state passes
- * the page gate (axe + both copy scanners). All numbers asserted here are the
- * fabricated seeded-matrix values — never corpus figures.
+ * 35.3 index arms; pre-recording canonical order): the present arm (outcome
+ * mix first, detail block below it, index rates block last), a thin-data
+ * charge, the zero-sentenced fallback arm, and the absent arm. Each state
+ * passes the page gate (axe + both copy scanners). All numbers asserted here
+ * are the fabricated seeded-matrix values — never corpus figures. Group
+ * headings are asserted by PRESENCE given whatever the seeded categories
+ * yield — no pinned counts or percentages ride into this spec (SD-14).
  */
 
 // Top-level pinned order helper (parity with the unit-test helper): testids
@@ -39,7 +44,7 @@ async function sectionOrder(page: import('@playwright/test').Page): Promise<(str
   );
 }
 
-test('present arm: index leads, detail below, outcome last; wedge, grades, medians render', async ({
+test('present arm: outcome first, detail below, index last; wedge, grades, medians render', async ({
   page,
 }) => {
   await page.goto(`/charges/${SLUGS.chargeDataBearing}`);
@@ -48,26 +53,30 @@ test('present arm: index leads, detail below, outcome last; wedge, grades, media
     page.getByRole('heading', { level: 1, name: DISPLAY_NAMES.chargeDataBearing }),
   ).toBeVisible();
 
-  // 35.3 pin 1 order: index lead → component-grain sentencing detail →
-  // outcome → aside.
+  // Canonical order (pre-recording ruling 1): outcome mix → component-grain
+  // sentencing detail → index rates block → aside.
   expect(await sectionOrder(page)).toEqual([
     'section-summary',
     'section-responsible-use',
-    'section-sentencing-index',
-    'section-sentencing',
     'section-outcome',
+    'section-sentencing',
+    'section-sentencing-index',
     'section-metadata',
   ]);
 
-  // The lead block: conditional caption, sentenced-convictions label
-  // (seeded: 588), index bars, wedge disclosure with the seeded values
-  // (12 of 600, 2%), and the grade-mix line (dominant-first, gated ungraded
-  // label, M2/S equal-count tiebreak as served).
+  // The index block: conditional caption, sentenced-convictions label
+  // (seeded: 588), index bars, the rates explainer as the first trailing
+  // note, wedge disclosure with the seeded values (12 of 600, 2%), and the
+  // grade-mix line (dominant-first, gated ungraded label, M2/S equal-count
+  // tiebreak as served).
   const index = page.getByTestId('section-sentencing-index');
   await expect(index.getByRole('table')).toBeVisible();
   await expect(index.getByText(SENTENCING_INDEX_CAPTION)).toBeVisible();
   await expect(index.getByText(`${SENTENCED_CONVICTIONS_LABEL_PREFIX}588`)).toBeVisible();
   expect(await index.locator('[data-testid^="index-bar-fill-"]').count()).toBeGreaterThan(0);
+  await expect(index.getByTestId('index-percentage-explainer')).toHaveText(
+    SENTENCING_INDEX_PERCENTAGE_EXPLAINER,
+  );
   await expect(index.getByTestId('index-wedge-disclosure')).toHaveText(
     formatWedgeDisclosure({
       convictions: 600,
@@ -109,6 +118,13 @@ test('present arm: index leads, detail below, outcome last; wedge, grades, media
   expect(await outcome.locator('[data-testid^="distribution-bar-fill-"]').count()).toBeGreaterThan(
     0,
   );
+  // Group headings (pre-recording ruling 3): PRESENCE only, given whatever
+  // the seeded categories yield — no counts or percentages pinned (SD-14).
+  // Scoped to the table; the bar stack mirrors them aria-hidden.
+  await expect(
+    outcome.getByRole('table').getByText(OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN),
+  ).toBeVisible();
+  await expect(outcome.getByRole('table').getByText(OUTCOME_GROUP_HEADING_GUILTY)).toBeVisible();
 
   // Provenance line (pin 7): pinned prefix + the 8-char short id.
   await expect(page.getByTestId('aggregate-run-line')).toHaveText(
@@ -161,18 +177,18 @@ test('zero-sentenced arm: outcome first, fallback line carries the conviction co
   await assertPageClean(page, 'charge-only result (zero-sentenced arm)');
 });
 
-test("absent arm: today's post-Phase-33 page, structurally locked, with reconciled labels", async ({
+test('absent arm: canonical outcome-first order, no index section, reconciled labels', async ({
   page,
 }) => {
   await page.goto(`/charges/${SLUGS.chargeIndexAbsent}`);
 
-  // Pin 2: no index section anywhere; the 33.2 conditional order holds
-  // (sentencing available for this seed → sentencing leads, outcome below).
+  // No index section anywhere (35.3 pin 2); the canonical order holds
+  // (sentencing available for this seed → outcome first, sentencing below).
   expect(await sectionOrder(page)).toEqual([
     'section-summary',
     'section-responsible-use',
-    'section-sentencing',
     'section-outcome',
+    'section-sentencing',
     'section-metadata',
   ]);
   await expect(page.getByTestId('section-sentencing-index')).toHaveCount(0);

@@ -230,9 +230,12 @@ describe('JudgeSpecificResultView', () => {
         name: RESULT_DISPLAY_COPY.outcomeCaption,
       },
     );
-    const rowHeaders = within(judgeOutcomeTable)
-      .getAllByRole('rowheader')
-      .map((cell) => cell.textContent);
+    // Data-row headers only: the visual group-heading rows (scope="rowgroup",
+    // pre-recording pin 3) are display chrome, not rows, and must not mask a
+    // re-sort of the served rows this test guards against.
+    const rowHeaders = Array.from(judgeOutcomeTable.querySelectorAll('th[scope="row"]')).map(
+      (cell) => cell.textContent,
+    );
     // Order matches the fixture (server order), not an alphabetized re-sort.
     expect(rowHeaders?.[0]).toContain('Dismissed');
     expect(rowHeaders?.[1]).toContain('Guilty plea');
@@ -300,7 +303,7 @@ describe('JudgeSpecificResultView', () => {
     expect(link).toHaveAttribute('href', `/charges/${CHARGE.slug}`);
   });
 
-  it('renders top-level leaf sections in the pinned mobile DOM order (both scopes sentencing-available)', () => {
+  it('renders top-level leaf sections in the canonical DOM order (both scopes sentencing-available)', () => {
     const { container } = render(
       <JudgeSpecificResultView
         data={makeSuccess({
@@ -321,19 +324,19 @@ describe('JudgeSpecificResultView', () => {
       'section-summary',
       'section-responsible-use',
       'section-thin-data',
-      'section-judge-sentencing',
       'section-judge-outcome',
-      'section-baseline-sentencing',
+      'section-judge-sentencing',
       'section-baseline-outcome',
+      'section-baseline-sentencing',
       'section-metadata',
     ]);
   });
 
-  // Task 33.2 pinned decision 4: each scope orders its slots independently on
-  // its own `sentencing.available` flag — available → sentencing first,
-  // unavailable → outcome first with the callout below. The remaining three
-  // availability combinations (both unavailable + one mixed case per
-  // direction) complete the matrix; the both-available order is pinned above.
+  // Pre-recording pinned decision 1: every scope renders the canonical
+  // outcome-first order regardless of its `sentencing.available` flag (the
+  // unavailable sub-case keeps the notice below the outcome block). All four
+  // availability combinations therefore pin the SAME section order; the
+  // fixtures still cover the full matrix so a regression in any arm is caught.
   const UNAVAILABLE_SENTENCING = {
     available: false,
     message: CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
@@ -367,7 +370,7 @@ describe('JudgeSpecificResultView', () => {
     ]);
   });
 
-  it('mixes orders independently: judge sentencing unavailable, baseline available', () => {
+  it('keeps the canonical order when judge sentencing is unavailable, baseline available', () => {
     const { container } = render(
       <JudgeSpecificResultView
         data={makeSuccess({ judgeSpecific: makeUnavailableScope(JUDGE_OUTCOME_N) })}
@@ -379,13 +382,13 @@ describe('JudgeSpecificResultView', () => {
       'section-responsible-use',
       'section-judge-outcome',
       'section-judge-sentencing',
-      'section-baseline-sentencing',
       'section-baseline-outcome',
+      'section-baseline-sentencing',
       'section-metadata',
     ]);
   });
 
-  it('mixes orders independently: judge sentencing available, baseline unavailable', () => {
+  it('keeps the canonical order when judge sentencing is available, baseline unavailable', () => {
     const { container } = render(
       <JudgeSpecificResultView
         data={makeSuccess({ baseline: makeUnavailableScope(BASELINE_OUTCOME_N) })}
@@ -395,15 +398,15 @@ describe('JudgeSpecificResultView', () => {
     expect(sectionOrder(container)).toEqual([
       'section-summary',
       'section-responsible-use',
-      'section-judge-sentencing',
       'section-judge-outcome',
+      'section-judge-sentencing',
       'section-baseline-outcome',
       'section-baseline-sentencing',
       'section-metadata',
     ]);
   });
 
-  it('leads the judge scope with the cell index and no grade line (35.3 pin 6); baseline unchanged', () => {
+  it('renders the judge cell index last in the canonical order with no grade line (ruling 1; 35.3 pin 6)', () => {
     const { container } = render(
       <JudgeSpecificResultView data={makeSuccess({ sentencingIndex: CELL_INDEX_PRESENT })} />,
     );
@@ -411,23 +414,24 @@ describe('JudgeSpecificResultView', () => {
     expect(sectionOrder(container)).toEqual([
       'section-summary',
       'section-responsible-use',
-      'section-judge-sentencing-index',
-      'section-judge-sentencing',
       'section-judge-outcome',
-      'section-baseline-sentencing',
+      'section-judge-sentencing',
+      'section-judge-sentencing-index',
       'section-baseline-outcome',
+      'section-baseline-sentencing',
       'section-metadata',
     ]);
 
     const indexSection = within(screen.getByTestId('section-judge-sentencing-index'));
     expect(indexSection.getByRole('table', { name: SENTENCING_INDEX_CAPTION })).toBeInTheDocument();
     expect(indexSection.getByText('Sentenced convictions: 45')).toBeInTheDocument();
+    expect(indexSection.getByTestId('index-percentage-explainer')).toBeInTheDocument();
     expect(indexSection.getByTestId('index-wedge-disclosure')).toBeInTheDocument();
     // No grades exist at this grain (ruling 2): no grade line anywhere.
     expect(screen.queryByTestId('index-grade-mix')).not.toBeInTheDocument();
 
-    // The judge-scope component block renders below under the detail caption;
-    // the baseline keeps today's caption.
+    // The judge-scope component block keeps the detail caption (caption
+    // pairing unchanged); the baseline keeps today's caption.
     const judgeSentencing = within(screen.getByTestId('section-judge-sentencing'));
     expect(
       judgeSentencing.getByRole('table', { name: SENTENCING_DETAIL_CAPTION }),
@@ -455,8 +459,8 @@ describe('JudgeSpecificResultView', () => {
       'section-thin-data',
       'section-judge-outcome',
       'section-judge-sentencing-index',
-      'section-baseline-sentencing',
       'section-baseline-outcome',
+      'section-baseline-sentencing',
       'section-metadata',
     ]);
 
