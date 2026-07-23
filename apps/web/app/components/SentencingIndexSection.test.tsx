@@ -5,6 +5,7 @@ import {
   SENTENCING_INDEX_CATEGORY_HEADER,
   SENTENCING_INDEX_COUNT_HEADER,
   SENTENCING_INDEX_MEDIAN_HEADER,
+  SENTENCING_INDEX_PERCENTAGE_EXPLAINER,
   SENTENCING_INDEX_PERCENTAGE_HEADER,
 } from '@pca/shared';
 import { THIN_DATA_LABEL } from '../lib/formatters';
@@ -107,6 +108,19 @@ describe('SentencingIndexSection', () => {
     expect(screen.getByTestId('index-wedge-disclosure')).toHaveTextContent(
       '12 of 600 recorded convictions (2%) have no public sentencing record in the collected data and are not counted in the rates above.',
     );
+  });
+
+  it('renders the rates explainer as the first trailing note, before the wedge disclosure', () => {
+    render(<SentencingIndexSection summary={summary()} categories={categories} grades={grades} />);
+
+    const explainer = screen.getByTestId('index-percentage-explainer');
+    expect(explainer).toHaveTextContent(SENTENCING_INDEX_PERCENTAGE_EXPLAINER);
+    // Pre-recording ruling: explainer → wedge → grade mix. DOCUMENT_POSITION_
+    // FOLLOWING means the wedge node comes after the explainer in DOM order.
+    const wedge = screen.getByTestId('index-wedge-disclosure');
+    expect(
+      explainer.compareDocumentPosition(wedge) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('renders the grade-mix line dominant-first with the gated ungraded label (charge pages)', () => {

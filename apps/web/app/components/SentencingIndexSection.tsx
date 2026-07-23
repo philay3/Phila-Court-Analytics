@@ -23,6 +23,7 @@ import {
   SENTENCING_INDEX_CATEGORY_HEADER,
   SENTENCING_INDEX_COUNT_HEADER,
   SENTENCING_INDEX_MEDIAN_HEADER,
+  SENTENCING_INDEX_PERCENTAGE_EXPLAINER,
   SENTENCING_INDEX_PERCENTAGE_HEADER,
 } from '@pca/shared';
 import type {
@@ -186,6 +187,12 @@ export function SentencingIndexSection({
           );
         })}
       </div>
+
+      {/* Rates explainer (pre-recording ruling 4): the FIRST trailing note,
+          directly under the bars whose arithmetic it describes. */}
+      <p data-testid="index-percentage-explainer" className="text-sm text-muted">
+        {SENTENCING_INDEX_PERCENTAGE_EXPLAINER}
+      </p>
 
       {/* Wedge disclosure (pin 10): neutral, numeric, always rendered. */}
       <p data-testid="index-wedge-disclosure" className="text-sm text-muted">

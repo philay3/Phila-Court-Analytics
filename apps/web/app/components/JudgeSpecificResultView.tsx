@@ -28,18 +28,20 @@
  * last-refreshed line relocated there byte-identically. No aside sample sizes
  * on this view — they stay in the scope-section headers only (DP-3).
  *
- * Slot order WITHIN each scope is conditional. The judge scope carries the
- * cell's sentencing index (task 35.3, pin 6): on the lead arm the index
- * section leads the scope, the component-grain sentencing slot renders below
- * it under the distinct detail caption, outcome below that; on the
- * zero-sentenced arm outcome leads with the ruling-4 fallback line replacing
- * the generic notice; on the absent arm the scope renders exactly the
- * post-Phase-33 order (33.2 pinned decision 4): sentencing above outcome when
- * available, else outcome first with the callout below. The judge payload
- * serves no grades at this grain, so no grade line can render (ruling 2) —
- * and no baseline index is served, so the baseline scope always uses the
- * 33.2 order. The page stays scope-major, each scope branches independently,
- * and every branch consumes API booleans/arrays only.
+ * Slot order WITHIN each scope is the canonical order (pre-recording session,
+ * pinned decision 1): outcome first, then the component-grain sentencing
+ * slot, then the cell index (task 35.3, pin 6) or its fallback line where the
+ * index exists. On the lead arm the sentencing slot carries the distinct
+ * detail caption (caption pairing unchanged) and the index section renders
+ * last; on the zero-sentenced arm the ruling-4 fallback line still replaces
+ * the generic notice and renders in the index's trailing position; on the
+ * absent arm the scope is outcome → sentencing slot (distribution when
+ * available, else the unavailable notice — that sub-case keeps its prior
+ * behavior). The judge payload serves no grades at this grain, so no grade
+ * line can render (ruling 2) — and no baseline index is served, so the
+ * baseline scope always renders the same canonical outcome → sentencing
+ * order. The page stays scope-major, each scope branches independently, and
+ * every branch consumes API booleans/arrays only.
  *
  * Every count, percentage, sample size, date, and label renders through the
  * 11.4 formatters; the page computes no analytics.
@@ -58,6 +60,7 @@ import { DateRangeLabel } from './DateRangeLabel';
 import { ResponsibleUseNotice } from './ResponsibleUseNotice';
 import { ThinDataCallout } from './ThinDataCallout';
 import { DistributionSection } from './DistributionSection';
+import { OUTCOME_DISPLAY_GROUPS } from './outcome-display-groups';
 import { SentencingUnavailableNotice } from './SentencingUnavailableNotice';
 import { ResultMetadataAside } from './ResultMetadataAside';
 import { JUDGE_RESULT_COPY } from './judge-result-copy';
@@ -176,13 +179,12 @@ interface ScopeSlotsProps {
  * 1). The sentencing slot renders the 13.1 distribution when available, else the
  * 13.2 sentencing-unavailable callout — independently of the other scope.
  *
- * Without an `indexDisplay` (the baseline scope, and by construction any
- * scope with the absent arm) slot order follows this scope's
- * `sentencing.available` flag (task 33.2 pinned decision 4): sentencing leads
- * when available, outcome leads on the unavailable arm. With the cell index
- * (judge scope, task 35.3 pin 6) the three-arm order matches the charge page:
- * index lead → sentencing detail → outcome; or outcome → fallback line on the
- * zero-sentenced arm. No grades exist at this grain, so none are passed.
+ * Every arm renders the canonical order (pre-recording pinned decision 1):
+ * outcome first, then the sentencing slot, then — where a cell index exists
+ * (judge scope, task 35.3 pin 6) — the index section or its zero-sentenced
+ * fallback line last. Without an `indexDisplay` (the baseline scope, and by
+ * construction any scope with the absent arm) the scope is simply outcome →
+ * sentencing slot. No grades exist at this grain, so none are passed.
  */
 function ScopeSlots({
   scope,
@@ -199,6 +201,7 @@ function ScopeSlots({
         rows={scope.outcomes.rows}
         sampleSize={scope.outcomes.sampleSize}
         thinData={scope.outcomes.thinData}
+        groups={OUTCOME_DISPLAY_GROUPS}
       />
     </div>
   );
@@ -217,12 +220,7 @@ function ScopeSlots({
       )}
     </div>
   );
-  const legacyOrder = scope.sentencing.available ? (
-    <>
-      {sentencingSlot()}
-      {outcomeSlot}
-    </>
-  ) : (
+  const canonicalOrder = (
     <>
       {outcomeSlot}
       {sentencingSlot()}
@@ -230,29 +228,30 @@ function ScopeSlots({
   );
 
   if (indexDisplay === undefined) {
-    return legacyOrder;
+    return canonicalOrder;
   }
 
   switch (indexDisplay.kind) {
     case 'lead':
       return (
         <>
+          {outcomeSlot}
+          {sentencingSlot(SENTENCING_DETAIL_CAPTION)}
           <div data-testid={indexTestId} className="overflow-x-auto">
             <SentencingIndexSection
               summary={indexDisplay.index.summary}
               categories={indexDisplay.index.categories}
             />
           </div>
-          {sentencingSlot(SENTENCING_DETAIL_CAPTION)}
-          {outcomeSlot}
         </>
       );
     case 'zero-sentenced':
-      // Outcome-first; the ruling-4 fallback line replaces the generic notice
-      // in the sentencing slot (ruling Q4).
+      // The ruling-4 fallback line still replaces the generic notice (ruling
+      // Q4) and renders in the index's canonical trailing position.
       return (
         <>
           {outcomeSlot}
+          {scope.sentencing.available && sentencingSlot()}
           <div
             data-testid={indexTestId}
             className="space-y-3 border-t-3 border-double border-ink pt-3"
@@ -261,11 +260,10 @@ function ScopeSlots({
               {formatZeroSentencedFallback(indexDisplay.index.summary.convictions)}
             </p>
           </div>
-          {scope.sentencing.available && sentencingSlot()}
         </>
       );
     case 'absent':
-      return legacyOrder;
+      return canonicalOrder;
     default: {
       const exhaustive: never = indexDisplay;
       return exhaustive;

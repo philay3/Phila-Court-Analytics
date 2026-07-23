@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  <rect width="240" height="240" fill="#F7F2E8"></rect>
+  <g transform="rotate(7 120 120) translate(21 20)">
+    <path fill="#A6192E" d="M52 25 H90 V175 H52 Z M40 25 H58 V39 H40 Z M38 161 H104 V175 H38 Z M86 25 H120 A40 40 0 1 1 120 105 H86 Z M101 65 a16 16 0 1 0 32 0 a16 16 0 1 0 -32 0 Z M53 151 L53 162 L41 162 Q51 160 53 151 Z M89 151 Q91 160 101 162 L89 162 Z M53 49 Q51 41 41 38 L53 38 Z M89 115 L89 104 L101 104 Q91 107 89 115 Z"></path>
+  </g>
+</svg>

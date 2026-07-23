@@ -3,8 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import {
   CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
+  OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN,
+  OUTCOME_GROUP_HEADING_GUILTY,
   SENTENCING_DETAIL_CAPTION,
   SENTENCING_INDEX_CAPTION,
+  SENTENCING_INDEX_PERCENTAGE_EXPLAINER,
   type ChargeOnlyResultSuccess,
   type ChargeSentencingIndexPresent,
   type OutcomeDistributionEntry,
@@ -157,6 +160,13 @@ describe('ChargeOnlyResultView', () => {
     const outcomeSection = within(screen.getByTestId('section-outcome'));
     expect(outcomeSection.getByText(formatRecordsLabel(OUTCOME_SAMPLE_SIZE))).toBeInTheDocument();
 
+    // Group headings (pre-recording ruling 3) render in the outcome table:
+    // the fixture carries a member of each pair (dismissed, guilty_plea).
+    expect(
+      within(outcomeTable).getByText(OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN),
+    ).toBeInTheDocument();
+    expect(within(outcomeTable).getByText(OUTCOME_GROUP_HEADING_GUILTY)).toBeInTheDocument();
+
     // Sentencing distribution with its own, independent sample size — scoped
     // the same way.
     const sentencingTable = screen.getByRole('table', {
@@ -228,7 +238,7 @@ describe('ChargeOnlyResultView', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('renders sentencing above outcome when sentencing is available (task 33.2 conditional order)', () => {
+  it('renders the canonical outcome-first order when sentencing is available (pre-recording ruling 1)', () => {
     const { container } = render(
       <ChargeOnlyResultView
         data={makeSuccess({ outcomes: { sampleSize: 8, thinData: true, rows: OUTCOME_ROWS } })}
@@ -239,8 +249,8 @@ describe('ChargeOnlyResultView', () => {
       'section-summary',
       'section-responsible-use',
       'section-thin-data',
-      'section-sentencing',
       'section-outcome',
+      'section-sentencing',
       'section-metadata',
     ]);
   });
@@ -263,7 +273,7 @@ describe('ChargeOnlyResultView', () => {
     ]);
   });
 
-  it('leads with the index section on the present arm (35.3 pin 1) with the detail caption below', () => {
+  it('renders the index arm in canonical order: outcome, detail caption block, index last (ruling 1)', () => {
     const { container } = render(
       <ChargeOnlyResultView data={makeSuccess({ sentencingIndex: INDEX_PRESENT })} />,
     );
@@ -271,14 +281,14 @@ describe('ChargeOnlyResultView', () => {
     expect(sectionOrder(container)).toEqual([
       'section-summary',
       'section-responsible-use',
-      'section-sentencing-index',
-      'section-sentencing',
       'section-outcome',
+      'section-sentencing',
+      'section-sentencing-index',
       'section-metadata',
     ]);
 
-    // The lead block carries the conditional caption; the component-grain
-    // block below renders under the distinct detail caption (pin 11), so
+    // The index block carries the conditional caption; the component-grain
+    // block keeps the distinct detail caption (caption pairing unchanged), so
     // today's conditional-framing caption is absent on this arm.
     expect(screen.getByRole('table', { name: SENTENCING_INDEX_CAPTION })).toBeInTheDocument();
     expect(screen.getByRole('table', { name: SENTENCING_DETAIL_CAPTION })).toBeInTheDocument();
@@ -286,8 +296,12 @@ describe('ChargeOnlyResultView', () => {
       screen.queryByRole('table', { name: RESULT_DISPLAY_COPY.sentencingCaption }),
     ).not.toBeInTheDocument();
 
-    // Wedge disclosure and grade-mix line render inside the lead block.
+    // Explainer (first trailing note), wedge disclosure, and grade-mix line
+    // render inside the index block.
     const indexSection = within(screen.getByTestId('section-sentencing-index'));
+    expect(indexSection.getByTestId('index-percentage-explainer')).toHaveTextContent(
+      SENTENCING_INDEX_PERCENTAGE_EXPLAINER,
+    );
     expect(indexSection.getByTestId('index-wedge-disclosure')).toBeInTheDocument();
     expect(indexSection.getByTestId('index-grade-mix')).toBeInTheDocument();
   });
@@ -319,6 +333,27 @@ describe('ChargeOnlyResultView', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(CHARGE_SENTENCING_UNAVAILABLE_MESSAGE)).not.toBeInTheDocument();
     expect(screen.queryByRole('table', { name: SENTENCING_INDEX_CAPTION })).not.toBeInTheDocument();
+  });
+
+  it('keeps the fallback line last when sentencing is available on the zero-sentenced arm (ruling 1)', () => {
+    const { container } = render(
+      <ChargeOnlyResultView data={makeSuccess({ sentencingIndex: INDEX_ZERO_SENTENCED })} />,
+    );
+
+    // Canonical order: outcome → sentencing detail → the fallback line in the
+    // index's trailing position (the summary is thin → page-level callout).
+    expect(sectionOrder(container)).toEqual([
+      'section-summary',
+      'section-responsible-use',
+      'section-thin-data',
+      'section-outcome',
+      'section-sentencing',
+      'section-sentencing-index',
+      'section-metadata',
+    ]);
+    expect(
+      screen.getByText(formatZeroSentencedFallback(INDEX_ZERO_SENTENCED.summary.convictions)),
+    ).toBeInTheDocument();
   });
 
   it('includes the index thin flag in the page-level callout OR (present arm)', () => {

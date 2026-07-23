@@ -1,7 +1,8 @@
 /**
- * Result-page display copy (task 35.3): the sentencing-index lead block, the
- * reconciled sample labels, and the provenance label. Every constant here is
- * sanctioned byte-exact by the 35.3 framing review — edits re-adjudicate.
+ * Result-page display copy: the sentencing-index block, the reconciled sample
+ * labels, and the provenance label (task 35.3), plus the outcome group
+ * headings and the rates explainer (pre-recording session). Every constant
+ * here is sanctioned byte-exact by its adjudication — edits re-adjudicate.
  *
  * Templates use `{name}` substitution slots filled by the web formatters
  * (apps/web/app/lib/formatters.ts); the strings themselves are never re-typed
@@ -21,6 +22,15 @@ export const SENTENCING_INDEX_MEDIAN_HEADER = 'Median (months)';
 
 /** Index block count line: the denominator of the rates. */
 export const SENTENCED_CONVICTIONS_LABEL_PREFIX = 'Sentenced convictions: ';
+
+/**
+ * Rates explainer (pre-recording session ruling 4): states why the index
+ * percentages can sum past 100 (component multiplicity), in neutral terms.
+ * Renders as the FIRST trailing note of the index block, directly under the
+ * bars, at every site where the index renders.
+ */
+export const SENTENCING_INDEX_PERCENTAGE_EXPLAINER =
+  'Percentages may add up to more than 100% because a single conviction can include more than one sentence type.';
 
 /**
  * Wedge disclosure (excluded-with-disclosure, ruling: neutral and numeric —
@@ -55,10 +65,22 @@ export const SINGLE_GRADE_UNGRADED_LINE = 'Every recorded conviction here has no
 export const UNGRADED_GRADE_LABEL = 'no recorded grade';
 
 /**
- * Component-grain sentencing caption when the block renders below the index.
- * The absent arm keeps today's caption (structural stability, ruling Q1).
+ * Component-grain sentencing caption when the block renders alongside the
+ * index (pre-recording ruling 1 moved the index below the detail block; the
+ * caption pairing is unchanged). The absent arm keeps today's caption
+ * (structural stability, ruling Q1).
  */
 export const SENTENCING_DETAIL_CAPTION = 'Historical sentencing detail by sentence component';
+
+/**
+ * Outcome-distribution group headings (pre-recording session ruling 3):
+ * visual-only headings rendered over the two already-adjacent served pairs in
+ * every kind="outcome" distribution section — dismissed + withdrawn, and
+ * guilty_plea + guilty_verdict. Display grouping only: served rows, order,
+ * and percentages are untouched, and no summed figures exist anywhere.
+ */
+export const OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN = 'Dismissed or withdrawn';
+export const OUTCOME_GROUP_HEADING_GUILTY = 'Guilty plea or verdict';
 
 /**
  * Reconciled sample labels (the Sample-size byte-identity guard lifted here

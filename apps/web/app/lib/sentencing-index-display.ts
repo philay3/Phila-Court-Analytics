@@ -8,15 +8,17 @@ import type {
 /**
  * Display-arm derivation for the sentencing index (task 35.3). The API payload
  * makes the states derivable but does not name them (35.2 handoff note); this
- * module is the single place the naming happens:
+ * module is the single place the naming happens. The arm NAMES are historical
+ * (35.3 coined them when the index led the page); since the pre-recording
+ * session's canonical reorder every arm renders outcome-first and the arms
+ * differ only in the trailing index content:
  *
- *   - `lead`           — present with >= 1 category: the index renders as the
- *                        page's lead block (pin 1).
- *   - `zero-sentenced` — present with zero categories: no rates to lead with;
- *                        the page renders outcome-first with the ruling-4
- *                        fallback line carrying the conviction count (pin 3).
- *   - `absent`         — `available: false`: today's post-Phase-33 page,
- *                        structurally unchanged (pin 2).
+ *   - `lead`           — present with >= 1 category: the full index section
+ *                        renders as the trailing rates block.
+ *   - `zero-sentenced` — present with zero categories: no rates to show; the
+ *                        ruling-4 fallback line carrying the conviction count
+ *                        renders in the index's trailing position.
+ *   - `absent`         — `available: false`: no index content at all.
  *
  * Pure presentation logic: no thresholds, no arithmetic, no payload values
  * are computed here — only the served discriminator and array length are read.

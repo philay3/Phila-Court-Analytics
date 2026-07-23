@@ -10,17 +10,17 @@ import { SLUGS } from '../support/constants';
 
 // The pinned mobile content order for a NON-thin, index-present charge
 // (retail-theft has no thin-data callout, carries sentencing data, and its
-// index cell is seeded): summary → responsible-use → sentencing-index lead →
-// sentencing detail → outcome → metadata aside (35.3 pin 1 over the DP-3
-// pinned DOM order; the aside renders at its DOM position — last — below
-// 900px, and the former links/judge-filter blocks live inside it). Source
-// order, no CSS `order`.
+// index cell is seeded): summary → responsible-use → outcome mix →
+// sentencing detail → sentencing-index rates block → metadata aside (the
+// pre-recording canonical order over the DP-3 pinned DOM order; the aside
+// renders at its DOM position — last — below 900px, and the former
+// links/judge-filter blocks live inside it). Source order, no CSS `order`.
 const EXPECTED_SECTION_ORDER = [
   'section-summary',
   'section-responsible-use',
-  'section-sentencing-index',
-  'section-sentencing',
   'section-outcome',
+  'section-sentencing',
+  'section-sentencing-index',
   'section-metadata',
 ];
 

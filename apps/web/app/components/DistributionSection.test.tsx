@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
-import type { OutcomeDistributionEntry, SentencingDistributionEntry } from '@pca/shared';
+import {
+  OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN,
+  OUTCOME_GROUP_HEADING_GUILTY,
+  type OutcomeDistributionEntry,
+  type SentencingDistributionEntry,
+} from '@pca/shared';
 import { DistributionSection } from './DistributionSection.js';
+import { OUTCOME_DISPLAY_GROUPS } from './outcome-display-groups.js';
 import { RESULT_DISPLAY_COPY } from './result-display-copy.js';
 import { definitionAnchor } from '../lib/definition-anchor.js';
 import {
@@ -173,6 +179,116 @@ describe('DistributionSection', () => {
     for (const rowHeader of within(table).getAllByRole('rowheader')) {
       expect(rowHeader).toHaveAttribute('scope', 'row');
     }
+  });
+
+  // Pre-recording pinned decision 3: visual-only group headings over the two
+  // served-adjacent pairs, in both the table and the bar stack. Rendering is a
+  // consecutive-run partition of the served rows — never a re-sort (the
+  // served-order test above runs WITHOUT groups and is deliberately untouched).
+  describe('display groups', () => {
+    const FULL_PAIR_ROWS: readonly OutcomeDistributionEntry[] = [
+      { categoryCode: 'dismissed', displayName: 'Dismissed', count: 120, percentage: 12 },
+      { categoryCode: 'withdrawn', displayName: 'Withdrawn', count: 80, percentage: 8 },
+      { categoryCode: 'guilty_plea', displayName: 'Guilty plea', count: 540, percentage: 54 },
+      { categoryCode: 'guilty_verdict', displayName: 'Guilty verdict', count: 60, percentage: 6 },
+      { categoryCode: 'acquittal', displayName: 'Acquittal', count: 200, percentage: 20 },
+    ];
+
+    function renderWithGroups(rows: readonly OutcomeDistributionEntry[]) {
+      return render(
+        <DistributionSection
+          kind="outcome"
+          rows={rows}
+          sampleSize={1000}
+          thinData={false}
+          groups={OUTCOME_DISPLAY_GROUPS}
+        />,
+      );
+    }
+
+    it('renders one shared heading per pair in the table, spanning both member rows', () => {
+      renderWithGroups(FULL_PAIR_ROWS);
+
+      const table = screen.getByRole('table', { name: RESULT_DISPLAY_COPY.outcomeCaption });
+      const groupHeaders = Array.from(table.querySelectorAll('th[scope="rowgroup"]'));
+      expect(groupHeaders.map((header) => header.textContent)).toEqual([
+        OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN,
+        OUTCOME_GROUP_HEADING_GUILTY,
+      ]);
+
+      // Each heading's tbody contains exactly its member rows, in served
+      // order; the ungrouped row lives outside both.
+      const [dismissedGroup, guiltyGroup] = groupHeaders.map(
+        (header) => header.closest('tbody') as HTMLElement,
+      );
+      expect(within(dismissedGroup!).getByText('Dismissed')).toBeInTheDocument();
+      expect(within(dismissedGroup!).getByText('Withdrawn')).toBeInTheDocument();
+      expect(within(guiltyGroup!).getByText('Guilty plea')).toBeInTheDocument();
+      expect(within(guiltyGroup!).getByText('Guilty verdict')).toBeInTheDocument();
+      expect(within(dismissedGroup!).queryByText('Acquittal')).not.toBeInTheDocument();
+      expect(within(guiltyGroup!).queryByText('Acquittal')).not.toBeInTheDocument();
+    });
+
+    it('mirrors both headings in the aria-hidden bar stack', () => {
+      const { container } = renderWithGroups(FULL_PAIR_ROWS);
+
+      const barStack = container.querySelector('[aria-hidden="true"]') as HTMLElement;
+      expect(barStack).not.toBeNull();
+      expect(
+        within(barStack).getByText(OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN),
+      ).toBeInTheDocument();
+      expect(within(barStack).getByText(OUTCOME_GROUP_HEADING_GUILTY)).toBeInTheDocument();
+    });
+
+    it('keeps served row order and per-row served percentages under grouping (zero arithmetic)', () => {
+      renderWithGroups(FULL_PAIR_ROWS);
+
+      const table = screen.getByRole('table', { name: RESULT_DISPLAY_COPY.outcomeCaption });
+      const rowHeaders = Array.from(table.querySelectorAll('th[scope="row"]'));
+      expect(
+        rowHeaders.map(
+          (header) =>
+            FULL_PAIR_ROWS.find((row) => header.textContent?.includes(row.displayName))
+              ?.categoryCode,
+        ),
+      ).toEqual(FULL_PAIR_ROWS.map((row) => row.categoryCode));
+
+      FULL_PAIR_ROWS.forEach((row) => {
+        const fill = screen.getByTestId(`distribution-bar-fill-${row.categoryCode}`);
+        expect(fill.style.width).toBe(`${row.percentage}%`);
+      });
+      // No summed group figure exists anywhere: the pair totals are absent.
+      expect(screen.queryByText(formatPercentage(20))).toBeInTheDocument(); // acquittal's own
+      expect(screen.queryByText(formatPercentage(60))).not.toBeInTheDocument(); // 54 + 6
+    });
+
+    it('renders a heading when only one member of a pair is present', () => {
+      renderWithGroups(OUTCOME_ROWS); // dismissed + guilty_plea + acquittal only
+
+      const table = screen.getByRole('table', { name: RESULT_DISPLAY_COPY.outcomeCaption });
+      const groupHeaders = Array.from(table.querySelectorAll('th[scope="rowgroup"]'));
+      expect(groupHeaders.map((header) => header.textContent)).toEqual([
+        OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN,
+        OUTCOME_GROUP_HEADING_GUILTY,
+      ]);
+    });
+
+    it('renders no group heading without the groups prop (sentencing sections unchanged)', () => {
+      render(
+        <DistributionSection
+          kind="sentencing"
+          rows={SENTENCING_ROWS}
+          sampleSize={SENTENCING_SAMPLE_SIZE}
+          thinData={false}
+        />,
+      );
+
+      const table = screen.getByRole('table', { name: RESULT_DISPLAY_COPY.sentencingCaption });
+      expect(table.querySelectorAll('th[scope="rowgroup"]')).toHaveLength(0);
+      expect(table.querySelectorAll('tbody')).toHaveLength(1);
+      expect(screen.queryByText(OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN)).not.toBeInTheDocument();
+      expect(screen.queryByText(OUTCOME_GROUP_HEADING_GUILTY)).not.toBeInTheDocument();
+    });
   });
 
   it('embeds the thin-data badge only when thin, and never renders the standalone callout', () => {

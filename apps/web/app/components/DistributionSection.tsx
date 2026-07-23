@@ -19,6 +19,15 @@
  * The thin-data BADGE is embedded here (adjacent to the sample size) when the
  * distribution is thin. The thin-data CALLOUT is deliberately NOT rendered here
  * — it ships standalone so 13.2/13.3 can place it at page level.
+ *
+ * Display groups (pre-recording session, pinned decision 3): outcome sections
+ * pass the two pinned groups via `groups`; served rows are partitioned into
+ * CONSECUTIVE RUNS by membership, and a run belonging to a group renders under
+ * its shared heading in both the table (a scope="rowgroup" header row opening
+ * the run's tbody) and the bar stack. Pure presentation: rows keep exactly the
+ * served order (pinned decision 1 stands), each row keeps its own served
+ * percentage, and no summed or derived figures exist. Without `groups` the
+ * render is a single ungrouped run — the sentencing sections are unchanged.
  */
 import { useId } from 'react';
 import type {
@@ -35,6 +44,7 @@ import {
 } from '../lib/formatters';
 import { definitionAnchor, type DistributionKind } from '../lib/definition-anchor';
 import { categoryFillClass } from './category-fill';
+import type { DistributionRowGroup } from './outcome-display-groups';
 import { RESULT_DISPLAY_COPY } from './result-display-copy';
 import { SampleSizeLabel } from './SampleSizeLabel';
 import { ThinDataBadge } from './ThinDataBadge';
@@ -53,10 +63,47 @@ interface DistributionSectionProps {
   thinData: ThinDataStatus;
   /**
    * Caption override (task 35.3, pin 11): when the sentencing block renders
-   * below the index lead block it carries the distinct detail caption; on the
+   * alongside the index it carries the distinct detail caption; on the
    * absent arm the default captions render byte-identically to today.
    */
   caption?: string;
+  /**
+   * Visual-only display groups (pre-recording pin 3). Outcome sections pass
+   * the pinned pairs; sentencing sections pass nothing. Membership selects
+   * consecutive served rows under a shared heading — never an order change.
+   */
+  groups?: readonly DistributionRowGroup[];
+}
+
+interface RowSegment {
+  /** The group whose heading spans this run, or null for ungrouped rows. */
+  group: DistributionRowGroup | null;
+  rows: DistributionRow[];
+}
+
+/**
+ * Partitions served rows into consecutive runs by group membership. A pure
+ * forward walk: rows stay in exactly the served order (pinned decision 1 —
+ * grouping is visual only), and a heading renders when at least one member
+ * row is present because a run exists iff it has a row. Hypothetical
+ * non-adjacent members would open a second run under the same heading rather
+ * than be moved together.
+ */
+function segmentRows(
+  rows: readonly DistributionRow[],
+  groups: readonly DistributionRowGroup[],
+): RowSegment[] {
+  const segments: RowSegment[] = [];
+  for (const row of rows) {
+    const group = groups.find((entry) => entry.memberCodes.includes(row.categoryCode)) ?? null;
+    const current = segments[segments.length - 1];
+    if (current !== undefined && current.group === group) {
+      current.rows.push(row);
+    } else {
+      segments.push({ group, rows: [row] });
+    }
+  }
+  return segments;
 }
 
 function captionFor(kind: DistributionKind): string {
@@ -88,10 +135,13 @@ export function DistributionSection({
   sampleSize,
   thinData,
   caption: captionOverride,
+  groups,
 }: DistributionSectionProps) {
   const captionId = useId();
   const caption = captionOverride ?? captionFor(kind);
   const categoryHeader = categoryHeaderFor(kind);
+  // Without groups this is one ungrouped run — the pre-groups render exactly.
+  const segments = segmentRows(rows, groups ?? []);
 
   return (
     <section
@@ -133,28 +183,43 @@ export function DistributionSection({
             </th>
           </tr>
         </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.categoryCode}>
-              <th scope="row" className="border-b border-hairline py-2 pr-4 font-normal text-ink">
-                <span className="font-serif">{row.displayName}</span>{' '}
-                <a
-                  href={definitionAnchor(kind, row.categoryCode)}
-                  aria-label={`${RESULT_DISPLAY_COPY.definitionLinkLabelPrefix}${row.displayName}`}
-                  className="text-accent underline hover:text-accent-hover"
+        {segments.map((segment, segmentIndex) => (
+          // One tbody per run so a grouped run's heading is a true rowgroup
+          // header (scope="rowgroup" spans exactly its tbody, nothing more).
+          <tbody key={`segment-${segmentIndex}`}>
+            {segment.group !== null && (
+              <tr>
+                <th
+                  scope="rowgroup"
+                  colSpan={3}
+                  className="border-b border-hairline pt-3 pb-1 pr-4 text-xs font-semibold tracking-[.10em] text-faint uppercase"
                 >
-                  {RESULT_DISPLAY_COPY.definitionLinkText}
-                </a>
-              </th>
-              <td className="border-b border-hairline py-2 pr-4 text-body">
-                {formatCount(row.count)}
-              </td>
-              <td className="border-b border-hairline py-2 text-body">
-                {formatPercentage(row.percentage)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
+                  {segment.group.heading}
+                </th>
+              </tr>
+            )}
+            {segment.rows.map((row) => (
+              <tr key={row.categoryCode}>
+                <th scope="row" className="border-b border-hairline py-2 pr-4 font-normal text-ink">
+                  <span className="font-serif">{row.displayName}</span>{' '}
+                  <a
+                    href={definitionAnchor(kind, row.categoryCode)}
+                    aria-label={`${RESULT_DISPLAY_COPY.definitionLinkLabelPrefix}${row.displayName}`}
+                    className="text-accent underline hover:text-accent-hover"
+                  >
+                    {RESULT_DISPLAY_COPY.definitionLinkText}
+                  </a>
+                </th>
+                <td className="border-b border-hairline py-2 pr-4 text-body">
+                  {formatCount(row.count)}
+                </td>
+                <td className="border-b border-hairline py-2 text-body">
+                  {formatPercentage(row.percentage)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        ))}
       </table>
 
       {/*
@@ -181,26 +246,36 @@ export function DistributionSection({
             </span>
           ))}
         </div>
-        {rows.map((row) => {
-          const thinBar = thinData ? ' border border-dashed border-ink opacity-[0.72]' : '';
-          return (
-            <div key={row.categoryCode} className="space-y-1">
-              <div className="flex justify-between gap-4 text-sm text-body">
-                <span className="font-serif">{row.displayName}</span>
-                <span className="text-xs font-semibold text-ink">
-                  {formatCount(row.count)} · {formatPercentage(row.percentage)}
-                </span>
+        {segments.map((segment, segmentIndex) => (
+          <div key={`segment-${segmentIndex}`} className="space-y-2">
+            {/* Mirror of the table's rowgroup heading (pin 3: both places). */}
+            {segment.group !== null && (
+              <div className="pt-1 text-xs font-semibold tracking-[.10em] text-faint uppercase">
+                {segment.group.heading}
               </div>
-              <div className="chart-track h-4 w-full overflow-hidden">
-                <div
-                  data-testid={`distribution-bar-fill-${row.categoryCode}`}
-                  className={`h-full ${categoryFillClass(kind, row.categoryCode)}${thinBar}`}
-                  style={{ width: `${row.percentage}%` }}
-                />
-              </div>
-            </div>
-          );
-        })}
+            )}
+            {segment.rows.map((row) => {
+              const thinBar = thinData ? ' border border-dashed border-ink opacity-[0.72]' : '';
+              return (
+                <div key={row.categoryCode} className="space-y-1">
+                  <div className="flex justify-between gap-4 text-sm text-body">
+                    <span className="font-serif">{row.displayName}</span>
+                    <span className="text-xs font-semibold text-ink">
+                      {formatCount(row.count)} · {formatPercentage(row.percentage)}
+                    </span>
+                  </div>
+                  <div className="chart-track h-4 w-full overflow-hidden">
+                    <div
+                      data-testid={`distribution-bar-fill-${row.categoryCode}`}
+                      className={`h-full ${categoryFillClass(kind, row.categoryCode)}${thinBar}`}
+                      style={{ width: `${row.percentage}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
     </section>
   );
