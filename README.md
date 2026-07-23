@@ -1,18 +1,25 @@
-# Philadelphia Court Outcomes Analytics
+# Philadelphia Court Outcomes
 
 [![CI](https://github.com/philay3/Phila-Court-Analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/philay3/Phila-Court-Analytics/actions/workflows/ci.yml)
 
-Historical, aggregate outcome distributions for criminal charges in the
-Philadelphia courts, built from public docket sheets published on the
-Pennsylvania Unified Judicial System (UJS) portal.
+See how criminal charges in Philadelphia's courts have resolved — historical, aggregate
+outcomes and sentences built from public court records.
 
-## What this is (and is not)
+**Live site:** <https://philacourtoutcomes.org>
 
-The product answers one kind of question: across past Philadelphia criminal
-cases, how were charges of a given type resolved, and what sentence types were
-recorded — as a distribution over groups of past cases, optionally broken down
-by judge. Every figure is a historical aggregate with its sample size shown;
-small samples are labeled as thin data rather than hidden.
+<img src="docs/images/readme-home.png" alt="Homepage with a search box for Philadelphia criminal charges and featured charge cards" width="640">
+
+_Screenshots are point-in-time captures of the live site. Collection is ongoing: served
+figures grow as newly collected records are aggregated, so the live site always
+supersedes any figure visible in an image._
+
+## What it is
+
+Search a Philadelphia criminal charge and see how past cases with that charge resolved —
+outcomes and sentences, citywide or by judge where available. The site is built first for
+people facing charges who want plain historical context, and second for attorneys and
+researchers. Every figure is a historical aggregate with its sample size shown; small
+samples are labeled as thin data rather than hidden.
 
 It is deliberately narrow about what it is not:
 
@@ -25,21 +32,142 @@ It is deliberately narrow about what it is not:
   past cases as a whole, never any individual case, and the product draws no
   conclusions about any judge or court.
 
-The same statements are served to users in the application itself (the
-methodology page), enforced by automated copy-safety gates over every public
-surface.
+The same statements are served to users in the application itself, on the
+[methodology page](https://philacourtoutcomes.org/methodology).
 
-## Launch model
+## Using the site
 
-The product is deployed at <https://philacourtoutcomes.org> under a
-controlled launch: site-wide `noindex` (search engines are deliberately not
-invited), no promotion, and honest disclosures on every result surface. Collection is ongoing — coverage begins January 1, 2025,
-anchored to disposition and sentencing event dates rather than filing dates,
-and figures grow as newly collected records are aggregated. Known limitations
-are documented rather than smoothed over: see
-[docs/known-limitations.md](docs/known-limitations.md).
+### Find your charge
 
-## What ships in this repository
+Search from the homepage, start from a featured charge card, or browse the full
+directory at [/charges](https://philacourtoutcomes.org/charges) — every listed charge
+links to its result page.
+
+<img src="docs/images/readme-charges.png" alt="Charge directory with a filter box and a list of charges, each linking to its results" width="520">
+
+### An example: simple assault
+
+Every result page opens the same way. Here is the citywide page for simple assault: the
+charge, the covered date window, a plain statement of what the figures summarize, and
+the responsible-use notes.
+
+<img src="docs/images/readme-result-top.png" alt="Top of the simple assault result page: charge name, covered date window, summary, and responsible-use notes" width="480">
+
+### The outcome distribution
+
+First comes the outcome distribution: how past cases with this charge were resolved.
+Its unit is the **record** — one charge's disposition, its recorded final outcome.
+Outcomes are grouped into plain categories — dismissed or withdrawn, guilty plea or
+verdict — each with its count and percentage, and every category links to a
+plain-language definition. The number of records behind the figures is always shown
+beside the block.
+
+<img src="docs/images/readme-result-outcomes.png" alt="Outcome distribution section for simple assault: outcome categories in a table and as bars" width="480">
+
+### The sentencing distribution
+
+Below the outcomes, sentencing is summarized two ways. The sentencing detail shows the
+sentence types recorded for charges that reached sentencing. Its unit is the **sentence
+component**: a single sentencing event can include several parts — for example probation
+plus a fine — and each part counts as its own entry, so this block counts sentence
+components rather than sentenced charges.
+
+<img src="docs/images/readme-result-sentencing.png" alt="Sentencing detail section for simple assault, counting sentence components by category" width="480">
+
+The sentencing rates then answer a narrower question — what happened when charges like
+this ended in conviction. Their unit is the **sentenced conviction**: a conviction with
+a public sentencing record in the collected data, and the denominator of every rate in
+the block. For each sentence category the block shows the share of sentenced convictions
+whose sentence included that category at least once, with the median where served.
+Percentages may add up to more than 100% because a single conviction can include more
+than one sentence type, and the page says so right under the bars.
+
+<img src="docs/images/readme-result-rates.png" alt="Sentencing rates section for simple assault, showing rates among sentenced convictions with median durations" width="480">
+
+### Judge-specific results
+
+Judge-specific results are shown where available. On any charge page, adding the judge
+filter shows how past cases with that charge resolved before a specific judge, in the
+same format as the citywide view. At this stage most judge-specific figures are thin —
+the thin-data warning is the norm for judge-level results, and judge-level coverage
+deepens as collection continues.
+
+### Check the data
+
+The [data coverage page](https://philacourtoutcomes.org/data-coverage) states exactly
+what time window and courts the figures cover, and the
+[methodology page](https://philacourtoutcomes.org/methodology) explains how the figures
+are produced.
+
+## How it works
+
+Public docket sheets from the Pennsylvania Unified Judicial System (UJS) portal are
+processed by a Python pipeline: PDF text extraction (pdfplumber), deterministic parsing
+with a closed warning vocabulary, and normalization of charges, outcomes, and judges
+against curated rosters. An eligibility-gated fact build decides public eligibility
+through explicit boolean gates with machine-readable reason codes; unmatched or unclear
+records are excluded and routed to review, and never reach public data. Facts are
+aggregated into immutable, versioned aggregate runs in PostgreSQL — at most one run is
+published and active at a time, and figures change only by publishing a new run. An
+aggregate-only API serves those published runs, and the Next.js frontend renders served
+figures — it never computes analytics. Everything published is aggregate by
+construction; see [Privacy and responsible use](#privacy-and-responsible-use).
+
+```mermaid
+flowchart LR
+    A[Public UJS<br/>docket sheets] --> B[PDF text<br/>extraction]
+    B --> C[Deterministic<br/>parsing]
+    C --> D[Roster<br/>normalization]
+    D --> E[Eligibility-gated<br/>fact build]
+    E --> F[(Published aggregate<br/>runs — PostgreSQL)]
+    F --> G[Aggregate-only<br/>API]
+    G --> H[Next.js<br/>frontend]
+```
+
+## Tech stack
+
+- **Frontend:** Next.js (App Router), React, Tailwind CSS v4
+- **API:** Fastify, TypeScript (strict), TypeBox
+- **Data:** PostgreSQL 17, Kysely migrations
+- **Pipeline:** Python 3.12, pdfplumber, psycopg3, uv
+- **Quality:** Vitest, Playwright + axe-core E2E, ruff, pytest, GitHub Actions
+- **Infra:** Render, Cloudflare, UptimeRobot
+- **Monorepo:** pnpm workspaces
+
+## Data coverage & honesty
+
+The product runs under a controlled launch: site-wide `noindex` (search engines are
+deliberately not invited), no promotion, and honest disclosures on every result surface.
+Coverage spans cases on or after January 1, 2025, anchored to disposition and sentencing
+event dates rather than filing dates. Collection is ongoing and figures grow as newly
+collected records are aggregated. Known limitations are documented rather than smoothed
+over: see [docs/known-limitations.md](docs/known-limitations.md) for what the data does
+and does not cover, and [docs/future-work.md](docs/future-work.md) for what is
+deliberately not built yet and what would trigger building it.
+
+## Privacy and responsible use
+
+This project handles public court records with strict privacy discipline:
+
+- Raw docket PDFs, extracted docket text, and fixture PDFs are **never
+  committed**. Fixtures live outside the repo and are referenced via a
+  configurable, gitignored path.
+- No defendant names, docket numbers, or other production court data appear
+  in the repo, logs, tests, or CI output. Defendant identity exists in the
+  pipeline only as a salted hash.
+- Secrets and `.env` files with real values are never committed
+  (`.env.example` files carry placeholder values only).
+- The public API is aggregate-only: raw, parsed, fact, review, and
+  source-document data are never exposed, enforced by automated
+  forbidden-field scans over every public route.
+- User-facing copy never frames results as forecasts of future outcomes,
+  never advises on any case, and draws no conclusions about judges — enforced
+  by an automated copy-safety scanner over every served public surface;
+  repository documents are held to the same copy rules.
+
+## For developers
+
+### What ships in this repository
 
 Code, migrations, seeds, tests, and documentation — **no court data**. Nothing
 derived from real dockets is committed: no docket PDFs, no extracted docket
@@ -64,28 +192,7 @@ run over collected court records, which does not happen on a clone. The seed
 step is also guarded: it refuses to run against any database that already
 contains real corpus data.
 
-## Architecture
-
-A Python pipeline turns collected public docket PDFs into aggregate
-statistics: text extraction (pdfplumber), parsing into structured per-docket
-records with a closed warning vocabulary, normalization of charges, outcomes,
-and judges against curated rosters, and a fact build that decides public
-eligibility through explicit boolean gates with machine-readable reason codes
-— no confidence scores anywhere. Unmatched or unclear records are excluded and
-routed to a review queue; they never reach public data.
-
-Facts are aggregated into immutable, versioned **aggregate runs** in
-PostgreSQL (layered schemas: `raw` → `parsed` → `fact`, with `ref` rosters and
-`analytics` aggregates). At most one run is published and active at a time;
-figures change only by publishing a new run, which is also the rollback model.
-
-A Fastify + TypeScript API serves **only** the aggregate and reference layers
-— the public API is aggregate-only by construction, and automated gates scan
-every public route for forbidden fields and unsafe copy. A Next.js (App
-Router) web application renders the results with the same copy and privacy
-gates applied end to end (unit, integration, and Playwright E2E).
-
-## Getting started
+### Getting started
 
 Prerequisites:
 
@@ -114,33 +221,20 @@ Then open <http://localhost:3000> (web) — the API health check is at
 <http://localhost:3001/health>. See [docs/local-setup.md](docs/local-setup.md)
 for database details (start/stop/reset, health checks, port overrides).
 
-### Environment files
-
-Each deployable documents its environment in a committed `.env.example`;
-local-dev defaults are chosen so a fresh clone runs with a copied root `.env`
-and nothing else:
-
-- Root [`.env.example`](.env.example): local Postgres credentials /
-  `DATABASE_URL`, plus `DEFENDANT_HASH_SALT` (required by the **pipeline
-  only** — the web app, API, and database tooling never read it).
-- Web app ([apps/web/.env.example](apps/web/.env.example)): `API_BASE_URL`,
-  optional — defaults to `http://localhost:3001`.
-- API: no `.env` needed locally; it reads `DATABASE_URL` from the root `.env`
-  (via the dev script) and `PORT`/`HOST`/`LOG_LEVEL` are optional with
-  defaults.
-
-### Generated artifacts
+Each deployable documents its environment in a committed `.env.example`, and local-dev
+defaults are chosen so a fresh clone runs with a copied root `.env` and nothing else:
+the root [`.env.example`](.env.example) carries local Postgres credentials plus
+`DEFENDANT_HASH_SALT` (read by the pipeline only), and the web app's optional
+[apps/web/.env.example](apps/web/.env.example) defaults to the local API.
 
 Some packages emit generated artifacts that other packages import (currently
-`@pca/taxonomy`, whose artifacts `@pca/shared` builds its schemas from).
-Artifacts are gitignored and rebuilt on demand: `pnpm generate`. Root `test`
-runs it first, and root `typecheck` starts by building the workspace packages
-(which regenerates taxonomy artifacts), so on a fresh clone the root scripts
-work in any order after `pnpm install`. `packages/taxonomy/` is the single source
-of truth for outcome and sentencing categories — see
-[packages/taxonomy/README.md](packages/taxonomy/README.md).
+`@pca/taxonomy`, whose artifacts `@pca/shared` builds its schemas from). Artifacts are
+gitignored and rebuilt on demand with `pnpm generate`; root `test` and `typecheck`
+regenerate them first, so on a fresh clone the root scripts work in any order after
+`pnpm install`. `packages/taxonomy/` is the single source of truth for outcome and
+sentencing categories — see [packages/taxonomy/README.md](packages/taxonomy/README.md).
 
-## Workspace layout
+### Workspace layout
 
 | Path                 | Purpose                                            |
 | -------------------- | -------------------------------------------------- |
@@ -157,7 +251,7 @@ of truth for outcome and sentencing categories — see
 | `scripts/`           | Repo maintenance and development scripts           |
 | `tests/`             | Cross-package integration and end-to-end tests     |
 
-## Testing
+### Testing
 
 Root scripts run recursively across the workspace: `pnpm lint`,
 `pnpm typecheck`, `pnpm test`, `pnpm format:check`. The Python pipeline has
@@ -173,7 +267,11 @@ database — run the database steps from Getting started first, then
 `pnpm --filter @pca/e2e exec playwright install chromium`. See
 [e2e/README.md](e2e/README.md).
 
-## Documentation map
+The screenshots in this README are captured by a committed, manual-only script —
+`pnpm --filter @pca/e2e run capture:readme` — which regenerates the same shot set at the
+same paths under `docs/images/`. It is never run in CI.
+
+### Documentation map
 
 - [docs/planning/](docs/planning/) — human-maintained planning documents
   (roadmap, PRD, architecture, sprint plans). Everything else under `docs/`
@@ -200,30 +298,3 @@ database — run the database steps from Getting started first, then
 The user-facing methodology is served by the application itself (the
 `/methodology` page), so it can never drift from what the product actually
 does.
-
-## Known limitations and future work
-
-The honest one-stop summaries: [docs/known-limitations.md](docs/known-limitations.md)
-consolidates every disclosure already made in the engineering reports and the
-served methodology; [docs/future-work.md](docs/future-work.md) names what is
-deliberately not built yet and what would trigger building it.
-
-## Privacy and responsible use
-
-This project handles public court records with strict privacy discipline:
-
-- Raw docket PDFs, extracted docket text, and fixture PDFs are **never
-  committed**. Fixtures live outside the repo and are referenced via a
-  configurable, gitignored path.
-- No defendant names, docket numbers, or other production court data appear
-  in the repo, logs, tests, or CI output. Defendant identity exists in the
-  pipeline only as a salted hash.
-- Secrets and `.env` files with real values are never committed
-  (`.env.example` files carry placeholder values only).
-- The public API is aggregate-only: raw, parsed, fact, review, and
-  source-document data are never exposed, enforced by automated
-  forbidden-field scans over every public route.
-- User-facing copy never frames results as forecasts of future outcomes,
-  never advises on any case, and draws no conclusions about judges — enforced
-  by an automated copy-safety scanner over every public surface, including
-  this repository's public documents.
