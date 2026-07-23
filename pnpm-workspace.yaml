@@ -15,3 +15,7 @@ allowBuilds:
   # Tailwind v4's native Rust engine (@tailwindcss/oxide) builds/fetches a
   # platform binary in its install step; required for CSS compilation.
   '@tailwindcss/oxide': true
+  # ffmpeg-static's install step downloads the platform ffmpeg binary the
+  # @pca/e2e capture script shells out to for MP4 conversion; without the
+  # build the package is an empty shell.
+  ffmpeg-static: true
