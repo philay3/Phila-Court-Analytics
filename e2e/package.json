@@ -8,6 +8,7 @@
   },
   "scripts": {
     "capture": "tsx capture/demo-capture.ts",
+    "capture:readme": "tsx capture/readme-screenshots.ts",
     "test:e2e": "playwright test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

@@ -8845,3 +8845,79 @@ commit. (2) Run as ONE `--segment all` invocation with operator-supplied
 matches across segments; report R3 (which sentencing caption arm renders
 live) alongside. (3) Any FRAMING WARNING lines in the run summary are report
 items — paste verbatim and adjudicate before the edit uses the footage.
+
+## Task README-1 — Product-First README Rewrite + Live-Site Screenshots (2026-07-23)
+
+**What was built.** Root `README.md` rewritten to the pinned product-first
+structure: H1 "Philadelphia Court Outcomes" + tagline + live URL + CI badge;
+hero screenshot with the point-in-time caption; What it is (what-it-is-not
+trio verbatim); What you see and do walkthrough with four inline screenshots
+and the pinned judge sentence; How it works (one system paragraph + approved
+mermaid flow); grouped tech stack; Data coverage & honesty; Privacy and
+responsible use; trimmed For-developers half (what-ships, boot block as-is,
+condensed env/artifacts, workspace table, testing, documentation map). Five
+live-site screenshots committed under `docs/images/` (readme-home,
+readme-charges, readme-result-outcomes, readme-result-sentencing,
+readme-data-coverage; 1440px viewport width, all under 300 KB, figure-free
+alt text). New manual-only capture script
+`e2e/capture/readme-screenshots.ts` (`pnpm --filter @pca/e2e run
+capture:readme`), never referenced by CI, regenerates the same shot set at
+the same paths.
+
+**Files touched.** `README.md`, `docs/images/` (five new PNGs),
+`e2e/capture/readme-screenshots.ts` (new), `e2e/package.json`,
+`tasks/worklog.md`.
+
+**Deviations from plan.** One mid-task STOP, adjudicated in planning: the
+spec's premise that result pages lead with the sentencing block (Phase 33
+framing) is superseded by the prerecord-2 canonical order (outcomes first,
+sentencing detail below, conviction-conditional rates last). Ruling: shot
+S3 = page top through the full outcome section
+(`readme-result-outcomes.png`), S4 = sentencing detail + rates block with
+the conditional header (`readme-result-sentencing.png`); walkthrough
+sentence corrected to match the live order. AC6 interpretation banked:
+judge NAMES and judge-specific results are barred from images; chrome-level
+affordances ("+ Add judge filter") and the data-coverage "Judge–charge
+pairs" aggregate tile stay. Privacy bullet rephrased per ruling: scanner is
+mechanically enforced over every served public surface; repository
+documents held to the same copy rules (the old "including this repository's
+public documents" claim was inaccurate — no mechanical gate covers root
+README.md; extending coverage is queued as a Sprint 9 ops candidate, and
+`copy-guard.test.ts` was deliberately not touched).
+
+**Verification.** `scanPublicCopy` (@pca/shared) run directly over the
+rewritten README (mask-then-scan, whitespace-collapsed): 0 violations;
+supplemental grep (rank stem, DAO, AOPC, calendar-year, score, win-rate):
+0 hits. CI workflow grep shows no reference to the capture script. Five
+gates + staging gate run fresh post-staging, verbatim in the completion
+report.
+
+**For the next task.** The README screenshot set is regenerated with one
+command (`pnpm --filter @pca/e2e run capture:readme`); reruns overwrite the
+same five paths, and the size cap (300 KB/image) fails the run loudly
+rather than compressing. Screenshots show served figures by design — the
+point-in-time caption covers drift; recapture is optional, not obligatory,
+after data cycles. Root README is world-visible and NOT covered by any
+mechanical copy gate — until the queued Sprint 9 quick-win lands, any
+README edit needs a manual `scanPublicCopy` pass.
+
+**Revision (same task, pre-merge review, 2026-07-23).** Reviewer feedback on
+the PR, iterated locally to approval before a single re-push: full-width
+screenshots read as unfocused, walkthrough didn't flow, "What you see and
+do" heading unclear, data-coverage shot unwanted. Final shape: hero stays
+the only full-width capture; all other images are tight column-clipped
+crops of a single block, rendered compact via `<img width>` (640/520/480);
+walkthrough restructured as "Using the site" with per-section subsections
+walking the simple-assault example (page top → outcome distribution →
+sentencing detail → sentencing rates — example switched from retail theft
+to simple assault, the largest directory sample, by reviewer direction);
+each section defines its own sample unit (record / sentence component /
+sentenced conviction) with phrasing reused from the served methodology and
+definitions copy; `readme-data-coverage.png` removed (prose links kept);
+new shots `readme-result-top.png` and `readme-result-rates.png`. Final set
+is six images. A requested judge-vs-city comparison image was flagged as
+colliding with the judge-imagery exclusion (AC6 / out-of-scope / Ruling 3)
+and adjudicated: keep prose-only, with the judge subsection expanded using
+served thin-data phrasing. Copy-safety scan and all gates re-run
+post-revision; commit amended (branch unmerged, single-commit-at-close
+discipline kept).
