@@ -169,6 +169,30 @@ export interface JudgeSentencingIndexAggregatesTable extends SentencingIndexCate
 }
 
 /**
+ * Phase 36 charge-volume aggregates: one row per (run, charge) with the
+ * DEDUPLICATED journey counts (`charges_seen` never counts an MC held charge
+ * and its traced CP continuation twice — the fold happens in the generator
+ * via parsed.charges.superseded_by_charge_id). Closure is a stored CHECK
+ * (the wedge-identity precedent): outcomes_recorded + held_for_court +
+ * still_pending + disposed_excluded = charges_seen; `held_superseded` is
+ * provenance outside the sum. Same immutability rules as every aggregate
+ * table. Public serving uses charges_seen + outcomes_recorded only.
+ */
+export interface ChargeVolumeAggregatesTable {
+  id: Immutable<string, string | undefined>;
+  aggregate_run_id: Immutable<string>;
+  charge_id: Immutable<string>;
+  charges_seen: Immutable<number>;
+  outcomes_recorded: Immutable<number>;
+  held_for_court: Immutable<number>;
+  still_pending: Immutable<number>;
+  disposed_excluded: Immutable<number>;
+  held_superseded: Immutable<number>;
+  taxonomy_version: Immutable<string>;
+  created_at: Immutable<Date, Date | string | undefined>;
+}
+
+/**
  * The internal source-document layer (task 21.1), mirroring the 16.3
  * manual-import metadata record. MUTABLE: `updated_at` is trigger-managed
  * (`ColumnType<Date, never, never>`, 6.1 precedent). `file_size_bytes` is
@@ -215,6 +239,9 @@ export interface ParsedDocketsTable {
   otn: Immutable<string | null>;
   dc_number: Immutable<string | null>;
   cross_court_dockets: Immutable<unknown | null>;
+  // Record v3 (Phase 36 dedupe): the CP sheet's Case Information pointer at
+  // its parent MC case; null on v2-era rows and on sheets without the label.
+  originating_docket_no: Immutable<string | null>;
   defendant_hash: Immutable<string>;
   assigned_judge_raw: Immutable<string | null>;
   envelope_status: Immutable<string>;
@@ -227,6 +254,9 @@ export interface ParsedChargesTable {
   id: Immutable<string, string | undefined>;
   docket_id: Immutable<string>;
   sequence: Immutable<number>;
+  // Record v3 (Phase 36 dedupe): the charge's sequence on the ORIGINATING
+  // docket (the sheet's "Orig Seq" column); null on v2-era rows.
+  orig_seq: Immutable<number | null>;
   statute: Immutable<string | null>;
   grade: Immutable<string | null>;
   offense: Immutable<string | null>;
@@ -235,6 +265,16 @@ export interface ParsedChargesTable {
   disposition_judge_raw: Immutable<string | null>;
   event_name: Immutable<string | null>;
   event_date: Immutable<Date | null, Date | string | null>;
+  /**
+   * Phase 36 dedupe pointer (operator ruling 2026-07-25): the CP charge this
+   * MC held charge continues as, from the deterministic originating-docket +
+   * OTN + orig-seq + statute join. The SINGLE derived (update-writable)
+   * column on the parsed layer — re-derived whole by every fact build and by
+   * `pipeline backfill-charge-supersession`; ON DELETE SET NULL under CP
+   * graph re-parses. Every volume-style count filters
+   * `WHERE superseded_by_charge_id IS NULL`.
+   */
+  superseded_by_charge_id: ColumnType<string | null, string | null | undefined, string | null>;
   created_at: Immutable<Date, Date | string | undefined>;
 }
 
@@ -424,4 +464,5 @@ export interface Database {
   'analytics.charge_conviction_grade_aggregates': ChargeConvictionGradeAggregatesTable;
   'analytics.judge_sentencing_index_summaries': JudgeSentencingIndexSummariesTable;
   'analytics.judge_sentencing_index_aggregates': JudgeSentencingIndexAggregatesTable;
+  'analytics.charge_volume_aggregates': ChargeVolumeAggregatesTable;
 }
