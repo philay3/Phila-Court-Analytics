@@ -1,165 +1,38 @@
-# CLAUDE.md — Coding Agent Rules for Philadelphia Court Outcomes Analytics
+# CLAUDE.md — Philadelphia Court Outcomes Analytics
 
-You are the implementation agent for this project. Planning and task sequencing happen elsewhere; your job is to execute the task defined in `tasks/current-task.md` — nothing more.
+Public analytics on Philadelphia criminal court outcomes. A Python 3.12
+pipeline parses docket PDFs into Postgres; a Fastify/TypeScript API serves
+aggregate-only data to a Next.js frontend. pnpm workspaces monorepo, Node 22.
+Real court data and operational artifacts live under `~/court-data/`, outside
+the repo. Planning docs in `docs/planning/` are human-maintained — don't edit
+them.
 
-## The workflow (non-negotiable)
+## Session start
 
-1. Read `tasks/current-task.md`.
-2. Respond with an IMPLEMENTATION PLAN first. Do not write or modify any code until the human explicitly approves the plan.
-3. Your plan must include:
-   - your understanding of the goal in one or two sentences
-   - the files you will create or modify (exact paths)
-   - the approach, including any libraries you'll add and why
-   - how each acceptance criterion in the task will be satisfied
-   - anything ambiguous or missing that you need answered
-4. After approval, implement exactly the approved plan. If you discover mid-implementation that the plan needs to change, STOP and say so — do not silently deviate.
-5. When done, report: what you built, how to run/verify it, and which acceptance criteria are met.
-6. After implementation and before committing, append an entry to tasks/worklog.md: task ID, date, what was built, files touched, any deviations from plan, and anything the next task should know. (The worklog entry precedes the commit; it is part of the same commit.)
+Read `docs/board.md` first — it holds current state, priorities, and open
+threads. Update it whenever things change: work lands, a decision gets made,
+a new problem surfaces.
 
-## Scope discipline
+## Rules
 
-- Do ONLY what `tasks/current-task.md` asks. Do not refactor, rename, "improve," or scaffold ahead, even if it seems helpful.
-- Do not touch files outside the "Files in scope" list in the task, except trivially necessary ones (e.g., lockfile updates) — and call those out.
-- If the task seems to require out-of-scope changes, stop and ask.
-- Do not add dependencies beyond those the task or approved plan names.
+1. **Nothing derived from real dockets ever enters the repo tree.** No docket
+   text, docket numbers, or defendant-identifying data in code, fixtures,
+   tests, comments, commit messages, or docs — hash-prefix IDs and CPCMS
+   vocabulary only in committed artifacts and console output. You may freely
+   read and run tools over `~/court-data/`, and may source
+   `DEFENDANT_HASH_SALT` from the repo-root `.env`, but never echo, log, or
+   write its value.
 
-## Privacy and safety rules (hard rules, never violate)
+2. **Be careful with anything that re-parses the corpus or republishes
+   results.** Show the diff first — what changes and by how much — and wait
+   for a go-ahead before running it.
 
-- NEVER commit: secrets, .env files with real values, API keys, raw docket PDFs, extracted docket text, defendant names, docket numbers, or any production court data.
-- Fixture PDFs live OUTSIDE the repo. Code references them via a configurable, gitignored path. You may read and run against them directly per the real-data access policy below.
-- Committed code, tests, and CI never emit raw docket text or defendant-identifying data to console or logs. Ad-hoc inspection of real data during your own work is permitted per the real-data access policy below.
-- Public API code must never expose raw, parsed, fact, review, audit, or source-document data — aggregate-only.
+3. **Copy stays honest.** No prediction, odds, legal-advice, or judge-ranking
+   language anywhere in user-facing copy.
 
-## Stack (locked — do not substitute)
+4. **Tests pass before deploy.** Any fix that changes data comes with a
+   before/after number.
 
-- Monorepo: pnpm workspaces (no Turborepo yet)
-- API: Fastify + TypeScript (strict mode), TypeBox for validation
-- DB: PostgreSQL, Kysely + Kysely Migrator, explicit SQL where sensible
-- Web: Next.js (App Router), React, TypeScript
-- Pipeline: Python 3.12, pytest; extractor candidates PyMuPDF / pdfplumber / pypdf
-- Node 22 LTS
-- CI: GitHub Actions
+## Git
 
-## Conventions
-
-- Strict TypeScript everywhere; no `any` without a comment justifying it.
-- Migrations: explicit, ordered, documented naming convention (see db/README once it exists).
-- Tests accompany the code they test within the same task when the task's acceptance criteria call for them.
-- Keep commits scoped to the current task; reference the task ID in commit messages (e.g., "task 2.2: add Kysely migration runner").
-- No prediction, odds, legal-advice, or judge-ranking language anywhere in user-facing copy.
-
-## Reference docs
-
-Planning docs live in `docs/planning/`. Consult them for context, but `tasks/current-task.md` defines what you build. If the docs and the task conflict, ask.
-
-## Documentation rules
-
-- `docs/planning/` is reserved for the human-maintained planning documents
-  (roadmap, PRD, architecture, specs, sprint plans). Never create, edit, or
-  move files in `docs/planning/`.
-- Documentation you generate (setup notes, runbooks, reports, decision
-  records) goes elsewhere under `docs/` — ADRs in `docs/decisions/`, intake
-  protocols in `docs/intake/`, everything else at the `docs/` root.
-- Package-level READMEs (e.g. `db/README.md`, `apps/api/README.md`) are fine
-  and belong with their package — they are not affected by this rule.
-## Task completion git protocol (mandatory)
-
-Every task completion report must END with the complete, copy-paste-ready
-git command sequence — unprompted, as the final section of the report.
-The sequence is always:
-
-1. `git switch -c task-N.N-short-name` (from main)
-2. `git add` of exactly the in-scope files
-3. `git commit` with a task-scoped message in a heredoc
-4. `git push -u origin <branch>`
-
-Never offer, suggest, or default to committing directly on main. The repo
-discipline is branch + PR + merge-on-green, no exceptions. The human
-handles the PR, CI check, and merge on GitHub. Never end a report with
-"say the word if you'd like me to commit" — provide the commands.
-
-## Verification completeness rule
-
-Every completion report's verification section must run and list ALL gates
-CI enforces for the touched surface — not a subset. For the Python pipeline
-that is three separate gates:
-
-  .venv/bin/ruff check src tests
-  .venv/bin/ruff format --check .
-  PIPELINE_TEST_DATABASE_URL=<local pca_pipeline_test URL> .venv/bin/python -m pytest -q
-
-The pytest gate MUST run with PIPELINE_TEST_DATABASE_URL set (pinned to the
-local `pca_pipeline_test` database, same convention as `pca_test` for the API
-suite) — without it the DB-backed suite silently skips (~74 tests CI runs),
-and a green local gate can hide a red CI (the 32.4/PR-60 incident). A pytest
-gate line showing dozens of skips is a red flag, not noise.
-
-Lint passing does not imply format passing; they are independent checks.
-If CI gains a new gate, this list gains it in the same task.
-
-## Staging completeness (fifth mandatory gate)
-
-For any task that introduces or modifies a committed file tree, the completion
-report must include the output of
-
-  git status --short <task paths>
-  git ls-files --others --exclude-standard <task paths>
-
-proving nothing under those paths is untracked or ignored. This gate exists
-because the first four gates (`ruff check`, `ruff format --check`, `pytest -q`,
-`pnpm format:check`) verify the working tree, not what was actually
-staged/committed — see the 19.1 incident, where committed tier-1 fixtures were
-silently `.gitignore`'d out locally and only CI caught it. This applies going
-forward to ALL tasks that add committed files, not just the one that introduced
-the gate.
-
-## Clean-environment gate timing (sixth mandatory gate)
-
-The four functional gates (`ruff check`, `ruff format --check`, `pytest -q`,
-`pnpm format:check`) must be the LAST thing run before writing the completion
-report, in this order: (a) all edits for the task saved; (b) all intended
-changes staged with `git add`; (c) stale bytecode/build caches cleared for any
-touched language (e.g. `find <touched-dirs> -name '__pycache__' -exec rm -rf {}
-+` for Python); (d) gates run fresh from that state. A gate result from an
-earlier point in the session — before a later edit, before a file deletion,
-before staging — does not satisfy this requirement, even if it was genuinely
-green at the time. The completion report's gate output must be from this final,
-post-staging run, not a running tally from earlier in the task. This gate exists
-because gate 5 proves everything intended is staged, but not that what was
-locally verified matches what was actually staged — see the 19.2 incident, where
-the committed tree still imported a module the same task had already deleted.
-
-## Data source & collector status
-
-Collector status: UNPARKED — collection conditions are enforced in code and documented in docs/collector-commands.md; the baseline-run task will carry the operational spec.
-
-## Real-data access policy (2026-07-11)
-
-The agent MAY read, run tools over, and see output from everything under
-~/court-data/ (extracted artifacts, baseline JSON, envelopes, PDFs,
-equivalence and scan reports) and MAY execute corpus runs, scans, and
-verification reruns end-to-end. The agent may source DEFENDANT_HASH_SALT
-from the repo-root .env (`set -a; . <repo-root>/.env; set +a`) but must
-never echo, log, or write its value.
-
-Unchanged and absolute:
-- Nothing derived from real dockets enters the repo tree: no real docket
-  text, docket numbers, or defendant-identifying data in fixtures,
-  goldens, tests, code comments, commit messages, or worklog entries.
-  Hash-prefix convention holds in all committed artifacts.
-- Committed tooling keeps console output hygiene (counts, statuses,
-  hash-prefix IDs, CPCMS vocabulary only).
-- Stop conditions are literal and adjudicated in the planning chat,
-  never by the agent.
-- Acceptance-relevant runs (corpus reruns, gates, scans) must have their
-  raw summary output pasted VERBATIM in completion reports. VERBATIM means
-  COPY-PASTED from the tool output, never retyped or reconstructed from
-  memory — the loader's run report reconciles by construction, so a
-  non-reconciling line in a report is always a transcription artifact (see
-  the COL-4a incident, where a retyped third-run block corrupted a category
-  count and broke the sum). Where a run writes a report file under
-  ~/court-data/ (e.g. reports/), reference it by filename alongside the
-  pasted line.
-
-This supersedes any prior instruction that real-data operations are
-human-only steps.
+Commit straight to main. Small, scoped commits with plain messages.
