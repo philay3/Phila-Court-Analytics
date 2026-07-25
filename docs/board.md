@@ -6,6 +6,67 @@ source inline. Nothing here is restated from conversation, memory, or planning
 chat — anything not verifiable on disk today is written as
 `unknown — confirm with operator`.
 
+---
+
+## 0. Session addendum — Phase 36 build landed (2026-07-25, evening session)
+
+**The MC→CP double-count is fixed at the root, in the data** (operator ruling
+this session: fix, never footnote; design corrected against four real dockets
+the operator verified). What landed, all tests green:
+
+- **Record parser v3** captures `originating_docket_no` (CP Case Information
+  parent pointer — the text was already extracted; the OTN regex literally
+  stopped at the word "Originating") and `orig_seq` (the charge-row regex has
+  always matched it as group 2 and discarded it). New-fields-only delta by
+  construction; 46 tier-1 goldens regenerated on exactly those paths.
+- **Migrations** `20260725170000/1`: the two capture columns +
+  `parsed.charges.superseded_by_charge_id` (nullable FK, ON DELETE SET NULL,
+  the layer's single derived column — operator-ruled) +
+  `analytics.charge_volume_aggregates` (deduplicated funnel, closure CHECK).
+- **Deterministic supersession join** (`facts/charge_supersession.py`):
+  CP.originating = MC.docket_number AND OTN match; CP.orig_seq = MC.sequence
+  AND statute match; MC side currently-held only (mapper authority — a
+  held→remanded→dismissed charge reads Dismissed and is never superseded);
+  latest-filed CP wins refile rounds; one-to-one both ways. Re-derived whole
+  by EVERY fact build; standalone `pipeline backfill-charge-supersession`
+  prints the retail-theft sanity line (~1,989 seen / ~534 folded expected).
+- **Volume population**: generator pass (superseded rows fold into their CP
+  journeys; charges_seen counts JOURNEYS), validation families (closure,
+  funnel-vs-percentages, fact-side sum — all publish-blocking), publish
+  untouched.
+- **Served surface** (operator display ruling: deduplicated totals ONLY on
+  pages; breakdown lives in methodology): success arm gains a `volume` block
+  + one pinned summary line; new third union arm `charge_only_volume`
+  replaces the dead-end unavailable state for seen-but-unresolved charges
+  (the R6 case; `open-lewdness` is its seed fixture); methodology gains the
+  `chargeCounting` section; the bare unavailable arm survives for
+  truly-nothing (harassment fixture unchanged).
+- **Ops dashboard** (`/admin`, live): every number — corpus, dedupe/linkage
+  coverage incl. the collector fetch-list count, source docs + 14-day import
+  rate, fact builds, aggregate runs + per-table rows, outcome mix +
+  dismissed/withdrawn share, charges, judges, review queue, warnings, query
+  timings, and an identity-checks panel (closure, one-active-published,
+  funnel-vs-percentages, corpus-moved-since-build, self-supersession) —
+  polling at 5s/15s/60s/paused. Registration-gated by `ADMIN_OPS_ENABLED`
+  (off = the routes do not exist; deployed posture). Token optional
+  (`ADMIN_OPS_TOKEN`).
+- **Runbooks**: go-live + republish moved to the FIFTEEN-table surface
+  (`charge_volume_aggregates` joined the public set); new
+  `docs/runbook-v3-reload-backfill.md` is the operator's execution sequence
+  (migrate → envelope reload under (8,3) → backfill → cycle at cadence).
+
+**Awaiting the operator (nothing served has changed yet):** run the v3
+runbook. Published run `9b870800` untouched; outcome facts and percentages
+unchanged by construction — the fix adds the deduplicated volume layer.
+
+**Env notes from this session's gates:** full pipeline suite 1,184 passed;
+vitest shared 214 / db 72 / api 214 / web 284; typecheck + ruff + eslint +
+prettier clean (three pre-existing doc files fail `format:check` on the
+device tree: board/pca-handoff/process-rulings — direct-to-main commits never
+ran the gate). One pre-existing env-only failure in this sandbox: the
+charges-search tie-order test differs under the sandbox's PG16 collation;
+not a code defect, expect green on the operator's PG17.
+
 ## Provenance note — the live-query request could not be honored
 
 The task asked for read-only queries against local canonical `pca`. **They did
@@ -234,12 +295,14 @@ verbatim, never retyped.
 sequencing implied by their position here. Each carries its source; several are
 named-with-trigger rather than scheduled.
 
-- **Phase 36 — volume index + funnel display + noindex gate.** Recon complete
-  (`recon-36.0`, 2026-07-24), design gate pending in planning chat. Proposed
-  shape: new `analytics.charge_volume_aggregates` table, one row per (run,
-  charge), with a closure CHECK on the wedge-identity precedent; funnel counts
-  computed in one generator pass; closure asserted at validation over persisted
-  rows only.
+- **Phase 36 — volume index + funnel display + noindex gate.** BUILD LANDED
+  2026-07-25 (see §0): dedupe at the root (record v3 + supersession join +
+  backfill), `analytics.charge_volume_aggregates` with the closure CHECK,
+  validation extended (publish-blocking), deduplicated totals on charge pages
+  + the `charge_only_volume` arm + the methodology `chargeCounting` section,
+  and the `/admin` ops dashboard. Remaining in phase: the operator's reload +
+  backfill + cycle (runbook-v3-reload-backfill.md), and the noindex verdict —
+  still a planning-chat gate with the worst-case page on screen.
 - **R7a / R7b — FIXED 2026-07-25** (see §4.5). One mechanism amendment worth
   keeping: on Next 16 the proposed loading.tsx deletions were necessary but not
   sufficient — ANY ancestor segment's `loading.tsx` (here `charges/loading.tsx`)
@@ -313,7 +376,8 @@ resolved, the resolution is stated.
 |---|---|---|---|---|
 | R7a | Charge not-found serves HTTP 200 instead of 404 | all unknown charge slugs | **FIXED 2026-07-25** — see §4.5 and the roadmap mechanism amendment | fix session 2026-07-25 |
 | R7b | Judge-route soft-404 (unknown judge, and unknown charge on the judge route) | both routes | **FIXED 2026-07-25** — real 404 + single pinned combination literal | fix session 2026-07-25 |
-| — | Charge with nonzero volume but zero recorded outcomes returns the dead-end unavailable arm | **1** of 78 matched roster slugs today; every newly rostered charge starts there | confirmed, in Phase 36 scope | `recon-36.0` R6 |
+| — | Charge with nonzero volume but zero recorded outcomes returns the dead-end unavailable arm | **1** of 78 matched roster slugs today; every newly rostered charge starts there | **FIXED in code 2026-07-25** — the `charge_only_volume` arm serves the seen count; live after the operator's v3 cycle | `recon-36.0` R6; §0 |
+| — | MC→CP double count in any volume-style figure | upper bound 29,806 of 41,798 held rows (36.0-A A2.3) | **FIXED in code 2026-07-25** — data-layer supersession (record v3 + deterministic join); pointers land at the operator's backfill; every count filters `superseded_by_charge_id IS NULL` | §0; runbook-v3-reload-backfill.md |
 
 ### 4.2 Exclusion tail — why 103,447 charges are not in the served percentages
 

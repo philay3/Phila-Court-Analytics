@@ -39,10 +39,10 @@ fastest lever and reverses instantly.
 
 ## Republish-to-prod
 
-Re-runs the go-live fourteen-table dump/restore against a production database
+Re-runs the go-live fifteen-table dump/restore against a production database
 that already contains data. The restore is data-only, so the existing rows
 must be cleared first — one multi-table TRUNCATE whose set covers **all
-tables referencing the restore surface**: the fourteen restored tables plus
+tables referencing the restore surface**: the fifteen restored tables plus
 every outside table holding a foreign key into them, with the outside tables
 verified EMPTY first (the republish path must never destroy data it does not
 restore). Production runs the full migrator, so its schema is a superset of
@@ -53,10 +53,12 @@ cycle; FK set determined by pg_constraint recon against prod, not assumed).
 
 1. Produce/refresh the local publish (the normal local pipeline flow:
    generate → validate → publish; never on Render, never with `CI` set).
-2. Dump the fourteen tables and build the FK-ordered TOC exactly as in
-   `docs/runbook-go-live.md` Step 4 (items 1–2).
+2. Dump the fifteen tables and build the FK-ordered TOC exactly as in
+   `docs/runbook-go-live.md` Step 4 (items 1–2). (Phase 36 added
+   `analytics.charge_volume_aggregates` to the public surface; the go-live
+   lists carry it.)
 3. **Precondition (mandatory, no override): every truncated table OUTSIDE
-   the fourteen-table restore surface must be empty.** Any nonzero count is
+   the fifteen-table restore surface must be empty.** Any nonzero count is
    a STOP — adjudicate in planning chat; there is nothing on the production
    side to salvage by improvising (R2), but a nonzero count here means the
    deployment model changed and this runbook is stale:
@@ -90,14 +92,15 @@ cycle; FK set determined by pg_constraint recon against prod, not assumed).
      analytics.charge_conviction_grade_aggregates,
      analytics.judge_sentencing_index_summaries,
      analytics.judge_sentencing_index_aggregates,
+     analytics.charge_volume_aggregates,
      fact.charge_outcomes,
      fact.charge_sentences;'
    PGSSLMODE=verify-full PGSSLROOTCERT=system \
      pg_restore --single-transaction --data-only \
      -L /tmp/toc.ordered \
      -d "$PROD_DATABASE_URL" \
-     /tmp/pca-public-14table.dump
-   rm /tmp/pca-public-14table.dump /tmp/toc.full /tmp/toc.ordered
+     /tmp/pca-public-15table.dump
+   rm /tmp/pca-public-15table.dump /tmp/toc.full /tmp/toc.ordered
    unset PROD_DATABASE_URL
    ```
 

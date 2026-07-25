@@ -127,7 +127,7 @@ The count equals the number of files in `db/migrations/` at run time.
 data path is this dump/restore. The dump format and restore tool are a
 matched pair: **custom-format `pg_dump -Fc`** read by **`pg_restore`**.
 
-1. Dump exactly the fourteen public tables from the local `pca` database
+1. Dump exactly the fifteen public tables from the local `pca` database
    (data-only, custom format). The local URL is the non-secret local-dev
    one from the repo-root `.env`. TLS: none — this reads the LOCAL docker
    Postgres, which does not speak TLS; no SSL settings apply here:
@@ -149,18 +149,20 @@ matched pair: **custom-format `pg_dump -Fc`** read by **`pg_restore`**.
      -t analytics.charge_conviction_grade_aggregates \
      -t analytics.judge_sentencing_index_summaries \
      -t analytics.judge_sentencing_index_aggregates \
-     -f /tmp/pca-public-14table.dump \
+     -t analytics.charge_volume_aggregates \
+     -f /tmp/pca-public-15table.dump \
      "$DATABASE_URL"
    ```
 
 2. Build an explicitly FK-ordered restore list. A data-only restore does
    not reorder for foreign keys on its own, so the order is pinned here:
-   parents before children (all twenty-four FK edges among the fourteen tables
+   parents before children (all twenty-six FK edges among the fifteen tables
+   — Phase 36's `charge_volume_aggregates` adds its run and charge edges —
    point from aliases/aggregates to `normalized_charges`,
    `normalized_judges`, and `aggregate_runs`):
 
    ```sh
-   pg_restore -l /tmp/pca-public-14table.dump > /tmp/toc.full
+   pg_restore -l /tmp/pca-public-15table.dump > /tmp/toc.full
    : > /tmp/toc.ordered
    for t in normalized_charges normalized_judges aggregate_runs \
             charge_aliases judge_aliases \
@@ -170,10 +172,11 @@ matched pair: **custom-format `pg_dump -Fc`** read by **`pg_restore`**.
             charge_sentencing_index_aggregates \
             charge_conviction_grade_aggregates \
             judge_sentencing_index_summaries \
-            judge_sentencing_index_aggregates; do
+            judge_sentencing_index_aggregates \
+            charge_volume_aggregates; do
      grep "TABLE DATA .* $t " /tmp/toc.full >> /tmp/toc.ordered
    done
-   wc -l /tmp/toc.ordered   # must print 14
+   wc -l /tmp/toc.ordered   # must print 15
    ```
 
 3. Restore into production in a single transaction (any failure — including
@@ -186,10 +189,10 @@ matched pair: **custom-format `pg_dump -Fc`** read by **`pg_restore`**.
      pg_restore --single-transaction --data-only \
      -L /tmp/toc.ordered \
      -d "$PROD_DATABASE_URL" \
-     /tmp/pca-public-14table.dump
+     /tmp/pca-public-15table.dump
    ```
 
-4. Delete the dump artifacts: `rm /tmp/pca-public-14table.dump /tmp/toc.full /tmp/toc.ordered`
+4. Delete the dump artifacts: `rm /tmp/pca-public-15table.dump /tmp/toc.full /tmp/toc.ordered`
    (aggregate-only data, but production posture is no lingering copies).
 
 **Checkpoint (two parts, both SELECT-only):**
@@ -220,7 +223,8 @@ matched pair: **custom-format `pg_dump -Fc`** read by **`pg_restore`**.
     union all select 'analytics.charge_sentencing_index_aggregates', count(*) from analytics.charge_sentencing_index_aggregates
     union all select 'analytics.charge_conviction_grade_aggregates', count(*) from analytics.charge_conviction_grade_aggregates
     union all select 'analytics.judge_sentencing_index_summaries', count(*) from analytics.judge_sentencing_index_summaries
-    union all select 'analytics.judge_sentencing_index_aggregates', count(*) from analytics.judge_sentencing_index_aggregates;"
+    union all select 'analytics.judge_sentencing_index_aggregates', count(*) from analytics.judge_sentencing_index_aggregates
+    union all select 'analytics.charge_volume_aggregates', count(*) from analytics.charge_volume_aggregates;"
   psql "$DATABASE_URL" -At -c "$COUNT_SQL"          # local: docker, non-TLS
   PGSSLMODE=verify-full PGSSLROOTCERT=system \
     psql "$PROD_DATABASE_URL" -At -c "$COUNT_SQL"   # production: verified TLS
