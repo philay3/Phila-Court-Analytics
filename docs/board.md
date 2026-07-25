@@ -416,8 +416,34 @@ Census findings, 2026-07-25:
 
 The queue is persistent and status-preserving — `build_facts` inserts via
 `ON CONFLICT (dedup_key) DO NOTHING` and **nothing auto-closes**. Closure to
-`superseded` is always a conscious key-scoped operation. (worklog 34.5
-intake-cycle verification ledger)
+`superseded` is always a conscious key-scoped operation — and because
+`dedup_key` is DB-UNIQUE with `DO NOTHING` inserts, a closed row occupies its
+key permanently: a wrongly-closed item never resurfaces, so false-positive
+closure is THE failure mode closure tooling designs against. (worklog 34.5
+intake-cycle verification ledger; closure-package adjudication 2026-07-25)
+
+Closure-package execution, 2026-07-25 (spec adjudicated in planning chat;
+full record appended as Part 6 of the census report):
+
+- **R1 (held-variant adjudication) — STOPPED at its gate probe.**
+  `Held for Court - Pre-TCY` (6) and `Held for Court - In Absentia` (4) are
+  MC and byte-exact but carry disposition dates 10/10 on Closed dockets —
+  the six adjudicated held forms are 0/41,798 dated. Not at-rest bind-overs;
+  no code landed; the 10 items stay live. Back to planning chat.
+- **R2 (`pipeline close-stale-review-items`) — tool landed (`1d7443f`),
+  dry run STOPPED on its acceptance band.** Would close 4,346
+  (`unmapped_charge` 3,646 + `unmapped_disposition` 700) vs the pinned
+  3,400–4,100 band — high by 246. Every negative criterion passes (char-loss
+  forms, `Proceed to Court`, R1 variants all select zero). Overage is
+  explained: the census sized staleness by SQL exact match while the
+  predicate is the real matcher (alias tier + text folding, incl. Stalking
+  226 — em-dash vs hyphen; census question resolved: it matches), plus 46
+  items on charges a same-document re-parse left undisposed, minus the 10
+  R1 items. `--confirm` withheld pending operator adjudication of the band.
+- **Post-sweep live `unmapped_disposition` tail is fully characterized**
+  (68 items / 14 forms): char-loss 42, `Proceed to Court` 3 (32.3 deferral),
+  R1-stopped 10, genuine mapper tail 13 items / 6 forms — R3 proposal table
+  delivered to planning chat.
 
 ### 4.4 Parser warning census
 
