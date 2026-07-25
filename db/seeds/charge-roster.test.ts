@@ -28,7 +28,12 @@ describe('charge-roster slug integrity', () => {
     const canon = (code: string | null): string =>
       (code ?? '').toUpperCase().replace(/[^A-Z0-9.-]+/g, '');
     const demoCodes = new Set(CHARGE_SEEDS.map((c) => canon(c.statuteCode)));
-    const rosterCodes = CHARGE_ROSTER_SEEDS.map((c) => canon(c.statuteCode));
+    // Null statute codes are excluded: they never enter the matcher's statute
+    // index, so they cannot collide or create statute ambiguity (roster-1
+    // introduced deliberately text-only entries).
+    const rosterCodes = CHARGE_ROSTER_SEEDS.filter((c) => c.statuteCode !== null).map((c) =>
+      canon(c.statuteCode),
+    );
     for (const code of rosterCodes) {
       expect(demoCodes.has(code)).toBe(false);
     }

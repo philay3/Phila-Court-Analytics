@@ -8921,3 +8921,71 @@ and adjudicated: keep prose-only, with the judge subsection expanded using
 served thin-data phrasing. Copy-safety scan and all gates re-run
 post-revision; commit amended (branch unmerged, single-commit-at-close
 discipline kept).
+
+## Task roster-1 — Top-50 Roster Expansion from the 36.0-A Triage (2026-07-24)
+
+**What was built.** 32 new `CHARGE_ROSTER_SEEDS` entries in
+`db/seeds/charge-roster-data.ts` — the class-(ii) offenses from the 36.0-A
+A3.5 triage of the top 50 unmatched forms, operator-approved in full
+(summary traffic offenses included) — plus two class-(i) aliases:
+`'Child Sexual Abuse Material'` on `child-pornography` (post-rename CPCMS
+description) and `'DUI: Gen Imp/Inc of Driving Safely - 1st Off'` on the
+demo `dui-general-impairment` row via `DEMO_ALIAS_ADDITIONS`.
+
+**Entry design rule (the load-bearing decision).** Matcher precedence is
+text over statute, and a text hit whose statute resolves elsewhere becomes
+ambiguous — the exact mechanism behind the pre-existing 2,085
+harassment/trespass conflicts. Every new entry therefore carries its match
+in display/alias text, with `statuteCode` either the subsection-decorated
+citation or null — never a bare base citation that could capture rows
+text-matched to a sibling entry. Two entries are deliberately text-only
+(null statute): `criminal-mischief` (absorbs bare-3304 and §§ A4 forms at
+parent grain; the triage's provisional parent+child pair collapsed into
+one entry, so 33 triage offenses became 32 entries) and
+`purchase-receipt-controlled-substance` (subsection not evidenced by the
+corpus form; a base code would collide with the three existing 780-113
+subsection keys). Verified outcome: ambiguous count 2,085 before and
+after, identical arm split — zero regressions.
+
+**Files touched.** `db/seeds/charge-roster-data.ts` (entries + aliases +
+header-comment accuracy for the null-statute exceptions),
+`db/seeds/charge-roster.test.ts` (statute-uniqueness assertion now filters
+null codes — nulls never enter the matcher statute index),
+`db/seeds/reference-data.ts` (trivially necessary: `ChargeSeed.statuteCode`
+widened to `string | null`, mirroring the nullable column),
+`tasks/worklog.md`.
+
+**Deviations from the approved plan.** (1) Local DB application: the plan
+said "via the repo's seed command", but `pnpm db:seed` is refused by the
+29.1 seed-guard against any database with real corpus data — correctly, as
+the full path re-inserts fake judges and seeds aggregates. Applied instead
+via a one-off scratchpad script invoking only the exported
+`seedChargeRoster` (idempotent, charges+aliases only, `createDb()` so the
+34.6 local-guard stayed active). Seed reconciliation: ref.normalized_charges
+78→110 (+32), ref.charge_aliases 81→100 (+18 roster incl. CSAM, +1 demo
+DUI). (2) `reference-data.ts` was not in the plan's file list; the type
+widening was trivially necessary for the null statutes.
+
+**Measured effect (funnel_census_a.py, read-only, corpus unchanged at
+37,369/136,389; output files under ~/court-data/recon-36.0-A/).**
+Unmatched 19,079 → 7,837 (−11,242; the top-50 floor was 10,632 — tail
+forms sharing the same text hooks captured 610 more). Bucket (a)
+public-eligible 32,942 → 36,396 (+3,454); bucket (d) 10,041 → 6,587
+(−3,454); buckets (b)/(c) byte-identical (arm split touches no matcher
+path); closure holds. All 32 new entries clear the thin-data threshold
+(min: unlawful-use-computer at exactly win=10); total new-entry capture
+seen=9,995, disposed-in-window=3,304. DUI asterisk posture: 368
+asterisk-decorated rows resolve to dui-general-impairment through the
+deliberate tier-decoration drop; no evidence of offense-distinguishing
+asterisks (the charge_matcher.py STOP condition stays untripped).
+
+**For the next task.** Local `pca` roster and the committed seed data now
+agree; prod `ref.*` parity is an operator deploy step (the seed-guard
+refuses live databases — a roster-only prod path needs its own ruling,
+same family as the manual prod-migration step). Public pages for the new
+slugs appear only after the next fact build + aggregate publish. The
+after-run's new top unmatched tier (risking/causing catastrophe, simple
+trespasser 3503 §§ B.11I, accident-involving offenses, arson) is the
+natural roster-2 candidate list. format:check currently fails on three
+untracked operator docs (board.md, pca-handoff.md, process-rulings.md) —
+pre-existing, outside this task's scope.
