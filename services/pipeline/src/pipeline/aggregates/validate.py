@@ -4,11 +4,13 @@ The validation step of the Sprint 6 lifecycle (SD 3 — generation, validation,
 and publication are separate steps). ``pipeline validate-aggregates`` points
 at a GENERATED run (``status='in_progress'``, ``published_at``/
 ``invalidated_at`` NULL — the 26.1 vocabulary mapping; no new status values,
-no migration) and runs its check families over ALL NINE aggregate tables (the
-four Sprint 6 tables plus the five Task 35.1 sentencing-index tables — the
-index family adds the Scope C identities, the cross-population conviction
-reconciliation, and the component-grain median checks enabled by the
-persisted build-run id):
+no migration) and runs its check families over ALL TEN aggregate tables (the
+four Sprint 6 tables, the five Task 35.1 sentencing-index tables, and the
+Phase 36 charge-volume table — the index family adds the Scope C identities,
+the cross-population conviction reconciliation, and the component-grain
+median checks enabled by the persisted build-run id; the volume family adds
+the closure identity, the funnel-vs-percentages reconciliation, and the
+fact-side sum):
 
 - Integrity per aggregate group/row: category counts sum to the stored
   sample size (one sample size per charge or charge+judge group);
@@ -97,6 +99,17 @@ CHECK_MEDIAN_DAYS_INVALID = "median_days_invalid"
 CHECK_COMPONENT_DURATION_INVALID = "component_duration_invalid"
 CHECK_BUILD_RUN_ID_MISSING = "build_run_id_missing"
 
+# --- Phase 36 charge-volume check codes ---
+# The funnel-vs-percentages guard (pinned decision 3 / R5): the served volume
+# row may never disagree with the served outcome distribution, and the volume
+# population must reconcile to the stamped fact build. All three families run
+# over PERSISTED rows only (drift-safe per R4).
+CHECK_VOLUME_CLOSURE_MISMATCH = "volume_closure_mismatch"
+CHECK_VOLUME_COUNTS_INVALID = "volume_counts_invalid"
+CHECK_VOLUME_OUTCOMES_MISMATCH = "volume_outcomes_mismatch"
+CHECK_VOLUME_ROW_MISSING = "volume_row_missing"
+CHECK_VOLUME_FACTS_MISMATCH = "volume_facts_mismatch"
+
 # (table, sample-size column, has judge_id) — the four generated populations.
 AGGREGATE_TABLE_SPECS: tuple[tuple[str, str, bool], ...] = (
     ("charge_outcome_aggregates", "sample_size", False),
@@ -115,9 +128,14 @@ INDEX_TABLE_NAMES: tuple[str, ...] = (
     "judge_sentencing_index_aggregates",
 )
 
+# The Phase 36 charge-volume table (its own check family below).
+VOLUME_TABLE_NAME = "charge_volume_aggregates"
+
 # Print/report order over every validated table.
 ALL_VALIDATED_TABLES: tuple[str, ...] = (
-    tuple(spec[0] for spec in AGGREGATE_TABLE_SPECS) + INDEX_TABLE_NAMES
+    tuple(spec[0] for spec in AGGREGATE_TABLE_SPECS)
+    + INDEX_TABLE_NAMES
+    + (VOLUME_TABLE_NAME,)
 )
 
 
@@ -464,6 +482,119 @@ def validate_index_against_facts(
     return violations
 
 
+def validate_volume_rows(
+    rows: Sequence[Mapping[str, object]], *, expected_run_id: str
+) -> Counter[str]:
+    """Phase 36 volume-row integrity (pure; no DB).
+
+    Per row: run id matches; taxonomy version non-empty; every count is a
+    non-negative integer with ``charges_seen > 0``; and the closure identity
+    (``outcomes_recorded + held_for_court + still_pending + disposed_excluded
+    = charges_seen``) holds — the stored CHECK re-asserted in check-code form,
+    the wedge-identity precedent.
+    """
+    violations: Counter[str] = Counter()
+    count_fields = (
+        "charges_seen",
+        "outcomes_recorded",
+        "held_for_court",
+        "still_pending",
+        "disposed_excluded",
+        "held_superseded",
+    )
+    for row in rows:
+        if str(row.get("aggregate_run_id")) != expected_run_id:
+            violations[CHECK_RUN_ID_MISMATCH] += 1
+        taxonomy = row.get("taxonomy_version")
+        if not isinstance(taxonomy, str) or not taxonomy.strip():
+            violations[CHECK_TAXONOMY_VERSION_MISSING] += 1
+
+        values: dict[str, int] = {}
+        counts_valid = True
+        for field in count_fields:
+            value = row.get(field)
+            if not isinstance(value, int) or value < 0:
+                counts_valid = False
+                break
+            values[field] = value
+        if not counts_valid or values["charges_seen"] < 1:
+            violations[CHECK_VOLUME_COUNTS_INVALID] += 1
+            continue
+        closure = (
+            values["outcomes_recorded"]
+            + values["held_for_court"]
+            + values["still_pending"]
+            + values["disposed_excluded"]
+        )
+        if closure != values["charges_seen"]:
+            violations[CHECK_VOLUME_CLOSURE_MISMATCH] += 1
+    return violations
+
+
+def validate_volume_against_outcomes(
+    volume_rows: Sequence[Mapping[str, object]],
+    outcome_rows: Sequence[Mapping[str, object]],
+) -> Counter[str]:
+    """Funnel-vs-percentages reconciliation, same run, persisted rows only.
+
+    For every volume row, ``outcomes_recorded`` must equal the charge's
+    outcome-aggregate ``sample_size`` (0 where the charge has no outcome
+    group — the served zero-outcomes volume arm). And when the run carries a
+    volume population at all, every charge WITH an outcome group must carry a
+    volume row — a served percentage without its denominator is a violation.
+    A run with ZERO volume rows predates the population (pre-Phase-36 runs
+    stay re-validatable) and is reported as rows_checked=0, never failed.
+    """
+    violations: Counter[str] = Counter()
+    sample_by_charge: dict[str, int] = {}
+    for row in outcome_rows:
+        charge_id = str(row.get("charge_id"))
+        sample = row.get("sample_size")
+        if isinstance(sample, int):
+            sample_by_charge.setdefault(charge_id, sample)
+
+    volume_charges: set[str] = set()
+    for row in volume_rows:
+        charge_id = str(row.get("charge_id"))
+        volume_charges.add(charge_id)
+        expected = sample_by_charge.get(charge_id, 0)
+        if row.get("outcomes_recorded") != expected:
+            violations[CHECK_VOLUME_OUTCOMES_MISMATCH] += 1
+
+    if volume_rows:
+        for charge_id in sample_by_charge:
+            if charge_id not in volume_charges:
+                violations[CHECK_VOLUME_ROW_MISSING] += 1
+    return violations
+
+
+def validate_volume_against_facts(
+    volume_rows: Sequence[Mapping[str, object]],
+    anchor_facts: Sequence[Mapping[str, object]],
+) -> Counter[str]:
+    """Fact-side sum: total volume outcomes == the build's public-eligible facts.
+
+    The volume analogue of ``validate_index_against_facts``, enabled by the
+    persisted build-run id. Only meaningful when the run carries a volume
+    population (zero rows = pre-Phase-36 shape, vacuous pass). Window note
+    (R5): ``public_eligible`` embeds the same 2025-01-01 boundaries the volume
+    pass applies, by parallel constants — if either constant ever moves alone,
+    this is the check that catches it before a publish.
+    """
+    violations: Counter[str] = Counter()
+    if not volume_rows:
+        return violations
+    volume_total = sum(
+        row.get("outcomes_recorded", 0)
+        for row in volume_rows
+        if isinstance(row.get("outcomes_recorded"), int)
+    )
+    facts_total = sum(1 for fact in anchor_facts if fact.get("public_eligible"))
+    if volume_total != facts_total:
+        violations[CHECK_VOLUME_FACTS_MISMATCH] += 1
+    return violations
+
+
 def scannable_row(row: Mapping[str, object]) -> dict[str, object]:
     """An aggregate row as a JSON-shaped dict for the forbidden-field scan.
 
@@ -712,6 +843,18 @@ def validate_aggregates(
             judge_grain=True,
         )
     )
+    # --- Phase 36: the charge-volume population (funnel denominator). ---
+    volume_rows = _load_table_rows(conn, VOLUME_TABLE_NAME, resolved_run_id)
+    loaded[VOLUME_TABLE_NAME] = volume_rows
+    rows_checked[VOLUME_TABLE_NAME] = len(volume_rows)
+    violations_by_table[VOLUME_TABLE_NAME] = (
+        validate_volume_rows(volume_rows, expected_run_id=resolved_run_id)
+        + validate_privacy(volume_rows, terms)
+        + validate_volume_against_outcomes(
+            volume_rows, loaded["charge_outcome_aggregates"]
+        )
+    )
+
     # Component-grain checks, enabled by the persisted build-run id. A NULL
     # build_run_id on a run that generated index rows is itself a violation
     # (Scope C: build-run id present on the run row).
@@ -737,6 +880,9 @@ def validate_aggregates(
                 component_facts,
                 judge_grain=True,
             )
+        )
+        violations_by_table[VOLUME_TABLE_NAME] += validate_volume_against_facts(
+            volume_rows, anchor_facts
         )
 
     total_violations = sum(

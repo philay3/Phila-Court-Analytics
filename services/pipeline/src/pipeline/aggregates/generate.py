@@ -71,7 +71,19 @@ from decimal import ROUND_HALF_UP, Decimal
 import psycopg
 from psycopg.rows import dict_row
 
+from pipeline.aggregates.volume import (
+    VolumeIntegrityError,
+    build_charge_volume_rows,
+    load_charge_warning_codes,
+    load_volume_corpus,
+    write_volume_rows,
+)
 from pipeline.conviction_family import CONVICTION_OUTCOME_CATEGORIES
+from pipeline.normalization.charge_matcher import ChargeMatcher
+from pipeline.normalization.charge_roster_loader import (
+    load_charge_roster_from_connection,
+)
+from pipeline.normalization.outcome_mapper import OutcomeMapper, load_taxonomy_snapshot
 
 logger = logging.getLogger("pipeline.aggregates.generate")
 
@@ -1275,6 +1287,7 @@ def _print_summary(
     charges_outcomes_no_sentencing: int,
     index_report: Mapping[str, object],
     judge_index_report: Mapping[str, object],
+    volume_report: Mapping[str, object],
 ) -> None:
     """Counts-only run report (fixed codes + hash-prefix run ids; no docket data)."""
     source = "default" if is_default_build_run else "forced"
@@ -1373,6 +1386,26 @@ def _print_summary(
         f"judge_index_thin_pairs={judge_index_report['index_thin_cells']} "
         f"({BELOW_MINIMUM_SAMPLE}; min_sample={thin_min_sample})"
     )
+    # Phase 36 volume pass (counts only; the dedupe evidence line the operator
+    # sanity-checks after a backfill/reload lives here).
+    print(
+        f"volume_rows={volume_report['volume_rows']} "
+        f"volume_universe_rows={volume_report['rows_in_universe']} "
+        f"volume_pre_floor_rows={volume_report['rows_pre_floor']} "
+        f"volume_superseded_folded={volume_report['superseded_folded']}"
+    )
+    print(
+        f"volume_outcomes={volume_report['outcomes_total']} "
+        f"volume_held_untraced={volume_report['held_total']} "
+        f"volume_pending={volume_report['pending_total']} "
+        f"volume_excluded={volume_report['excluded_total']}"
+    )
+    print(
+        f"volume_unmatched_rows={volume_report['unmatched_rows']} "
+        f"volume_ambiguous_rows={volume_report['ambiguous_rows']} "
+        f"volume_superseded_not_held_anomaly="
+        f"{volume_report['superseded_not_held_anomaly']}"
+    )
     print(f"data_range: {data_range_start.isoformat()}..{data_range_end.isoformat()}")
 
 
@@ -1458,7 +1491,22 @@ def generate_aggregates(
             thin_min_sample=thin_min_sample,
             taxonomy_version=taxonomy_version,
         )
-    except FactIntegrityError as exc:
+        # Phase 36: the charge-volume funnel population — one pass over
+        # parsed.* with the real matcher/mapper, deduplicated at the source
+        # (superseded rows fold into their CP journeys). Same pre-write STOP
+        # phase as every other pass; the cross-table identities (volume vs
+        # outcome sample sizes vs facts) are validation's job, where a
+        # violation blocks publish rather than producing a wrong page.
+        volume_matcher = ChargeMatcher(load_charge_roster_from_connection(conn))
+        volume_mapper = OutcomeMapper(load_taxonomy_snapshot())
+        volume_rows, volume_report = build_charge_volume_rows(
+            load_volume_corpus(conn),
+            load_charge_warning_codes(conn),
+            matcher=volume_matcher,
+            mapper=volume_mapper,
+            taxonomy_version=taxonomy_version,
+        )
+    except (FactIntegrityError, VolumeIntegrityError) as exc:
         logger.error(
             "refusing to generate aggregates", extra={"reason": type(exc).__name__}
         )
@@ -1542,6 +1590,7 @@ def generate_aggregates(
                 _JUDGE_INDEX_CATEGORY_COLUMNS,
                 judge_index_category_rows,
             )
+            write_volume_rows(conn, run_id, volume_rows)
     except Exception:
         conn.rollback()
         with conn.transaction():
@@ -1567,6 +1616,7 @@ def generate_aggregates(
         charges_outcomes_no_sentencing=charges_outcomes_no_sentencing,
         index_report=index_report,
         judge_index_report=judge_index_report,
+        volume_report=volume_report,
     )
     logger.info("aggregate generation complete", extra={"run": run_id[:16]})
     return 0
