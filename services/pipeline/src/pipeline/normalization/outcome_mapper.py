@@ -138,6 +138,9 @@ DISPOSITION_OUTCOME_MAP: dict[str, str] = {
     "Guilty Plea - Non-Negotiated IC": "guilty_plea",
     "Guilty Plea IC": "guilty_plea",
     "Nolo Contendere/Probation": "guilty_plea",
+    # Closure-package R3 (2026-07-25): guilty-but-mentally-ill is a conviction
+    # (corpus corroboration: CP court, sentence present).
+    "Guilty Plea - Mentally Ill": "guilty_plea",
     # guilty_verdict — found guilty after trial
     "Guilty": "guilty_verdict",
     "Guilty IC": "guilty_verdict",
@@ -156,6 +159,13 @@ DISPOSITION_OUTCOME_MAP: dict[str, str] = {
     "Nolle Prossed IC": "dismissed",
     "Quashed IC": "dismissed",
     "Dismissed - Abatement IC": "dismissed",
+    # Closure-package R3 additions (proposal table approved in planning chat
+    # 2026-07-25): dismissal-family IC kin per the 32.3 IC-suffix precedent.
+    # "RD - County" and "ARD - County Open" were REFUSED as keys the same day —
+    # char-loss / status-suffix contamination classes route to the parser
+    # batch, never the vocabulary (PR-6 posture).
+    "Dismissed - LOP IC": "dismissed",
+    "Dismissed - LOE IC": "dismissed",
     # acquittal — found not guilty after trial
     "Not Guilty": "acquittal",
     "Judgment of Acquittal": "acquittal",
@@ -175,6 +185,9 @@ DISPOSITION_OUTCOME_MAP: dict[str, str] = {
     "Mistrial - Hung Jury": "other",
     "Mistrial": "other",
     "Charge Changed (Lower Court)": "other",
+    # Closure-package R3 (2026-07-25): terminal-without-independent-outcome,
+    # the Transferred shape (32.3 ruling); `other` is non-public.
+    "Transferred to Juvenile Division": "other",
 }
 
 

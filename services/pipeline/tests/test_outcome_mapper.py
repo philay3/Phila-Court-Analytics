@@ -98,6 +98,18 @@ TASK_32_3_ADDITIONS: dict[str, str] = {
     "Charge Changed (Lower Court)": "other",
 }
 
+# The closure-package R3 additions, pinned LITERALLY (the 32.3 precedent).
+# Proposal table approved in planning chat 2026-07-25. "RD - County" and
+# "ARD - County Open" were REFUSED as keys at the same gate (char-loss /
+# status-suffix contamination classes; they stay in UNMAPPED_VALUES above and
+# route to the parser batch, never the vocabulary).
+R3_ADDITIONS: dict[str, str] = {
+    "Dismissed - LOP IC": "dismissed",
+    "Dismissed - LOE IC": "dismissed",
+    "Guilty Plea - Mentally Ill": "guilty_plea",
+    "Transferred to Juvenile Division": "other",
+}
+
 
 @pytest.fixture
 def mapper() -> OutcomeMapper:
@@ -167,6 +179,35 @@ def test_32_3_additions_introduced_no_new_categories() -> None:
     # Additive-only guarantee at the category level: the 32.3 keys land entirely
     # inside the pre-existing seven mapped categories (no taxonomy bump).
     assert set(TASK_32_3_ADDITIONS.values()) <= EXPECTED_CATEGORIES
+
+
+@pytest.mark.parametrize(("raw", "code"), sorted(R3_ADDITIONS.items()))
+def test_r3_addition_maps_to_its_approved_category(
+    mapper: OutcomeMapper, raw: str, code: str
+) -> None:
+    # Each R3 key is present and maps to the category the proposal table
+    # approved (planning chat 2026-07-25).
+    assert DISPOSITION_OUTCOME_MAP.get(raw) == code
+    result = mapper.map(raw)
+    assert result is not None
+    assert result.mapped is True
+    assert result.review_needed is False
+    assert result.outcome_code == code
+
+
+def test_r3_additions_count_is_exactly_four() -> None:
+    assert len(R3_ADDITIONS) == 4
+
+
+def test_r3_additions_introduced_no_new_categories() -> None:
+    assert set(R3_ADDITIONS.values()) <= EXPECTED_CATEGORIES
+
+
+def test_r3_refused_contamination_forms_stay_unmapped() -> None:
+    # The refusal is load-bearing (PR-6): contaminated strings are never
+    # laundered into the vocabulary — they route to the parser batch.
+    assert "RD - County" not in DISPOSITION_OUTCOME_MAP
+    assert "ARD - County Open" not in DISPOSITION_OUTCOME_MAP
 
 
 def test_mapped_result_builds_no_review_item(mapper: OutcomeMapper) -> None:
