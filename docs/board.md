@@ -397,11 +397,20 @@ Census findings, 2026-07-25:
   Live tail: 3,155 items / 508 texts (roster-expansion fuel).
   `Stalking - Repeatedly Commit Acts To Cause Fear` (226 items) did NOT match
   the roster — verify whether #76 missed it or the text varies.
-- **`unmapped_disposition` (768) is mostly real mapper work**, not junk: head
-  is legitimate unmapped terminal forms (`Dismissed - LOP` 501 + Dismissed-*/
-  IC-suffixed family, ~670 items). The 34.x guard-class contamination is ~90
-  items (`eld for Court` 31 + fused/bleed/fragment rows), all matching 32.3
-  census classes — still needs the adjudicated extension.
+- **`unmapped_disposition` (768) is mostly stale, not real mapper work**
+  (corrected same-day by fact-level probe): the head forms (`Dismissed - LOP`
+  501, Dismissed-*/IC-suffixed family, ~670 items) are ALREADY MAPPED in the
+  ddb0fbd9 facts — every charge carrying them has an outcome fact with a real
+  category (`dismissed`/`guilty_plea`/`withdrawn`), zero `disposition_not_mapped`.
+  A mapper expansion after the items' 07-13..07-17 insertion fixed the
+  condition; items linger (nothing auto-closes) — same stale class as the
+  post-#76 charges, candidate for the same adjudicated key-scoped pass.
+  The 34.x guard-class contamination is ~90 items (`eld for Court` 31 +
+  fused/bleed/fragment rows), all matching 32.3 census classes; the
+  leading-char-loss forms are still live in `parsed.charges` verbatim
+  (`eld for Court` 31/31), so closing without fixing extraction would
+  regenerate them — needs the adjudicated extension. The charge-fused strings
+  show 0 corpus matches (extinct; clean closure candidates).
 - `unmapped_judge` open is **636**, not the 272 (that figure was
   newly-inserted-by-ddb0fbd9 only).
 
