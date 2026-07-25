@@ -266,10 +266,10 @@ def test_confirm_then_rerun_is_idempotent_zero(close_conn, capsys) -> None:
 
 def test_scope_follows_the_mapper_authority_set() -> None:
     # F2: the tool must consume the mapper's set, never re-list the forms. A
-    # membership spot-check pins the import seam (the full six-form content
+    # membership spot-check pins the import seam (the full eight-form content
     # lock lives in test_outcome_mapper.py).
     assert "Held for Court" in HELD_FOR_COURT_DISPOSITIONS
-    assert len(HELD_FOR_COURT_DISPOSITIONS) == 6
+    assert len(HELD_FOR_COURT_DISPOSITIONS) == 8
 
 
 def test_cli_refuses_in_ci(monkeypatch):

@@ -20,8 +20,9 @@ Scope discipline (adjudicated, never widened here):
   reconstructed from stable identifiers over the CURRENT corpus via the
   canonical 22.1 :func:`build_dedup_key` — held-form charges are selected by
   byte-exact membership in ``HELD_FOR_COURT_DISPOSITIONS``, imported from the
-  outcome mapper (single authority; the five forms are never re-listed, so a
-  future sixth-variant adjudication widens closure scope automatically).
+  outcome mapper (single authority; the forms — eight as of the 2026-07-25
+  closure-package R1 adjudication — are never re-listed, so a future variant
+  adjudication widens closure scope automatically).
 
 Items close as ``superseded`` — the COL-4a precedent for "mechanically closed
 because the generating condition no longer exists," distinct from human

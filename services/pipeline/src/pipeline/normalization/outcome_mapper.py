@@ -70,7 +70,8 @@ ENTITY_DISPOSITION = "disposition"
 # 29.3 stage 1; the 18.2/22.4 repair-table precedent: exact-match on captured
 # state, never pattern matching). This set is the SINGLE authority on which
 # disposition values are held forms — the fact builder and the review-queue
-# closure tool consume it; nothing re-lists the five forms.
+# closure tool consume it; nothing re-lists the forms (eight as of the
+# 2026-07-25 closure-package R1 adjudication).
 #
 # Fail-safe for unseen future variants (DESIGNED behavior, not a gap): a held
 # form not listed here arrives as a terminal unmapped value -> `unknown`
@@ -81,6 +82,15 @@ ENTITY_DISPOSITION = "disposition"
 # the 29.3 intake scan gate (2 charges, one MC docket, disposed-with-no-date,
 # zero sentence components — structurally identical to the original five) and
 # adjudicated in planning chat (C2, Option 1) exactly per that process.
+#
+# "Held for Court - Pre-TCY" and "Held for Court - In Absentia" (entries seven
+# and eight; closure-package R1, adjudicated 2026-07-25) carry disposition
+# DATES — the held family is no longer strictly dateless. They were re-gated
+# on continuation evidence instead: zero sentence components on all charges
+# (the suppression invariant) and resolved cross-court linkage from every MC
+# docket to an in-corpus CP target (the 23.5 machinery) — a bind-over
+# continues somewhere; a terminal disposition doesn't. The skip is
+# string-keyed, so datedness changes no machinery.
 HELD_FOR_COURT_DISPOSITIONS: frozenset[str] = frozenset(
     {
         "Held for Court",
@@ -89,6 +99,8 @@ HELD_FOR_COURT_DISPOSITIONS: frozenset[str] = frozenset(
         "Held for Court IC",
         "GJ - Held for Court",
         "Held for Court - Hearsay",
+        "Held for Court - Pre-TCY",
+        "Held for Court - In Absentia",
     }
 )
 

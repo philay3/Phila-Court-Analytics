@@ -279,9 +279,12 @@ def test_terminal_charge_is_not_held(charge: dict[str, object]) -> None:
 
 
 # --- held-for-court carve-out (Task 29.3, Mechanism A) --------------------------
-# This parametrized lock is the pinned no-builder-guard substitute: all six
+# This parametrized lock is the pinned no-builder-guard substitute: all eight
 # byte-exact bind-over forms take the held arm — no fact, no review item.
-# ("Held for Court - Hearsay" joined at the C2 intake-scan adjudication.)
+# ("Held for Court - Hearsay" joined at the C2 intake-scan adjudication;
+# "- Pre-TCY" and "- In Absentia" at the 2026-07-25 closure-package R1
+# re-gate — dated forms admitted on continuation evidence: zero sentence
+# components + resolved MC->CP cross-court linkage.)
 
 
 @pytest.mark.parametrize("raw", sorted(HELD_FOR_COURT_DISPOSITIONS))
@@ -296,7 +299,7 @@ def test_every_held_form_maps_to_none_with_no_review(
     )
 
 
-def test_held_forms_are_exactly_the_six_pinned_variants() -> None:
+def test_held_forms_are_exactly_the_eight_pinned_variants() -> None:
     assert HELD_FOR_COURT_DISPOSITIONS == frozenset(
         {
             "Held for Court",
@@ -305,6 +308,8 @@ def test_held_forms_are_exactly_the_six_pinned_variants() -> None:
             "Held for Court IC",
             "GJ - Held for Court",
             "Held for Court - Hearsay",
+            "Held for Court - Pre-TCY",
+            "Held for Court - In Absentia",
         }
     )
 
