@@ -10,6 +10,7 @@
       "dc_number": null,
       "defendant_hash": "448d52bbde9d979a881b33d5d1102f5600bfe8b789da3e8d45aa00d5b0b59991",
       "filed_date": "2025-03-02",
+      "originating_docket_no": null,
       "otn": "X 2468135-7"
     },
     "charges": [
@@ -19,6 +20,7 @@
         "disposition_raw": "Nolle Prossed",
         "grade": null,
         "offense": "Illegal Gambling",
+        "orig_seq": 1,
         "sentences": [],
         "sequence": 1,
         "statute": "18 \u00a7 5512 M1"
@@ -29,6 +31,7 @@
         "disposition_raw": "Guilty Plea - Negotiated",
         "grade": null,
         "offense": "Burglary",
+        "orig_seq": 2,
         "sentences": [
           {
             "max_days": 1080,
@@ -53,7 +56,7 @@
     ],
     "docket_number": "CP-51-CR-0000000-2025",
     "notes": [],
-    "parser_version": 2,
+    "parser_version": 3,
     "related_cases": []
   },
   "review_needed": false,

@@ -260,14 +260,15 @@ def _insert_parsed_graph(
               (source_document_id, docket_number, record_parser_version,
                envelope_parser_version, parsed_at, county, court_type_recorded,
                court_type_derived, case_status, filed_date, otn, dc_number,
-               cross_court_dockets, defendant_hash, assigned_judge_raw,
-               envelope_status, review_needed, loaded_at)
+               cross_court_dockets, originating_docket_no, defendant_hash,
+               assigned_judge_raw, envelope_status, review_needed, loaded_at)
             VALUES
               (%(source_document_id)s, %(docket_number)s, %(record_parser_version)s,
                %(envelope_parser_version)s, %(parsed_at)s, %(county)s,
                %(court_type_recorded)s, %(court_type_derived)s, %(case_status)s,
                %(filed_date)s, %(otn)s, %(dc_number)s, %(cross_court_dockets)s,
-               %(defendant_hash)s, %(assigned_judge_raw)s, %(envelope_status)s,
+               %(originating_docket_no)s, %(defendant_hash)s,
+               %(assigned_judge_raw)s, %(envelope_status)s,
                %(review_needed)s, now())
             RETURNING id
             """,
@@ -287,6 +288,9 @@ def _insert_parsed_graph(
                 "cross_court_dockets": None
                 if cross_court is None
                 else Json(cross_court),
+                # v3 capture; .get() keeps v2-era envelopes loadable (their
+                # records carry no key -> NULL, same as a sheet with no label).
+                "originating_docket_no": case.get("originating_docket_no"),
                 "defendant_hash": case["defendant_hash"],
                 "assigned_judge_raw": case["assigned_judge_raw"],
                 "envelope_status": envelope["status"],
@@ -301,17 +305,21 @@ def _insert_parsed_graph(
             cur.execute(
                 """
                 INSERT INTO parsed.charges
-                  (docket_id, sequence, statute, grade, offense, disposition_raw,
-                   disposition_date, disposition_judge_raw, event_name, event_date)
+                  (docket_id, sequence, orig_seq, statute, grade, offense,
+                   disposition_raw, disposition_date, disposition_judge_raw,
+                   event_name, event_date)
                 VALUES
-                  (%(docket_id)s, %(sequence)s, %(statute)s, %(grade)s, %(offense)s,
-                   %(disposition_raw)s, %(disposition_date)s,
-                   %(disposition_judge_raw)s, %(event_name)s, %(event_date)s)
+                  (%(docket_id)s, %(sequence)s, %(orig_seq)s, %(statute)s,
+                   %(grade)s, %(offense)s, %(disposition_raw)s,
+                   %(disposition_date)s, %(disposition_judge_raw)s,
+                   %(event_name)s, %(event_date)s)
                 RETURNING id
                 """,
                 {
                     "docket_id": docket_id,
                     "sequence": charge["sequence"],
+                    # v3 capture; .get() keeps v2-era envelopes loadable.
+                    "orig_seq": charge.get("orig_seq"),
                     "statute": charge["statute"],
                     "grade": charge["grade"],
                     "offense": charge["offense"],

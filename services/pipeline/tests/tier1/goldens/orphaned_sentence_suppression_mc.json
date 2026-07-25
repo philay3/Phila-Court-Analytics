@@ -10,6 +10,7 @@
       "dc_number": null,
       "defendant_hash": "bcc1de5a36c643e40f6220b5c00248ab9b1378e95cade8200a252d12066f33bb",
       "filed_date": "2025-02-04",
+      "originating_docket_no": null,
       "otn": "X 7531246-9"
     },
     "charges": [
@@ -19,6 +20,7 @@
         "disposition_raw": "Guilty",
         "grade": null,
         "offense": "Simple Assault",
+        "orig_seq": 1,
         "sentences": [],
         "sequence": 1,
         "statute": "18 \u00a7 2701 M1"
@@ -29,6 +31,7 @@
         "disposition_raw": null,
         "grade": null,
         "offense": "Criminal Mischief",
+        "orig_seq": 2,
         "sentences": [],
         "sequence": 2,
         "statute": "18 \u00a7 3304 M2"
@@ -36,7 +39,7 @@
     ],
     "docket_number": "MC-51-CR-0000000-2025",
     "notes": [],
-    "parser_version": 2,
+    "parser_version": 3,
     "related_cases": []
   },
   "review_needed": true,

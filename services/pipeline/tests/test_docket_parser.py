@@ -174,9 +174,16 @@ ALLOWED_KEYS = {
     "assigned_judge_raw",
     "dc_number",
     "cross_court_dockets",
+    # record v3 (Phase 36 dedupe): the CP sheet's Case Information pointer at
+    # its parent MC case; structurally present (None when the label is absent).
+    "originating_docket_no",
     "defendant_hash",
     # charges
     "sequence",
+    # record v3 (Phase 36 dedupe): the charge table's second column — the
+    # charge's sequence on the originating docket. Always present (the charge
+    # row regex has always required both leading integers).
+    "orig_seq",
     "statute",
     "grade",
     "offense",
@@ -287,6 +294,79 @@ def test_cp_record_court_type_and_dc_number():
     assert record["case"]["court_type"] == "Common Pleas"
     assert record["case"]["dc_number"] == "1122334455"
     assert record["related_cases"] == []
+
+
+def _case_info_page(otn_line: str) -> str:
+    """cp_page with its Case Information OTN line swapped (v3 capture tests).
+
+    Based on the full cp_page fixture so the defendant caption block the
+    parser requires stays intact; only the OTN line changes.
+    """
+    return cp_page().replace("OTN: X 7654321-1", otn_line)
+
+
+def test_originating_docket_no_captured_from_shared_otn_line():
+    """Record v3 (Phase 36): the CP sheet's parent-case pointer is captured —
+    including when the label shares the OTN line (the common CP layout), and
+    the OTN capture still stops cleanly before it."""
+    record, _, _ = parse_docket_text(
+        "CP-51-CR-0000000-2025",
+        [
+            _case_info_page(
+                "OTN: X 7654321-1 Originating Docket No: MC-51-CR-0000000-2025"
+            )
+        ],
+        salt=TEST_SALT,
+    )
+    assert record["case"]["otn"] == "X 7654321-1"
+    assert record["case"]["originating_docket_no"] == "MC-51-CR-0000000-2025"
+
+
+def test_originating_docket_no_captured_from_own_line():
+    record, _, _ = parse_docket_text(
+        "CP-51-CR-0000000-2025",
+        [
+            _case_info_page(
+                "OTN: X 7654321-1\nOriginating Docket No.: MC-51-CR-0000000-2025"
+            )
+        ],
+        salt=TEST_SALT,
+    )
+    assert record["case"]["otn"] == "X 7654321-1"
+    assert record["case"]["originating_docket_no"] == "MC-51-CR-0000000-2025"
+
+
+def test_originating_docket_no_is_fail_closed():
+    """A label with no §6.9-bounded UJS docket number captures nothing — the
+    field stays null, never a fragment, never a guess."""
+    record, _, _ = parse_docket_text(
+        "CP-51-CR-0000000-2025",
+        [_case_info_page("OTN: X 7654321-1 Originating Docket No: pending")],
+        salt=TEST_SALT,
+    )
+    assert record["case"]["otn"] == "X 7654321-1"
+    assert record["case"]["originating_docket_no"] is None
+
+
+def test_absent_originating_label_stays_null():
+    record, _, _ = parse_docket_text(
+        "CP-51-CR-0000000-2025", [cp_page()], salt=TEST_SALT
+    )
+    assert record["case"]["originating_docket_no"] is None
+
+
+def test_orig_seq_captured_on_every_charge_row():
+    """Record v3 (Phase 36): the charge table's second column is kept — the
+    deterministic charge-level join key back to the originating case."""
+    page = cp_page().replace(
+        "1 1 18 § 3502 F1 Burglary 02/01/2025 X7654321",
+        "1 3 18 § 3502 F1 Burglary 02/01/2025 X7654321\n"
+        "2 4 18 § 3502 F1 Burglary 02/01/2025 X7654321",
+    )
+    record, _, _ = parse_docket_text("CP-51-CR-0000000-2025", [page], salt=TEST_SALT)
+    charges = record["charges"]
+    assert [c["sequence"] for c in charges] == [1, 2]
+    assert [c["orig_seq"] for c in charges] == [3, 4]
 
 
 def test_related_cases_drops_caption():

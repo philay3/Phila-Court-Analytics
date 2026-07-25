@@ -10,6 +10,7 @@
       "dc_number": null,
       "defendant_hash": "b79b3ad7d17ab711054fc3d1aaafac2185ace9d02a32629a2b1cc90dd5092a75",
       "filed_date": "2025-03-05",
+      "originating_docket_no": null,
       "otn": "X 8642135-7"
     },
     "charges": [
@@ -19,6 +20,7 @@
         "disposition_raw": "Guilty",
         "grade": null,
         "offense": "Simple Assault",
+        "orig_seq": 1,
         "sentences": [
           {
             "max_days": 180,
@@ -36,7 +38,7 @@
     ],
     "docket_number": "MC-51-CR-0000000-2025",
     "notes": [],
-    "parser_version": 2,
+    "parser_version": 3,
     "related_cases": []
   },
   "review_needed": false,

@@ -624,11 +624,13 @@ def parse_docket_text(
             case_status = m.group(1).strip()
             break
 
-    # Parse Case Filed Date, Assigned Judge, OTN, Cross Court Docket Nos
+    # Parse Case Filed Date, Assigned Judge, OTN, Cross Court Docket Nos,
+    # Originating Docket No
     filed_date = None
     assigned_judge_raw = None
     otn = None
     cross_court_dockets = None
+    originating_docket_no = None
     for line in sections.get("CASE INFORMATION", []):
         if "Judge Assigned:" in line or "Date Filed:" in line:
             m_judge = re.search(
@@ -664,6 +666,21 @@ def parse_docket_text(
             )
             if m_otn:
                 otn = m_otn.group(1).strip()
+        # Originating Docket No (record v3, Phase 36 dedupe): the CP sheet's
+        # Case Information pointer at its parent MC case — the authoritative
+        # CP->MC continuation evidence (operator ruling 2026-07-25; Related
+        # Cases is deliberately NOT used for tracing). Bounded UJS shape only
+        # (the 23.5 linker's §6.9 discipline); anything else stays null —
+        # fail-closed, never guessed. The label can share a line with OTN /
+        # LOTN, which is why the OTN capture above stops at "Originating".
+        if originating_docket_no is None and "Originating" in line:
+            m_orig = re.search(
+                r"Originating\s+Docket\s+No[.:]*\s*((?:CP|MC)-\d{2}-[A-Z]{2}-\d{7}-\d{4})",
+                line,
+                re.IGNORECASE,
+            )
+            if m_orig:
+                originating_docket_no = m_orig.group(1).upper()
         # Cross Court Docket Nos: the held-to-CP and de-novo linkage. Raw
         # string as printed (docket numbers only; no caption). Captured to the
         # end of the line; null when the label is absent.
@@ -706,6 +723,13 @@ def parse_docket_text(
         if m_seq:
             in_placeholder_charge = False
             seq = int(m_seq.group(1))
+            # Orig Seq (record v3, Phase 36 dedupe): the charge table's second
+            # column — the charge's sequence on the ORIGINATING docket. This
+            # regex has always matched it; v3 keeps it instead of discarding
+            # group(2). On CP sheets it is the deterministic charge-level join
+            # key back to the parent MC case (paired with the Case
+            # Information Originating Docket No + OTN).
+            orig_seq = int(m_seq.group(2))
             rest = m_seq.group(3).strip()
 
             tokens = rest.split()
@@ -761,6 +785,7 @@ def parse_docket_text(
 
             active_charge = {
                 "sequence": seq,
+                "orig_seq": orig_seq,
                 "statute": statute_str if statute_str else None,
                 "grade": grade,
                 "offense": offense_str if offense_str else None,
@@ -1206,7 +1231,12 @@ def parse_docket_text(
 
     record = {
         "docket_number": docket_number,
-        "parser_version": 2,
+        # v3 (Phase 36 dedupe, operator ruling 2026-07-25): captures
+        # originating_docket_no (case grain) + orig_seq (charge grain) — both
+        # were already present in the extracted text and previously discarded.
+        # No other parse behavior changes; a v2->v3 reload diff is new-fields-
+        # only by construction.
+        "parser_version": 3,
         "parsed_at": datetime.now().replace(microsecond=0).isoformat(),
         "case": {
             "county": "Philadelphia",
@@ -1217,6 +1247,7 @@ def parse_docket_text(
             "assigned_judge_raw": assigned_judge_raw,
             "dc_number": dc_number,
             "cross_court_dockets": cross_court_dockets,
+            "originating_docket_no": originating_docket_no,
             "defendant_hash": defendant_hash,
         },
         "charges": charges_list,
