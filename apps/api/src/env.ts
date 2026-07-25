@@ -4,6 +4,16 @@ export interface Env {
   logLevel: string;
   rateLimitMax: number;
   rateLimitWindowMs: number;
+  /**
+   * Phase 36 ops dashboard gate. OFF by default and off in prod: the ops
+   * endpoint reads the internal layers (parsed/fact/review/raw), which exist
+   * only on the local canonical database — the deployed database carries the
+   * public dump/restore set alone. When false the admin ops routes are never
+   * registered and the paths 404 like any unknown route.
+   */
+  adminOpsEnabled: boolean;
+  /** Optional shared secret; when set, ops requests must send x-admin-ops-token. */
+  adminOpsToken: string | null;
 }
 
 function positiveInt(name: string, raw: string | undefined, fallback: number): number {
@@ -32,5 +42,11 @@ export function loadEnv(): Env {
       process.env.RATE_LIMIT_WINDOW_MS,
       60_000,
     ),
+    adminOpsEnabled:
+      process.env.ADMIN_OPS_ENABLED === '1' || process.env.ADMIN_OPS_ENABLED === 'true',
+    adminOpsToken:
+      process.env.ADMIN_OPS_TOKEN && process.env.ADMIN_OPS_TOKEN.length > 0
+        ? process.env.ADMIN_OPS_TOKEN
+        : null,
   };
 }

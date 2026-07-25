@@ -100,7 +100,11 @@ export function buildApp({ logger = true, db }: BuildAppOptions = {}) {
     rateLimitMax: env.rateLimitMax,
     rateLimitWindowMs: env.rateLimitWindowMs,
   });
-  app.register(adminRoutes, { prefix: '/api/v1/admin' });
+  app.register(adminRoutes, {
+    prefix: '/api/v1/admin',
+    opsEnabled: env.adminOpsEnabled,
+    opsToken: env.adminOpsToken,
+  });
 
   return app;
 }
