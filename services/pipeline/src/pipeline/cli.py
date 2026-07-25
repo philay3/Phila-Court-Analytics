@@ -27,6 +27,7 @@ from pipeline.aggregates.generate import (
 from pipeline.aggregates.publish import run_publish_aggregates
 from pipeline.aggregates.validate import run_validate_aggregates
 from pipeline.close_held_review_items import run_close_held_review_items
+from pipeline.close_stale_review_items import run_close_stale_review_items
 from pipeline.collector.engine import (
     BATCH_COOLDOWN_DEFAULT_SECONDS,
     BATCH_SIZE_DEFAULT,
@@ -73,6 +74,13 @@ SUBCOMMANDS = (
         "idempotent, dry-run without --confirm.",
     ),
     (
+        "close-stale-review-items",
+        "Close (as superseded) the open unmapped_charge / unmapped_disposition "
+        "review items the current build no longer regenerates (roster or mapper "
+        "fixed the condition; items linger); key-scoped via the canonical build "
+        "predicate, idempotent, dry-run without --confirm.",
+    ),
+    (
         "generate-aggregates",
         "Generate charge-only outcome and sentencing aggregates from eligible facts "
         "under a run.",
@@ -113,6 +121,7 @@ IMPLEMENTED_COMMANDS = frozenset(
         "build-facts",
         "prune-fact-runs",
         "close-held-review-items",
+        "close-stale-review-items",
         "generate-aggregates",
         "validate-aggregates",
         "publish-aggregates",
@@ -359,7 +368,7 @@ def build_parser() -> argparse.ArgumentParser:
                     "reports the selection and writes nothing."
                 ),
             )
-        if name == "close-held-review-items":
+        if name in ("close-held-review-items", "close-stale-review-items"):
             subparser.add_argument(
                 "--confirm",
                 action="store_true",
@@ -1048,6 +1057,31 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         with db.connect(database_url) as conn:
             return run_close_held_review_items(conn, confirm=args.confirm)
+    if args.command == "close-stale-review-items":
+        if running_in_ci():
+            logger.error(
+                "close-stale-review-items mutates review-queue triage state in "
+                "the database and must never run in a CI environment; refusing "
+                "(CI runs only the synthetic closure tests against its own "
+                "Postgres service)",
+                extra={"command": args.command},
+            )
+            return 2
+        # DATABASE_URL read at the run boundary (never at import, never logged).
+        # No salt: the closure reads structural anchors, CPCMS state strings,
+        # and statuses only.
+        database_url = os.environ.get("DATABASE_URL", "")
+        if not database_url.strip():
+            logger.error(
+                "DATABASE_URL is required to close stale review items; set it "
+                "in the environment (its value is never printed or written)",
+                extra={"command": args.command},
+            )
+            return 2
+        with db.connect(database_url) as conn:
+            return run_close_stale_review_items(
+                conn, database_url, confirm=args.confirm
+            )
     if args.command == "generate-aggregates":
         if running_in_ci():
             logger.error(
