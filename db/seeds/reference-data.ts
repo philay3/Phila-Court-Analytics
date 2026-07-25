@@ -13,7 +13,9 @@
 export interface ChargeSeed {
   slug: string;
   displayName: string;
-  statuteCode: string;
+  // Nullable to mirror ref.normalized_charges.statute_code: a text-only roster
+  // entry (null statute) never enters the matcher's statute index.
+  statuteCode: string | null;
   aliases: readonly string[];
 }
 

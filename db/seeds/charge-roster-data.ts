@@ -4,7 +4,11 @@
  * Sourced from PUBLIC Pennsylvania statute references (Pa. C.S., primarily
  * Titles 18 / 35 / 75, plus Title 23 § 6114 and Title 62 § 1407 which also
  * appear at or above the approved coverage floor). Every entry carries a public
- * statute code and a public-statute-phrasing display name.
+ * statute code and a public-statute-phrasing display name, with two deliberate
+ * statute-less exceptions in the roster-1 block (`criminal-mischief`,
+ * `purchase-receipt-controlled-substance`): a null statute never enters the
+ * matcher's statute index, which is what keeps those text-only entries from
+ * manufacturing statute/text conflicts against existing subsection entries.
  *
  * ALIAS SOURCING BASIS (roster gate, Decision 3): every alias is either
  * public statute phrasing OR a STANDARDIZED CPCMS charge-description string —
@@ -62,6 +66,14 @@ export const DEMO_ALIAS_ADDITIONS: readonly DemoAliasAddition[] = [
   {
     slug: 'retail-theft',
     aliases: ['Retail Theft-Take Mdse'],
+  },
+  // roster-1: the bare-`75 § 3802` general-impairment description resolves via
+  // this alias; decorated `§§ A1*` forms already fold to the demo row's
+  // 3802(a)(1) statute key (the canonicalizer's deliberate asterisk drop), so
+  // text and statute always agree — no conflict path.
+  {
+    slug: 'dui-general-impairment',
+    aliases: ['DUI: Gen Imp/Inc of Driving Safely - 1st Off'],
   },
 ];
 
@@ -139,7 +151,10 @@ export const CHARGE_ROSTER_SEEDS: readonly ChargeSeed[] = [
     slug: 'child-pornography',
     displayName: 'Child Pornography',
     statuteCode: '18 § 6312(d)',
-    aliases: ['Child Pornography'],
+    // 'Child Sexual Abuse Material' is the post-rename CPCMS description for the
+    // same offense (Act 2023-42 renamed § 6312); bare-`18 § 6312` captures
+    // resolve via this alias with no statute-index entry to conflict against.
+    aliases: ['Child Pornography', 'Child Sexual Abuse Material'],
   },
 
   // --- Possessing instruments of crime ---------------------------------------
@@ -532,5 +547,226 @@ export const CHARGE_ROSTER_SEEDS: readonly ChargeSeed[] = [
     displayName: 'Sexual Assault',
     statuteCode: '18 § 3124.1',
     aliases: ['Sexual Assault'],
+  },
+
+  // --- 36.0-A top-50 expansion (task roster-1) --------------------------------
+  // Sourced from the 36.0-A recon A3.5 triage: the class-(ii) offenses among the
+  // top 50 unmatched forms. Entry rule (matcher precedence is text over statute,
+  // and a text hit whose statute resolves elsewhere becomes ambiguous): the
+  // display/alias text carries the match; statuteCode is the subsection-decorated
+  // citation where the corpus evidences one, and NEVER a bare base citation whose
+  // statute key could capture rows text-matched to a sibling entry.
+
+  // Text-only entries (statuteCode deliberately null — see file header):
+  // `criminal-mischief` absorbs both the bare-3304 and §§ A4 forms at parent
+  // grain; a base-3304 statute key would flip currently-clean
+  // criminal-mischief-damage-property rows into statute/text conflicts.
+  {
+    slug: 'criminal-mischief',
+    displayName: 'Criminal Mischief',
+    statuteCode: null,
+    aliases: [],
+  },
+  // Bare-`35 § 780-113` capture; subsection not evidenced by the corpus form and
+  // a base code would conflict with the three existing 780-113 subsection keys.
+  {
+    slug: 'purchase-receipt-controlled-substance',
+    displayName: 'Purchase or Receipt of Controlled Substance by Unauthorized Person',
+    statuteCode: null,
+    aliases: ['Purc/Rec Of Cont Substby Unauth Per'],
+  },
+
+  // Assault / persons offenses
+  {
+    slug: 'stalking-repeated-acts-fear',
+    displayName: 'Stalking — Repeatedly Commit Acts to Cause Fear',
+    statuteCode: '18 § 2709.1(a)(1)',
+    aliases: [],
+  },
+  {
+    slug: 'false-imprisonment',
+    displayName: 'False Imprisonment',
+    statuteCode: '18 § 2903(a)',
+    aliases: [],
+  },
+  {
+    slug: 'assault-law-enforcement-officer',
+    displayName: 'Assault of Law Enforcement Officer',
+    statuteCode: '18 § 2702.1(a)(2)',
+    aliases: [],
+  },
+
+  // Sexual offenses
+  {
+    slug: 'rape-forcible-compulsion',
+    displayName: 'Rape — Forcible Compulsion',
+    statuteCode: '18 § 3121(a)(1)',
+    aliases: [],
+  },
+  {
+    slug: 'idsi-forcible-compulsion',
+    displayName: 'Involuntary Deviate Sexual Intercourse — Forcible Compulsion',
+    statuteCode: '18 § 3123(a)(1)',
+    aliases: ['IDSI Forcible Compulsion'],
+  },
+  {
+    slug: 'indecent-exposure',
+    displayName: 'Indecent Exposure',
+    statuteCode: '18 § 3127(a)',
+    aliases: [],
+  },
+
+  // Burglary / property
+  {
+    slug: 'burglary-overnight-no-person',
+    displayName: 'Burglary — Overnight Accommodation, No Person Present',
+    statuteCode: '18 § 3502(a)(2)',
+    aliases: [],
+  },
+  {
+    slug: 'theft-from-motor-vehicle',
+    displayName: 'Theft From a Motor Vehicle',
+    statuteCode: '18 § 3934(a)',
+    aliases: [],
+  },
+
+  // Forgery / fraud / records
+  {
+    slug: 'forgery-alter-writing',
+    displayName: 'Forgery — Alter Writing',
+    statuteCode: '18 § 4101(a)(1)',
+    aliases: [],
+  },
+  {
+    slug: 'tamper-records-identification',
+    displayName: 'Tampering With Records or Identification',
+    statuteCode: '18 § 4104(a)',
+    aliases: ['Tamper Records Or Id-Writing'],
+  },
+  {
+    slug: 'secure-execution-docs-deception',
+    displayName: 'Secure Execution of Documents by Deception',
+    statuteCode: '18 § 4114',
+    aliases: ['Secure Execution Docs By Deception'],
+  },
+  {
+    slug: 'unsworn-falsification',
+    displayName: 'Unsworn Falsification to Authorities',
+    statuteCode: '18 § 4904(a)(1)',
+    aliases: [],
+  },
+
+  // Administration of justice / public order
+  {
+    slug: 'intimidation-witness-refrain-report',
+    displayName: 'Intimidation of Witnesses or Victims — Refrain From Reporting',
+    statuteCode: '18 § 4952(a)(1)',
+    aliases: ['Intim Wit/Vit - Refrain From Report'],
+  },
+  {
+    slug: 'tamper-fabricate-evidence',
+    displayName: 'Tampering With or Fabricating Physical Evidence',
+    statuteCode: '18 § 4910(1)',
+    aliases: ['Tamper With/Fabricate Physical Evidence'],
+  },
+  {
+    slug: 'obstructing-administration-law',
+    displayName: 'Obstructing Administration of Law or Other Governmental Function',
+    statuteCode: '18 § 5101',
+    aliases: ['Obstruct Admin Law/Other Govt Func'],
+  },
+  {
+    slug: 'corrupt-organizations',
+    displayName: 'Corrupt Organizations',
+    statuteCode: '18 § 911(b)(1)',
+    aliases: [],
+  },
+  {
+    slug: 'dealing-proceeds-unlawful-activities',
+    displayName: 'Dealing in Proceeds of Unlawful Activities',
+    statuteCode: '18 § 5111(a)(1)',
+    aliases: ['Deal In Proc Unl Act/Intent To Promote'],
+  },
+  {
+    slug: 'unlawful-use-computer',
+    displayName: 'Unlawful Use of Computer',
+    statuteCode: '18 § 7611',
+    aliases: ['Unlaw. Use of Computer - Access to Disrupt Funct.'],
+  },
+  {
+    slug: 'arrest-prior-to-requisition',
+    displayName: 'Arrest Prior to Requisition',
+    statuteCode: '42 § 9134',
+    aliases: [],
+  },
+
+  // Weapons / firearms
+  {
+    slug: 'prohibited-offensive-weapons',
+    displayName: 'Prohibited Offensive Weapons',
+    statuteCode: '18 § 908(a)',
+    aliases: ['Make Repairs/Sell/Etc Offens Weap'],
+  },
+  {
+    slug: 'possess-instrument-crime-weapon',
+    displayName: 'Possessing Instruments of Crime — Possession of Weapon',
+    statuteCode: '18 § 907(b)',
+    aliases: ['Possession Of Weapon'],
+  },
+  {
+    slug: 'firearms-no-license-no-criminal-violation',
+    displayName: 'Firearms Not to Be Carried Without a License — No Other Criminal Violation',
+    statuteCode: '18 § 6106(a)(2)',
+    aliases: ['Firearm Not To Be Carried W/O License-No Crim Viol'],
+  },
+  {
+    slug: 'carrying-loaded-weapon',
+    displayName: 'Carrying Loaded Weapon Other Than Firearm',
+    statuteCode: '18 § 6106.1(a)',
+    aliases: ['Carrying Loaded Weapon'],
+  },
+  {
+    slug: 'deliver-firearm-48-hours',
+    displayName: 'Firearms — Delivery After 48 Hours Elapsed',
+    statuteCode: '18 § 6111(a)(1)',
+    aliases: ['Deliver Firearm After 48 Hours Elapsed'],
+  },
+  {
+    slug: 'firearms-lending',
+    displayName: 'Loans on, or Lending or Giving Firearms Prohibited',
+    statuteCode: '18 § 6115(a)',
+    aliases: ['Loans On, Or Lending, Giving Firearms Prohibited'],
+  },
+
+  // Vehicle offenses (Title 75)
+  {
+    slug: 'reckless-driving',
+    displayName: 'Reckless Driving',
+    statuteCode: '75 § 3736(a)',
+    aliases: [],
+  },
+  {
+    slug: 'careless-driving',
+    displayName: 'Careless Driving',
+    statuteCode: '75 § 3714(a)',
+    aliases: [],
+  },
+  {
+    slug: 'driving-while-suspended',
+    displayName: 'Driving While Operating Privilege Is Suspended or Revoked',
+    statuteCode: '75 § 1543(a)',
+    aliases: ['Driv While Oper Priv Susp Or Revoked'],
+  },
+  {
+    slug: 'driving-safe-speed',
+    displayName: 'Driving Vehicle at Safe Speed',
+    statuteCode: '75 § 3361',
+    aliases: ['Driving at Safe Speed'],
+  },
+  {
+    slug: 'disregard-traffic-lane',
+    displayName: 'Disregard Traffic Lane (Single)',
+    statuteCode: '75 § 3309(1)',
+    aliases: [],
   },
 ];
