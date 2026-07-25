@@ -60,11 +60,23 @@ export const CHARGE_SEEDS: readonly ChargeSeed[] = [
     // Charge-unavailable fixture (task 13.2a): a real, active charge that
     // deliberately appears in NO aggregate distribution. Requesting it returns
     // the HTTP 200 charge-only unavailable arm (published run exists, zero rows
-    // for this charge). Do not add aggregate rows for it.
+    // for this charge). Do not add aggregate rows for it — and do not add a
+    // volume row either: this fixture is the truly-nothing arm.
     slug: 'harassment',
     displayName: 'Harassment',
     statuteCode: '18 § 2709',
     aliases: ['harassing communications'],
+  },
+  {
+    // Charge-volume fixture (Phase 36): a real, active charge with a volume
+    // row (nonzero charges seen) and deliberately ZERO outcome aggregate
+    // rows. Requesting it returns the HTTP 200 charge_only_volume arm — the
+    // state every newly rostered charge starts in. Do not add outcome or
+    // sentencing rows for it.
+    slug: 'open-lewdness',
+    displayName: 'Open Lewdness',
+    statuteCode: '18 § 5901',
+    aliases: [],
   },
 ];
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   AGGREGATE_RUN_LABEL_PREFIX,
+  CHARGE_VOLUME_LINE_TEMPLATE,
+  CHARGE_VOLUME_SEEN_ONLY_TEMPLATE,
   CONVICTION_GRADES_ITEM_SEPARATOR,
   CONVICTION_GRADES_LABEL_PREFIX,
   OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN,
@@ -60,6 +62,12 @@ const SANCTIONED = {
     'Percentages may add up to more than 100% because a single conviction can include more than one sentence type.',
   OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN: 'Dismissed or withdrawn',
   OUTCOME_GROUP_HEADING_GUILTY: 'Guilty plea or verdict',
+  // Phase 36 volume lines (operator display ruling 2026-07-25): deduplicated
+  // totals only; the stage breakdown is methodology-page material.
+  CHARGE_VOLUME_LINE_TEMPLATE:
+    'Charges seen for this offense: {chargesSeen}. With a recorded final outcome: {outcomesRecorded}; those records make up the figures below.',
+  CHARGE_VOLUME_SEEN_ONLY_TEMPLATE:
+    'Charges seen for this offense so far: {chargesSeen}. None has a recorded final outcome yet.',
 } as const;
 
 const ACTUAL: Record<keyof typeof SANCTIONED, string> = {
@@ -85,6 +93,8 @@ const ACTUAL: Record<keyof typeof SANCTIONED, string> = {
   SENTENCING_INDEX_PERCENTAGE_EXPLAINER,
   OUTCOME_GROUP_HEADING_DISMISSED_WITHDRAWN,
   OUTCOME_GROUP_HEADING_GUILTY,
+  CHARGE_VOLUME_LINE_TEMPLATE,
+  CHARGE_VOLUME_SEEN_ONLY_TEMPLATE,
 };
 
 describe('result-display pinned copy (35.3 sanctions)', () => {

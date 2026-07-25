@@ -39,6 +39,7 @@
 import { SENTENCING_DETAIL_CAPTION } from '@pca/shared';
 import type { ChargeOnlyResultSuccess } from '@pca/shared';
 import {
+  formatChargeVolumeLine,
   formatRecordsLabel,
   formatResultTypeLabel,
   formatSentenceComponentsLabel,
@@ -167,6 +168,14 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
             {formatResultTypeLabel(data.resultType)}
           </p>
           <DateRangeLabel range={data.dateRange} />
+          {/* Phase 36 volume line (operator display ruling): the deduplicated
+              totals only — charges seen + with-outcomes — rendered through the
+              pinned template. Absent arm renders nothing (pre-36 runs). */}
+          {data.volume.available && (
+            <p data-testid="volume-line" className="text-sm text-body">
+              {formatChargeVolumeLine(data.volume)}
+            </p>
+          )}
           <p className="text-sm text-muted">{RESULT_DISPLAY_COPY.coverageNote}</p>
         </section>
 

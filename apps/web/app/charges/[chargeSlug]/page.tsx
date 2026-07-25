@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { getChargeResult } from '../../lib/public-api-client';
 import { ChargeOnlyResultView } from '../../components/ChargeOnlyResultView';
 import { ChargeUnavailableView } from '../../components/ChargeUnavailableView';
+import { ChargeVolumeView } from '../../components/ChargeVolumeView';
 import { resolveChargeResultState } from './charge-result-state';
 
 /**
@@ -27,10 +28,10 @@ interface ChargeResultPageProps {
 export async function generateMetadata({ params }: ChargeResultPageProps): Promise<Metadata> {
   const { chargeSlug } = await params;
   const state = resolveChargeResultState(await loadChargeResult(chargeSlug));
-  // Both the success and unavailable 200 arms carry charge identity, so the
-  // title is the charge display name in each; not-found/error fall back to the
-  // site default title from the layout template.
-  if (state.kind === 'success' || state.kind === 'unavailable') {
+  // Every 200 arm (success, volume, unavailable) carries charge identity, so
+  // the title is the charge display name in each; not-found/error fall back
+  // to the site default title from the layout template.
+  if (state.kind === 'success' || state.kind === 'volume' || state.kind === 'unavailable') {
     return { title: state.data.charge.displayName };
   }
   return {};
@@ -49,12 +50,18 @@ export default async function ChargeResultPage({ params }: ChargeResultPageProps
     throw new Error('The charge result could not be loaded.');
   }
   // DP-3: the success view manages its own two-column layout inside the
-  // 1200px shell; the unavailable state stays a single 760px article.
-  return state.kind === 'success' ? (
-    <ChargeOnlyResultView data={state.data} />
-  ) : (
+  // 1200px shell; the volume and unavailable states stay a single 760px
+  // article.
+  if (state.kind === 'success') {
+    return <ChargeOnlyResultView data={state.data} />;
+  }
+  return (
     <div className="mx-auto w-full max-w-article">
-      <ChargeUnavailableView data={state.data} />
+      {state.kind === 'volume' ? (
+        <ChargeVolumeView data={state.data} />
+      ) : (
+        <ChargeUnavailableView data={state.data} />
+      )}
     </div>
   );
 }

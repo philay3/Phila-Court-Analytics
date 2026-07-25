@@ -37,6 +37,15 @@ export const CHARGE_SENTENCING_UNAVAILABLE_MESSAGE =
 export const CHARGE_NOT_FOUND_MESSAGE = 'No charge matches the requested identifier.';
 export const CHARGE_RESULT_UNAVAILABLE_MESSAGE = 'Results are not available for this charge yet.';
 
+/**
+ * The ONLY message the volume arm may carry (Phase 36). Fires when the
+ * published run has a volume row for the charge but zero recorded outcomes —
+ * the charge is real and seen; nothing has resolved yet. Plain fact, no
+ * prediction framing.
+ */
+export const CHARGE_VOLUME_ONLY_MESSAGE =
+  'No final outcomes have been recorded for this charge yet.';
+
 export const chargeSummarySchema = Type.Object(
   {
     id: Type.String({ format: 'uuid' }),
@@ -94,6 +103,38 @@ const resultLinksSchema = Type.Object(
   { additionalProperties: false },
 );
 
+/**
+ * Charge-volume block (Phase 36, operator display ruling 2026-07-25): the
+ * public payload carries the DEDUPLICATED totals only — `chargesSeen` counts
+ * each charge journey once (an MC held charge traced to its CP continuation
+ * is counted there, never twice), and `outcomesRecorded` equals the outcome
+ * distribution's sample size by publish-blocking validation. The itemized
+ * stage breakdown (pending / excluded / untraced held) is methodology-page
+ * material and is deliberately NOT served here.
+ *
+ * Two arms on the success payload, the house section-level `available`
+ * convention: absent covers a published run predating the volume population.
+ */
+export const chargeVolumePresentSchema = Type.Object(
+  {
+    available: Type.Literal(true),
+    chargesSeen: Type.Integer({ minimum: 1 }),
+    outcomesRecorded: Type.Integer({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+export type ChargeVolumePresent = Static<typeof chargeVolumePresentSchema>;
+
+export const chargeVolumeAbsentSchema = Type.Object(
+  {
+    available: Type.Literal(false),
+  },
+  { additionalProperties: false },
+);
+
+export const chargeVolumeSchema = Type.Union([chargeVolumePresentSchema, chargeVolumeAbsentSchema]);
+export type ChargeVolume = Static<typeof chargeVolumeSchema>;
+
 export const chargeOnlyResultSuccessSchema = Type.Object(
   {
     charge: chargeSummarySchema,
@@ -109,6 +150,8 @@ export const chargeOnlyResultSuccessSchema = Type.Object(
     // Task 35.2: the conviction-grain index, a sibling of (never a change
     // to) the component-grain sentencing section above. Success arm only.
     sentencingIndex: chargeSentencingIndexSchema,
+    // Phase 36: the deduplicated volume totals (sibling section, additive).
+    volume: chargeVolumeSchema,
     links: resultLinksSchema,
   },
   { additionalProperties: false },
@@ -139,10 +182,39 @@ export const chargeOnlyResultUnavailableSchema = Type.Object(
 );
 export type ChargeOnlyResultUnavailable = Static<typeof chargeOnlyResultUnavailableSchema>;
 
+/**
+ * HTTP 200 volume arm (Phase 36, the R6-(ii) third union arm): the charge is
+ * real and the published run has seen it — `volume.chargesSeen >= 1` — but no
+ * recorded outcome exists yet, so there are no distributions to serve. It
+ * replaces the dead-end unavailable arm for exactly this state (every newly
+ * rostered charge starts here). Carries the run provenance the volume line
+ * needs for honest captioning (dateRange, lastRefreshed, aggregateRunId) —
+ * unlike the bare unavailable arm, which stays reserved for the truly-nothing
+ * case (no published run, or no volume row in it) and still carries no run
+ * metadata by design.
+ */
+export const chargeOnlyResultVolumeSchema = Type.Object(
+  {
+    resultType: Type.Literal('charge_only_volume'),
+    message: Type.Literal(CHARGE_VOLUME_ONLY_MESSAGE),
+    charge: chargeSummarySchema,
+    geography: Type.Literal('philadelphia'),
+    dateRange: dateRangeSchema,
+    lastRefreshed: Type.String({ format: 'date-time' }),
+    taxonomyVersion: taxonomyVersionSchema,
+    aggregateRunId: Type.String({ format: 'uuid' }),
+    volume: chargeVolumePresentSchema,
+    links: resultLinksSchema,
+  },
+  { additionalProperties: false },
+);
+export type ChargeOnlyResultVolume = Static<typeof chargeOnlyResultVolumeSchema>;
+
 // Structurally disjoint via the resultType literals; used as the single 200
-// response schema so serialization stripping covers both arms.
+// response schema so serialization stripping covers every arm.
 export const chargeOnlyResultResponseSchema = Type.Union([
   chargeOnlyResultSuccessSchema,
+  chargeOnlyResultVolumeSchema,
   chargeOnlyResultUnavailableSchema,
 ]);
 export type ChargeOnlyResultResponse = Static<typeof chargeOnlyResultResponseSchema>;

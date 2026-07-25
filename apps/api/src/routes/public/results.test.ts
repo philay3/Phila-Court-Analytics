@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   CHARGE_RESULT_UNAVAILABLE_MESSAGE,
   CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
+  CHARGE_VOLUME_ONLY_MESSAGE,
   PUBLIC_ERROR_CODES,
 } from '@pca/shared';
 import type { Database } from '@pca/db';
@@ -288,6 +289,41 @@ describe.skipIf(!hasDb)('GET /results/charge/:chargeIdOrSlug against the seeded 
     expect(byId.json()).toEqual(bySlug.json());
   });
 
+  it('returns the Phase 36 volume arm for a seen charge with zero outcomes', async () => {
+    const res = await getResult('open-lewdness');
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toMatchObject({
+      resultType: 'charge_only_volume',
+      message: CHARGE_VOLUME_ONLY_MESSAGE,
+      geography: 'philadelphia',
+      aggregateRunId: publishedRunId,
+      volume: { available: true, chargesSeen: 37, outcomesRecorded: 0 },
+      links: { methodology: '/methodology', definitions: '/definitions' },
+    });
+    expect(body.charge).toMatchObject({ slug: 'open-lewdness', displayName: 'Open Lewdness' });
+    // The deduplicated totals ONLY: no stage breakdown reaches the wire.
+    expect(body.volume).toEqual({ available: true, chargesSeen: 37, outcomesRecorded: 0 });
+    // The arm carries run provenance for honest captioning, unlike the bare
+    // unavailable arm.
+    expect(body.dateRange).toBeDefined();
+    expect(body.lastRefreshed).toBeDefined();
+  });
+
+  it('serves the volume block on the success arm with the identity intact', async () => {
+    const res = await getResult('retail-theft');
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // outcomesRecorded equals the outcome sample size (the pipeline's
+    // publish-blocking identity, mirrored in the seed validator).
+    expect(body.volume).toEqual({
+      available: true,
+      chargesSeen: 3100,
+      outcomesRecorded: 1200,
+    });
+    expect(body.outcomes.sampleSize).toBe(1200);
+  });
+
   it('returns 404 CHARGE_NOT_FOUND for an unknown slug, in the flat catalog shape', async () => {
     const res = await getResult('no-such-charge');
     expect(res.statusCode).toBe(404);
@@ -366,6 +402,12 @@ describe.skipIf(!hasDb)('GET /results/charge/:chargeIdOrSlug against the seeded 
       'minAssumedPercentage',
       'grades',
       'percentageOfConvictions',
+      // Phase 36 volume block: the deduplicated totals ONLY — a stage-
+      // breakdown key (heldForCourt, stillPending, disposedExcluded,
+      // heldSuperseded) must fail this sweep (operator display ruling).
+      'volume',
+      'chargesSeen',
+      'outcomesRecorded',
     ]);
     const collectKeys = (value: unknown, seen: string[]) => {
       if (Array.isArray(value)) {

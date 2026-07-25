@@ -93,3 +93,23 @@ export const SENTENCE_COMPONENTS_LABEL_PREFIX = 'Sentence components: ';
 
 /** Provenance line: prefix + the first 8 characters of `aggregateRunId`. */
 export const AGGREGATE_RUN_LABEL_PREFIX = 'Data release: ';
+
+/**
+ * Charge-volume line (Phase 36, operator display ruling 2026-07-25). The
+ * public page shows the DEDUPLICATED totals only: charges seen (each charge
+ * journey counted once — an MC held charge that continued on a Common Pleas
+ * case is counted there, never twice) and the with-outcomes count. The
+ * itemized stage breakdown and the counting convention live on the
+ * methodology page, not in the headline stats. Count-style phrasing keeps the
+ * sentence number-agnostic, so no singular variants are needed.
+ */
+export const CHARGE_VOLUME_LINE_TEMPLATE =
+  'Charges seen for this offense: {chargesSeen}. With a recorded final outcome: {outcomesRecorded}; those records make up the figures below.';
+
+/**
+ * Volume-arm line (zero recorded outcomes, nonzero seen): the number that
+ * replaces the old dead end. "None … yet" states collection reality without
+ * promising any future record.
+ */
+export const CHARGE_VOLUME_SEEN_ONLY_TEMPLATE =
+  'Charges seen for this offense so far: {chargesSeen}. None has a recorded final outcome yet.';

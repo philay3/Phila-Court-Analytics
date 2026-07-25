@@ -29,6 +29,10 @@ export type PublicApiDatabase = Pick<
   | 'analytics.charge_conviction_grade_aggregates'
   | 'analytics.judge_sentencing_index_summaries'
   | 'analytics.judge_sentencing_index_aggregates'
+  // Phase 36: the deduplicated charge-volume population (charges seen /
+  // outcomes recorded on the charge pages). Joining the pick joins the ADR
+  // 0004 dump/restore manifest — the republish table set moves in lockstep.
+  | 'analytics.charge_volume_aggregates'
 >;
 
 export function createApiDb(): Kysely<PublicApiDatabase> {

@@ -39,6 +39,8 @@ const AGGREGATE_TABLES = [
   'analytics.charge_conviction_grade_aggregates',
   'analytics.judge_sentencing_index_summaries',
   'analytics.judge_sentencing_index_aggregates',
+  // Phase 36: the charge-volume population rides the same run FK.
+  'analytics.charge_volume_aggregates',
 ] as const;
 
 const JUDGE_AGGREGATE_TABLES = [

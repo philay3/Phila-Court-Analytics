@@ -9,6 +9,7 @@ import {
   PUBLISHED_CHARGE_OUTCOMES,
   PUBLISHED_CHARGE_SENTENCING,
   PUBLISHED_CHARGE_SENTENCING_INDEX,
+  PUBLISHED_CHARGE_VOLUME,
   PUBLISHED_JUDGE_OUTCOMES,
   PUBLISHED_JUDGE_SENTENCING,
   PUBLISHED_JUDGE_SENTENCING_INDEX,
@@ -22,6 +23,7 @@ import {
   type ChargeOutcomeDistribution,
   type ChargeSentencingDistribution,
   type ChargeSentencingIndexSeed,
+  type ChargeVolumeSeed,
   type JudgeOutcomeDistribution,
   type JudgeSentencingDistribution,
   type JudgeSentencingIndexSeed,
@@ -60,6 +62,8 @@ const AGGREGATE_TABLES = [
   'analytics.charge_conviction_grade_aggregates',
   'analytics.judge_sentencing_index_summaries',
   'analytics.judge_sentencing_index_aggregates',
+  // Phase 36: the deduplicated charge-volume population.
+  'analytics.charge_volume_aggregates',
 ] as const;
 
 type AggregateTable = (typeof AGGREGATE_TABLES)[number];
@@ -278,6 +282,71 @@ export function validateAggregateSeeds(): void {
   }
 
   validateSentencingIndexSeeds();
+  validateChargeVolumeSeeds();
+}
+
+/**
+ * Phase 36 volume-seed invariants, restated independently of the data file:
+ * the closure identity (the stored CHECK), the funnel-vs-percentages identity
+ * (outcomesRecorded equals the outcome distribution's sample size — the
+ * publish-blocking pipeline assert), and the two fixture rules (harassment
+ * stays truly-nothing; open-lewdness is the zero-outcome volume arm).
+ */
+function validateChargeVolumeSeeds(): void {
+  const sampleBySlug = new Map(
+    PUBLISHED_CHARGE_OUTCOMES.map((dist) => [dist.chargeSlug, dist.sampleSize]),
+  );
+  const volumeSlugs = new Set<string>();
+  for (const seed of PUBLISHED_CHARGE_VOLUME) {
+    const label = `published charge volume: ${seed.chargeSlug}`;
+    volumeSlugs.add(seed.chargeSlug);
+    const counts = [
+      seed.chargesSeen,
+      seed.outcomesRecorded,
+      seed.heldForCourt,
+      seed.stillPending,
+      seed.disposedExcluded,
+      seed.heldSuperseded,
+    ];
+    if (counts.some((count) => !Number.isInteger(count) || count < 0)) {
+      fail(label, 'every count must be a non-negative integer');
+    }
+    if (seed.chargesSeen < 1) {
+      fail(label, 'chargesSeen must be >= 1 (rows exist only for seen charges)');
+    }
+    const closure =
+      seed.outcomesRecorded + seed.heldForCourt + seed.stillPending + seed.disposedExcluded;
+    if (closure !== seed.chargesSeen) {
+      fail(
+        label,
+        `closure identity broken: buckets sum ${closure}, chargesSeen ${seed.chargesSeen}`,
+      );
+    }
+    const sampleSize = sampleBySlug.get(seed.chargeSlug);
+    if (sampleSize !== undefined && seed.outcomesRecorded !== sampleSize) {
+      fail(
+        label,
+        `outcomesRecorded ${seed.outcomesRecorded} must equal the outcome sample size ${sampleSize}`,
+      );
+    }
+    if (sampleSize === undefined && seed.outcomesRecorded !== 0) {
+      fail(label, 'a charge with no outcome distribution must record zero outcomes');
+    }
+    if (seed.chargeSlug === 'harassment') {
+      fail(label, 'harassment must receive no volume row — its absence is the fixture');
+    }
+  }
+  for (const dist of PUBLISHED_CHARGE_OUTCOMES) {
+    if (!volumeSlugs.has(dist.chargeSlug)) {
+      fail(
+        `published charge volume: ${dist.chargeSlug}`,
+        'every charge with outcome aggregates needs a volume row (the pipeline validation identity)',
+      );
+    }
+  }
+  if (!volumeSlugs.has('open-lewdness')) {
+    fail('published charge volume: open-lewdness', 'the volume-arm fixture row is required');
+  }
 }
 
 function validateIndexCell(
@@ -437,6 +506,7 @@ async function seedPublishedRun(trx: Transaction<Database>): Promise<AggregateRu
         ...PUBLISHED_JUDGE_SENTENCING,
         ...PUBLISHED_CHARGE_SENTENCING_INDEX,
         ...PUBLISHED_JUDGE_SENTENCING_INDEX,
+        ...PUBLISHED_CHARGE_VOLUME,
       ].map((dist) => dist.chargeSlug),
     ),
   ]);
@@ -496,6 +566,12 @@ async function seedPublishedRun(trx: Transaction<Database>): Promise<AggregateRu
     'analytics.charge_conviction_grade_aggregates': chargeIndex.grades,
     'analytics.judge_sentencing_index_summaries': judgeIndex.summaries,
     'analytics.judge_sentencing_index_aggregates': judgeIndex.categories,
+    'analytics.charge_volume_aggregates': await insertChargeVolume(
+      trx,
+      SEED_PUBLISHED_RUN_ID,
+      PUBLISHED_CHARGE_VOLUME,
+      chargeIds,
+    ),
   };
 
   return {
@@ -609,6 +685,28 @@ async function deleteRunAggregates(
     deleted[table] = Number(result.numDeletedRows);
   }
   return deleted;
+}
+
+async function insertChargeVolume(
+  trx: Transaction<Database>,
+  runId: string,
+  seeds: readonly ChargeVolumeSeed[],
+  chargeIds: Map<string, string>,
+): Promise<number> {
+  const rows = seeds.map((seed) => ({
+    aggregate_run_id: runId,
+    charge_id: requireId(chargeIds, seed.chargeSlug),
+    charges_seen: seed.chargesSeen,
+    outcomes_recorded: seed.outcomesRecorded,
+    held_for_court: seed.heldForCourt,
+    still_pending: seed.stillPending,
+    disposed_excluded: seed.disposedExcluded,
+    held_superseded: seed.heldSuperseded,
+    taxonomy_version: TAXONOMY_VERSION,
+    created_at: SEED_AGGREGATE_CREATED_AT,
+  }));
+  await trx.insertInto('analytics.charge_volume_aggregates').values(rows).execute();
+  return rows.length;
 }
 
 function commonRowColumns(isThinData: boolean) {

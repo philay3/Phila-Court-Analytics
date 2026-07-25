@@ -4,8 +4,10 @@ import { publicOutcomeCategories, publicSentencingCategories } from '../public/c
 import {
   CHARGE_RESULT_UNAVAILABLE_MESSAGE,
   CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
+  CHARGE_VOLUME_ONLY_MESSAGE,
   type ChargeOnlyResultSuccess,
   type ChargeOnlyResultUnavailable,
+  type ChargeOnlyResultVolume,
   type ChargeSentencingAvailable,
 } from '../public/charge-result.js';
 import type { OutcomeDistribution, SentencingDistribution } from '../public/common.js';
@@ -148,6 +150,9 @@ export function validChargeOnlyResult(): ChargeOnlyResultSuccess {
       })),
     },
     sentencingIndex: validChargeSentencingIndex(),
+    // Phase 36: the deduplicated volume totals; outcomesRecorded mirrors the
+    // outcome sample size (the publish-blocking validation identity).
+    volume: { available: true, chargesSeen: 310, outcomesRecorded: 120 },
     links: { methodology: '/methodology', definitions: '/definitions' },
   };
 }
@@ -166,6 +171,22 @@ export function validChargeOnlyResultUnavailable(): ChargeOnlyResultUnavailable 
     code: 'CHARGE_RESULT_UNAVAILABLE',
     message: CHARGE_RESULT_UNAVAILABLE_MESSAGE,
     charge: base.charge,
+    links: base.links,
+  };
+}
+
+export function validChargeOnlyResultVolume(): ChargeOnlyResultVolume {
+  const base = validChargeOnlyResult();
+  return {
+    resultType: 'charge_only_volume',
+    message: CHARGE_VOLUME_ONLY_MESSAGE,
+    charge: base.charge,
+    geography: 'philadelphia',
+    dateRange: base.dateRange,
+    lastRefreshed: base.lastRefreshed,
+    taxonomyVersion: base.taxonomyVersion,
+    aggregateRunId: base.aggregateRunId,
+    volume: { available: true, chargesSeen: 42, outcomesRecorded: 0 },
     links: base.links,
   };
 }

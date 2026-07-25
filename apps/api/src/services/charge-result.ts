@@ -2,8 +2,10 @@ import type { Kysely } from 'kysely';
 import {
   CHARGE_NOT_FOUND_MESSAGE,
   CHARGE_RESULT_UNAVAILABLE_MESSAGE,
+  CHARGE_VOLUME_ONLY_MESSAGE,
   PUBLIC_ERROR_CODES,
   type ChargeOnlyResultResponse,
+  type ChargeVolume,
   type OutcomeCategoryCode,
 } from '@pca/shared';
 import type { PublicApiDatabase } from '../db.js';
@@ -17,7 +19,10 @@ import {
   getChargeSentencingIndexCategoryRows,
   getChargeSentencingIndexSummary,
   getChargeSentencingRows,
+  getChargeVolumeRow,
+  type ActivePublishedRunRow,
   type ChargeRow,
+  type ChargeVolumeAggregateRow,
 } from '../repositories/charge-result.js';
 import {
   UUID_PATTERN,
@@ -54,6 +59,47 @@ function chargeOnlyResultUnavailable(charge: ChargeRow): ChargeOnlyResultRespons
 }
 
 /**
+ * The HTTP 200 volume arm (Phase 36, R6 shape ii): the published run has SEEN
+ * this charge (a volume row exists) but no recorded outcome does — every
+ * newly rostered charge starts here. Replaces the dead-end unavailable arm
+ * for exactly this state; the bare unavailable arm stays for the
+ * truly-nothing case (no published run, or no volume row in it).
+ */
+function chargeOnlyResultVolume(
+  charge: ChargeRow,
+  run: ActivePublishedRunRow,
+  volumeRow: ChargeVolumeAggregateRow,
+): ChargeOnlyResultResponse {
+  return {
+    resultType: 'charge_only_volume',
+    message: CHARGE_VOLUME_ONLY_MESSAGE,
+    charge: chargeSummary(charge),
+    geography: 'philadelphia',
+    dateRange: { start: run.data_range_start, end: run.data_range_end },
+    lastRefreshed: run.published_at.toISOString(),
+    taxonomyVersion: run.taxonomy_version,
+    aggregateRunId: run.id,
+    volume: {
+      available: true,
+      chargesSeen: volumeRow.charges_seen,
+      outcomesRecorded: volumeRow.outcomes_recorded,
+    },
+    links: { methodology: '/methodology', definitions: '/definitions' },
+  };
+}
+
+/** The success-arm volume block: present when the run carries the row. */
+function volumeBlock(volumeRow: ChargeVolumeAggregateRow | undefined): ChargeVolume {
+  return volumeRow
+    ? {
+        available: true,
+        chargesSeen: volumeRow.charges_seen,
+        outcomesRecorded: volumeRow.outcomes_recorded,
+      }
+    : { available: false };
+}
+
+/**
  * Charge-only public result: resolves the charge (id or slug, no
  * fallthrough), then the single active published run, then both
  * distributions scoped to that run. An unknown charge throws
@@ -82,9 +128,14 @@ export async function getChargeOnlyResult(
     return chargeOnlyResultUnavailable(charge);
   }
 
+  const volumeRow = await getChargeVolumeRow(db, run.id, charge.id);
   const outcomeRows = await getChargeOutcomeRows(db, run.id, charge.id);
   if (outcomeRows.length === 0) {
-    return chargeOnlyResultUnavailable(charge);
+    // Phase 36: seen-but-unresolved serves the volume arm instead of the dead
+    // end; with no volume row either, the bare unavailable arm stands.
+    return volumeRow
+      ? chargeOnlyResultVolume(charge, run, volumeRow)
+      : chargeOnlyResultUnavailable(charge);
   }
   const outcomes = buildDistributionBlock<OutcomeCategoryCode>(
     'outcome',
@@ -119,6 +170,7 @@ export async function getChargeOnlyResult(
     outcomes,
     sentencing,
     sentencingIndex,
+    volume: volumeBlock(volumeRow),
     links: { methodology: '/methodology', definitions: '/definitions' },
   };
 }

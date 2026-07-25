@@ -121,6 +121,9 @@ function makeSuccess(overrides: Partial<ChargeOnlyResultSuccess> = {}): ChargeOn
     // Default fixture keeps the absent arm: today's page (pin 2), with the
     // present arms exercised by their own tests below.
     sentencingIndex: { available: false },
+    // Phase 36: the deduplicated volume totals (outcomesRecorded mirrors the
+    // outcome sample size, the publish-blocking identity).
+    volume: { available: true, chargesSeen: 3210, outcomesRecorded: OUTCOME_SAMPLE_SIZE },
     links: { methodology: '/methodology', definitions: '/definitions' },
     ...overrides,
   };
@@ -139,6 +142,22 @@ function sectionOrder(container: HTMLElement): string[] {
 }
 
 describe('ChargeOnlyResultView', () => {
+  it('renders the Phase 36 volume line through the pinned template, in the summary section', () => {
+    render(<ChargeOnlyResultView data={makeSuccess()} />);
+    const line = screen.getByTestId('volume-line');
+    expect(line).toHaveTextContent(
+      'Charges seen for this offense: 3,210. With a recorded final outcome: 1,234; those records make up the figures below.',
+    );
+    // The deduplicated totals only — no stage-breakdown vocabulary anywhere.
+    expect(line.textContent?.toLowerCase()).not.toContain('held');
+    expect(line.closest('[data-testid="section-summary"]')).not.toBeNull();
+  });
+
+  it('renders no volume line on the absent arm (pre-36 published runs)', () => {
+    render(<ChargeOnlyResultView data={makeSuccess({ volume: { available: false } })} />);
+    expect(screen.queryByTestId('volume-line')).toBeNull();
+  });
+
   it('renders the full success metadata: name, framing label, dates, both distributions and links', () => {
     render(<ChargeOnlyResultView data={makeSuccess()} />);
 

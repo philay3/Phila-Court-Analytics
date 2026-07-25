@@ -38,11 +38,12 @@ describe('methodologyResponseSchema', () => {
     expect(Value.Check(methodologyResponseSchema, validMethodologyResponse())).toBe(true);
   });
 
-  it('declares exactly the ten exported section keys, in order', () => {
+  it('declares exactly the eleven exported section keys, in order', () => {
     expect(Object.keys(methodologySectionsSchema.properties)).toEqual([
       ...METHODOLOGY_SECTION_KEYS,
     ]);
-    expect(METHODOLOGY_SECTION_KEYS).toHaveLength(10);
+    // Phase 36 added chargeCounting (the deduplicated volume convention).
+    expect(METHODOLOGY_SECTION_KEYS).toHaveLength(11);
   });
 
   it.each(METHODOLOGY_SECTION_KEYS)('rejects a response missing the %s section', (key) => {

@@ -463,6 +463,86 @@ export const PUBLISHED_JUDGE_SENTENCING_INDEX: readonly JudgeSentencingIndexSeed
 ];
 
 /**
+ * Phase 36 charge-volume seeds: one row per (published run, charge) with the
+ * DEDUPLICATED journey counts. Invariants the real pipeline enforces and the
+ * seed validator re-asserts:
+ *   - outcomesRecorded equals the charge's outcome sampleSize above (the
+ *     funnel-vs-percentages identity; publish-blocking in the pipeline);
+ *   - outcomesRecorded + heldForCourt + stillPending + disposedExcluded =
+ *     chargesSeen (the stored closure CHECK);
+ *   - open-lewdness is the volume-arm fixture: nonzero seen, zero outcomes,
+ *     and NO outcome/sentencing rows anywhere (the Phase 36 third arm);
+ *   - harassment gets NO row here — it stays the truly-nothing unavailable
+ *     fixture.
+ */
+export interface ChargeVolumeSeed {
+  readonly chargeSlug: string;
+  readonly chargesSeen: number;
+  readonly outcomesRecorded: number;
+  readonly heldForCourt: number;
+  readonly stillPending: number;
+  readonly disposedExcluded: number;
+  readonly heldSuperseded: number;
+}
+
+export const PUBLISHED_CHARGE_VOLUME: readonly ChargeVolumeSeed[] = [
+  {
+    chargeSlug: 'retail-theft',
+    chargesSeen: 3100,
+    outcomesRecorded: 1200,
+    heldForCourt: 240,
+    stillPending: 1480,
+    disposedExcluded: 180,
+    heldSuperseded: 820,
+  },
+  {
+    chargeSlug: 'simple-assault',
+    chargesSeen: 2050,
+    outcomesRecorded: 800,
+    heldForCourt: 260,
+    stillPending: 890,
+    disposedExcluded: 100,
+    heldSuperseded: 510,
+  },
+  {
+    chargeSlug: 'dui-general-impairment',
+    chargesSeen: 3900,
+    outcomesRecorded: 1500,
+    heldForCourt: 310,
+    stillPending: 1930,
+    disposedExcluded: 160,
+    heldSuperseded: 640,
+  },
+  {
+    chargeSlug: 'possession-controlled-substance',
+    chargesSeen: 2450,
+    outcomesRecorded: 950,
+    heldForCourt: 300,
+    stillPending: 1080,
+    disposedExcluded: 120,
+    heldSuperseded: 400,
+  },
+  {
+    chargeSlug: 'criminal-trespass',
+    chargesSeen: 61,
+    outcomesRecorded: 18,
+    heldForCourt: 9,
+    stillPending: 30,
+    disposedExcluded: 4,
+    heldSuperseded: 12,
+  },
+  {
+    chargeSlug: 'open-lewdness',
+    chargesSeen: 37,
+    outcomesRecorded: 0,
+    heldForCourt: 5,
+    stillPending: 29,
+    disposedExcluded: 3,
+    heldSuperseded: 2,
+  },
+];
+
+/**
  * Unpublished decoy run: retail-theft outcomes only, with obviously-wrong
  * magnitudes (uniform 9999s). Structurally valid — counts sum to the sample
  * size, codes are public — so it exercises the publication filter, not row

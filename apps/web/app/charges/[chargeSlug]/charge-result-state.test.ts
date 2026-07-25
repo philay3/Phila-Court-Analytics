@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHARGE_RESULT_UNAVAILABLE_MESSAGE,
+  CHARGE_VOLUME_ONLY_MESSAGE,
   PUBLIC_ERROR_CODES,
   type ChargeOnlyResultResponse,
   type ChargeOnlyResultSuccess,
   type ChargeOnlyResultUnavailable,
+  type ChargeOnlyResultVolume,
 } from '@pca/shared';
 import type { PublicApiResult } from '../../lib/public-api-client.js';
 import { resolveChargeResultState } from './charge-result-state.js';
@@ -38,6 +40,8 @@ const SUCCESS: ChargeOnlyResultSuccess = {
   },
   // Task 35.2 type-compatibility only: the absent arm, rendered by 35.3.
   sentencingIndex: { available: false },
+  // Phase 36 type-compatibility: the deduplicated volume totals.
+  volume: { available: true, chargesSeen: 2500, outcomesRecorded: 1000 },
   links: LINKS,
 };
 
@@ -46,6 +50,19 @@ const UNAVAILABLE: ChargeOnlyResultUnavailable = {
   code: PUBLIC_ERROR_CODES.CHARGE_RESULT_UNAVAILABLE,
   message: CHARGE_RESULT_UNAVAILABLE_MESSAGE,
   charge: CHARGE,
+  links: LINKS,
+};
+
+const VOLUME: ChargeOnlyResultVolume = {
+  resultType: 'charge_only_volume',
+  message: CHARGE_VOLUME_ONLY_MESSAGE,
+  charge: CHARGE,
+  geography: 'philadelphia',
+  dateRange: { start: '2025-01-01', end: '2026-06-30' },
+  lastRefreshed: '2026-07-01T12:00:00.000Z',
+  taxonomyVersion: '1.0.0',
+  aggregateRunId: '00000000-0000-0000-0000-0000000000aa',
+  volume: { available: true, chargesSeen: 37, outcomesRecorded: 0 },
   links: LINKS,
 };
 
@@ -75,6 +92,11 @@ describe('resolveChargeResultState', () => {
   it('maps the charge_only_unavailable 200 arm to the in-page unavailable state', () => {
     const result: PublicApiResult<ChargeOnlyResultResponse> = { ok: true, data: UNAVAILABLE };
     expect(resolveChargeResultState(result)).toEqual({ kind: 'unavailable', data: UNAVAILABLE });
+  });
+
+  it('maps the charge_only_volume 200 arm to the volume state (Phase 36)', () => {
+    const result: PublicApiResult<ChargeOnlyResultResponse> = { ok: true, data: VOLUME };
+    expect(resolveChargeResultState(result)).toEqual({ kind: 'volume', data: VOLUME });
   });
 
   it('maps a CHARGE_NOT_FOUND api_error to the not-found state', () => {

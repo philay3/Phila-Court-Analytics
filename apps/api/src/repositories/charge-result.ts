@@ -227,3 +227,30 @@ export async function getChargeSentencingRows(
     .orderBy('category_code')
     .execute();
 }
+
+/**
+ * Phase 36 volume row — the deduplicated totals only. `charges_seen` counts
+ * each charge journey once (the MC→CP supersession fold happens in the
+ * pipeline); `outcomes_recorded` equals the outcome distribution's sample
+ * size by publish-blocking validation. The stage-breakdown columns exist on
+ * the table but are deliberately NOT selected: the public payload carries the
+ * two headline numbers, nothing else (operator display ruling 2026-07-25).
+ * At most one row exists per (run, charge) by unique constraint.
+ */
+export interface ChargeVolumeAggregateRow {
+  charges_seen: number;
+  outcomes_recorded: number;
+}
+
+export async function getChargeVolumeRow(
+  db: Kysely<PublicApiDatabase>,
+  runId: string,
+  chargeId: string,
+): Promise<ChargeVolumeAggregateRow | undefined> {
+  return db
+    .selectFrom('analytics.charge_volume_aggregates')
+    .where('aggregate_run_id', '=', runId)
+    .where('charge_id', '=', chargeId)
+    .select(['charges_seen', 'outcomes_recorded'])
+    .executeTakeFirst();
+}

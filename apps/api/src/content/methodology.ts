@@ -81,6 +81,30 @@ export const METHODOLOGY_CONTENT: MethodologyResponse = {
         'resolved differently, so charge-level figures can differ from a ' +
         'whole-case reading.',
     },
+    chargeCounting: {
+      // Phase 36 (operator ruling 2026-07-25): the deduplicated counting
+      // convention. The charges-seen figures on results pages show totals
+      // only; this section carries the stage breakdown and the counted-once
+      // rule, so the headline numbers stay uncluttered and honest.
+      heading: 'How charges are counted',
+      body:
+        'Volume figures count charges, and each charge is counted once. When a ' +
+        'Municipal Court charge is held for court, the same charge continues on a ' +
+        'new Court of Common Pleas case. Where the docket records let that ' +
+        'continuation be traced — the Common Pleas case names its originating ' +
+        'Municipal Court docket, the offense tracking number matches, and the ' +
+        'charge lines match by original sequence and statute — the two records are ' +
+        'treated as one charge, counted at its Common Pleas stage. A held charge ' +
+        'whose continuation cannot be traced yet, most often because the Common ' +
+        'Pleas case has not been filed or collected yet, stays counted as held for ' +
+        'court and is re-checked on every data refresh. Behind each charges-seen ' +
+        'figure, every counted charge sits in exactly one stage: recorded final ' +
+        'outcome, held for court, still awaiting a disposition, or disposed but ' +
+        'excluded from the percentages under the coverage rules above — and the ' +
+        'stages always add up to the charges-seen total. Charges that cannot be ' +
+        'matched to a charge type in our directory are not attributed to any ' +
+        'charge page and are excluded from charge-level volume figures.',
+    },
     sentencing: {
       heading: 'Sentencing figures',
       // SD-15 disclosure (re-tuned task 32.4): sentencing dates are captured

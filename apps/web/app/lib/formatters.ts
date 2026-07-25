@@ -1,5 +1,7 @@
 import {
   AGGREGATE_RUN_LABEL_PREFIX,
+  CHARGE_VOLUME_LINE_TEMPLATE,
+  CHARGE_VOLUME_SEEN_ONLY_TEMPLATE,
   CONVICTION_GRADES_ITEM_SEPARATOR,
   CONVICTION_GRADES_LABEL_PREFIX,
   RECORDED_OUTCOMES_LABEL_PREFIX,
@@ -16,6 +18,7 @@ import {
 } from '@pca/shared';
 import type {
   ChargeOnlyResultSuccess,
+  ChargeVolumePresent,
   ConvictionGradeRow,
   DateRange,
   JudgeSpecificResultSuccess,
@@ -287,6 +290,23 @@ export function formatGradeMixLine(grades: readonly ConvictionGradeRow[]): strin
     (row) => `${gradeDisplayLabel(row.grade)} ${formatPercentage(row.percentageOfConvictions)}`,
   );
   return `${CONVICTION_GRADES_LABEL_PREFIX}${items.join(CONVICTION_GRADES_ITEM_SEPARATOR)}`;
+}
+
+/**
+ * Charge-volume line (Phase 36, operator display ruling 2026-07-25): the
+ * deduplicated totals only, filled into the pinned template. Count-style
+ * phrasing keeps the template number-agnostic — no singular variants exist.
+ */
+export function formatChargeVolumeLine(volume: ChargeVolumePresent): string {
+  return CHARGE_VOLUME_LINE_TEMPLATE.replace(
+    '{chargesSeen}',
+    formatCount(volume.chargesSeen),
+  ).replace('{outcomesRecorded}', formatCount(volume.outcomesRecorded));
+}
+
+/** Volume-arm line (zero outcomes, nonzero seen): the pinned seen-only form. */
+export function formatChargeVolumeSeenOnly(chargesSeen: number): string {
+  return CHARGE_VOLUME_SEEN_ONLY_TEMPLATE.replace('{chargesSeen}', formatCount(chargesSeen));
 }
 
 /** Length of the short id form rendered on the provenance line (pin 7). */

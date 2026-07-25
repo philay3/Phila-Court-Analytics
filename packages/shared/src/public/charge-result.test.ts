@@ -5,10 +5,12 @@ import {
   validChargeOnlyResult,
   validChargeOnlyResultSentencingUnavailable,
   validChargeOnlyResultUnavailable,
+  validChargeOnlyResultVolume,
 } from '../test-support/fixtures.js';
 import {
   CHARGE_RESULT_UNAVAILABLE_MESSAGE,
   CHARGE_SENTENCING_UNAVAILABLE_MESSAGE,
+  CHARGE_VOLUME_ONLY_MESSAGE,
   chargeOnlyResultResponseSchema,
   chargeSentencingSchema,
 } from './charge-result.js';
@@ -45,12 +47,36 @@ describe('chargeOnlyResultResponseSchema', () => {
       'aggregateRunId',
       'outcomes',
       'sentencing',
+      'volume',
       'links',
     ] as const) {
       const result: Record<string, unknown> = { ...validChargeOnlyResult() };
       delete result[field];
       expect(Value.Check(chargeOnlyResultResponseSchema, result), `missing ${field}`).toBe(false);
     }
+  });
+
+  it('accepts the volume arm and pins its literals (Phase 36)', () => {
+    expect(Value.Check(chargeOnlyResultResponseSchema, validChargeOnlyResultVolume())).toBe(true);
+    expect(
+      Value.Check(chargeOnlyResultResponseSchema, {
+        ...validChargeOnlyResultVolume(),
+        message: 'Something else.',
+      }),
+    ).toBe(false);
+    // chargesSeen >= 1 is the arm's reason to exist: zero seen is invalid.
+    const zeroSeen = validChargeOnlyResultVolume();
+    zeroSeen.volume = { ...zeroSeen.volume, chargesSeen: 0 };
+    expect(Value.Check(chargeOnlyResultResponseSchema, zeroSeen)).toBe(false);
+    expect(CHARGE_VOLUME_ONLY_MESSAGE).toBe(
+      'No final outcomes have been recorded for this charge yet.',
+    );
+  });
+
+  it('accepts the volume-absent arm on the success payload (pre-36 runs)', () => {
+    const result = validChargeOnlyResult();
+    result.volume = { available: false };
+    expect(Value.Check(chargeOnlyResultResponseSchema, result)).toBe(true);
   });
 
   it('pins resultType, geography, and links to their literals', () => {

@@ -20,9 +20,10 @@ export const methodologySectionSchema = Type.Object(
 export type MethodologySection = Static<typeof methodologySectionSchema>;
 
 /**
- * The ten required section keys, in presentation order. Kept in sync with
+ * The eleven required section keys, in presentation order. Kept in sync with
  * the response schema by a shared test; consumers (tests, frontend) iterate
- * this array instead of hand-copying key lists.
+ * this array instead of hand-copying key lists. `chargeCounting` joined at
+ * Phase 36 (the deduplicated volume convention).
  */
 export const METHODOLOGY_SECTION_KEYS = [
   'dataSource',
@@ -33,6 +34,7 @@ export const METHODOLOGY_SECTION_KEYS = [
   'sampleSize',
   'thinData',
   'chargeLevelAnalytics',
+  'chargeCounting',
   'sentencing',
   'limitations',
 ] as const;
@@ -48,6 +50,7 @@ export const methodologySectionsSchema = Type.Object(
     sampleSize: methodologySectionSchema,
     thinData: methodologySectionSchema,
     chargeLevelAnalytics: methodologySectionSchema,
+    chargeCounting: methodologySectionSchema,
     sentencing: methodologySectionSchema,
     limitations: methodologySectionSchema,
   },
