@@ -28,6 +28,44 @@ class CIExecutionError(RuntimeError):
     """Raised when the roster loader is invoked in a CI environment."""
 
 
+_ROSTER_QUERY = """
+    SELECT c.id, c.slug, c.display_name, c.statute_code,
+           COALESCE(
+               array_agg(a.alias_text) FILTER (WHERE a.alias_text IS NOT NULL),
+               '{}'
+           ) AS aliases
+    FROM ref.normalized_charges c
+    LEFT JOIN ref.charge_aliases a ON a.normalized_charge_id = c.id
+    WHERE c.is_active
+    GROUP BY c.id, c.slug, c.display_name, c.statute_code
+    ORDER BY c.slug
+"""
+
+
+def load_charge_roster_from_connection(conn) -> RosterSnapshot:  # noqa: ANN001 - psycopg.Connection; untyped to keep this module psycopg-free at import
+    """Roster snapshot over an EXISTING connection (Phase 36 volume pass).
+
+    No CI guard here by design: the guard belongs to the run boundary that
+    OPENS a connection to local court data (the CLI commands and
+    :func:`load_charge_roster`). A caller already holding a connection has
+    passed its own boundary guards — the aggregate generator's DB tests run
+    in CI against the synthetic service database through exactly this path.
+    """
+    with conn.cursor() as cur:
+        cur.execute(_ROSTER_QUERY)
+        entries = tuple(
+            RosterEntry(
+                normalized_id=str(row[0]),
+                slug=row[1],
+                display_name=row[2],
+                statute_code=row[3],
+                aliases=tuple(row[4]),
+            )
+            for row in cur.fetchall()
+        )
+    return RosterSnapshot(entries=entries)
+
+
 def load_charge_roster(database_url: str) -> RosterSnapshot:
     """Load the charge roster (entries + aliases) into a :class:`RosterSnapshot`.
 
@@ -41,29 +79,5 @@ def load_charge_roster(database_url: str) -> RosterSnapshot:
             "in a CI environment; refusing"
         )
 
-    with connect(database_url) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT c.id, c.slug, c.display_name, c.statute_code,
-                   COALESCE(
-                       array_agg(a.alias_text) FILTER (WHERE a.alias_text IS NOT NULL),
-                       '{}'
-                   ) AS aliases
-            FROM ref.normalized_charges c
-            LEFT JOIN ref.charge_aliases a ON a.normalized_charge_id = c.id
-            WHERE c.is_active
-            GROUP BY c.id, c.slug, c.display_name, c.statute_code
-            ORDER BY c.slug
-            """
-        )
-        entries = tuple(
-            RosterEntry(
-                normalized_id=str(row[0]),
-                slug=row[1],
-                display_name=row[2],
-                statute_code=row[3],
-                aliases=tuple(row[4]),
-            )
-            for row in cur.fetchall()
-        )
-    return RosterSnapshot(entries=entries)
+    with connect(database_url) as conn:
+        return load_charge_roster_from_connection(conn)

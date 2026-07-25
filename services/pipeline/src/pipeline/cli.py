@@ -38,6 +38,7 @@ from pipeline.evaluation.extractors import EXTRACTORS
 from pipeline.evaluation.harness import run_evaluation
 from pipeline.extraction import DEFAULT_LOW_TEXT_THRESHOLD, run_extraction
 from pipeline.facts.build_facts import run_build_facts
+from pipeline.facts.charge_supersession import run_backfill_charge_supersession
 from pipeline.facts.outcome_facts import FILED_DATE_FLOOR_DEFAULT
 from pipeline.load import run_load
 from pipeline.logging_utils import configure_logging
@@ -81,6 +82,12 @@ SUBCOMMANDS = (
         "predicate, idempotent, dry-run without --confirm.",
     ),
     (
+        "backfill-charge-supersession",
+        "Derive and write parsed.charges.superseded_by_charge_id (the MC->CP "
+        "double-count fix) from the deterministic originating-docket + OTN + "
+        "orig-seq + statute join; prints the retail-theft sanity numbers.",
+    ),
+    (
         "generate-aggregates",
         "Generate charge-only outcome and sentencing aggregates from eligible facts "
         "under a run.",
@@ -122,6 +129,7 @@ IMPLEMENTED_COMMANDS = frozenset(
         "prune-fact-runs",
         "close-held-review-items",
         "close-stale-review-items",
+        "backfill-charge-supersession",
         "generate-aggregates",
         "validate-aggregates",
         "publish-aggregates",
@@ -1082,6 +1090,29 @@ def main(argv: list[str] | None = None) -> int:
             return run_close_stale_review_items(
                 conn, database_url, confirm=args.confirm
             )
+    if args.command == "backfill-charge-supersession":
+        if running_in_ci():
+            logger.error(
+                "backfill-charge-supersession mutates parsed-layer derived state "
+                "in the database and must never run in a CI environment; refusing "
+                "(CI runs only the synthetic supersession tests against its own "
+                "Postgres service)",
+                extra={"command": args.command},
+            )
+            return 2
+        # DATABASE_URL read at the run boundary (never at import, never logged).
+        # No salt: the derivation reads structural join keys and writes one
+        # derived pointer column; console output is counts and roster slugs.
+        database_url = os.environ.get("DATABASE_URL", "")
+        if not database_url.strip():
+            logger.error(
+                "DATABASE_URL is required to backfill charge supersession; set "
+                "it in the environment (its value is never printed or written)",
+                extra={"command": args.command},
+            )
+            return 2
+        with db.connect(database_url) as conn:
+            return run_backfill_charge_supersession(conn)
     if args.command == "generate-aggregates":
         if running_in_ci():
             logger.error(

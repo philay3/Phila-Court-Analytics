@@ -59,6 +59,10 @@ from pipeline.fact_review_vocab import (
     SEVERITY_LOW,
     SEVERITY_MEDIUM,
 )
+from pipeline.facts.charge_supersession import (
+    apply_supersessions,
+    derive_supersessions,
+)
 from pipeline.facts.docket_links import collect_docket_links, insert_docket_links
 from pipeline.facts.judge_attribution import build_docket_context, resolve_charge
 from pipeline.facts.outcome_facts import (
@@ -1183,6 +1187,20 @@ def build_facts(
             link_rows, link_review_items, link_counts = collect_docket_links(conn)
             insert_docket_links(conn, link_rows)
             counts["linkage"] = link_counts
+            # --- Phase 36 dedupe (operator ruling 2026-07-25): derive the
+            # MC->CP charge supersession pointers from the deterministic
+            # originating-docket + OTN + orig-seq + statute join. Same AC4
+            # boundary as the linkage stage: reads parsed.*, writes ONLY
+            # parsed.charges.superseded_by_charge_id, and feeds NOTHING back
+            # into fact eligibility — outcome facts already count only the CP
+            # side. Re-derived whole every build (clear + re-point) so the
+            # pointers always project the current corpus; refresh arrivals
+            # that add CP cases pick up their MC parents here automatically.
+            supersession_mapping, supersession_counts = derive_supersessions(
+                conn, mapper=mapper
+            )
+            apply_supersessions(conn, supersession_mapping)
+            counts["supersession"] = supersession_counts
             # Route every 22.x/23.x review path into review.queue_items (Task 23.4).
             # NOT run-scoped: dedup-keyed, status-preserving across rebuilds. The
             # envelope-warning items are read here; the rest were built in the
