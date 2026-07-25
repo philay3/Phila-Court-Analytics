@@ -240,16 +240,14 @@ named-with-trigger rather than scheduled.
   charge), with a closure CHECK on the wedge-identity precedent; funnel counts
   computed in one generator pass; closure asserted at validation over persisted
   rows only.
-- **R7a — charge not-found serves 200.** Diagnosed: the route-level
-  `loading.tsx` Suspense boundary flushes a 200 shell before `notFound()` can
-  land. Defect is mode-independent (dev and production build both 200); the
-  banked "under `next start`" qualifier understated it. Proposed mechanism:
-  delete `apps/web/app/charges/[chargeSlug]/loading.tsx`.
-- **R7b — judge-route soft-404.** Deliberate in-page not-found render so two
-  distinct pinned messages can show; the code comment defers the real-404
-  question to this gate. Proposed mechanism: call `notFound()` + add
-  `judge/[judgeSlug]/not-found.tsx`, trading the message distinction for the
-  correct status. Blocked on R7a's boundary removal.
+- **R7a / R7b — FIXED 2026-07-25** (see §4.5). One mechanism amendment worth
+  keeping: on Next 16 the proposed loading.tsx deletions were necessary but not
+  sufficient — ANY ancestor segment's `loading.tsx` (here `charges/loading.tsx`)
+  flushes the 200 shell before `notFound()` runs. Verified both directions in a
+  minimal Next 16.2.10 repro. The directory's loading state moved to an in-page
+  `<Suspense>` in `charges/page.tsx`, which does not wrap child segments. Rule
+  of thumb now recorded in the route comments: no route-level `loading.tsx` on
+  any ancestor of a `notFound()` caller.
 - **Noindex lift / partial-lift / hold verdict** — a planning-chat gate with the
   worst-case page on screen. `recon-36.0` R8 assembles the inputs; no verdict on
   disk.
@@ -306,8 +304,8 @@ resolved, the resolution is stated.
 
 | ID | Defect | Count / scope | Status | Source |
 |---|---|---|---|---|
-| R7a | Charge not-found serves HTTP 200 instead of 404 | all unknown charge slugs; reproduced dev **and** production build | diagnosed, mechanism proposed, not built | `recon-36.0` R7a (2026-07-24) |
-| R7b | Judge-route soft-404 (unknown judge, and unknown charge on the judge route) | both routes, dev and prod | diagnosed, by design, mechanism proposed, not built | `recon-36.0` R7b |
+| R7a | Charge not-found serves HTTP 200 instead of 404 | all unknown charge slugs | **FIXED 2026-07-25** — see §4.5 and the roadmap mechanism amendment | fix session 2026-07-25 |
+| R7b | Judge-route soft-404 (unknown judge, and unknown charge on the judge route) | both routes | **FIXED 2026-07-25** — real 404 + single pinned combination literal | fix session 2026-07-25 |
 | — | Charge with nonzero volume but zero recorded outcomes returns the dead-end unavailable arm | **1** of 78 matched roster slugs today; every newly rostered charge starts there | confirmed, in Phase 36 scope | `recon-36.0` R6 |
 
 ### 4.2 Exclusion tail — why 103,447 charges are not in the served percentages
@@ -415,6 +413,7 @@ Snapshot 2026-07-22 (`operator-numbers-report` §10), corpus-wide over
 | Republish runbook FK refusal | 14-table TRUNCATE refused by 4 FK edges from 2 tables | amended TRUNCATE set + nonzero=STOP empty-precondition (PR #71) | worklog Stage D STOP 2 |
 | Refresh-target ordering | docket-number ordered | `filed_date ASC NULLS LAST` + docket tiebreak (PR #69) | worklog ordering-fix rider |
 | Duplicate docket numbers | — | 0 | `operator-numbers-report` §1 |
+| R7a/R7b result-route soft 404s | HTTP 200 on unknown charge and judge slugs, dev and prod | real 404s on both routes. Mechanism: removed `loading.tsx` on `charges/`, `charges/[chargeSlug]/`, and `.../judge/[judgeSlug]/` (any ancestor boundary flushes a 200 shell on Next 16 before `notFound()`); directory loading moved to in-page `<Suspense>`; judge route now calls `notFound()` with new pinned `JUDGE_RESULT_NOT_FOUND_MESSAGE` (per-reason literals stay on the API envelopes). Tradeoff accepted: result pages block on the API fetch (no skeleton) so status can be correct. Verified 2026-07-25 on a production build: pre-fix 200/200 reproduced, post-fix 404/404 with friendly copy rendered, `/charges` and `/` still 200; vitest shared 211 / web 276 / api 210 / db 72 green; Playwright e2e 29/29 green against seeded `pca_test`. | fix session 2026-07-25 |
 
 ### 4.6 Structural risks named but not defects
 

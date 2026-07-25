@@ -35,6 +35,17 @@ export const JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE =
 export const JUDGE_NOT_FOUND_MESSAGE = 'No judge matches the requested identifier.';
 
 /**
+ * Pinned message for the judge route's not-found BOUNDARY (fix R7b,
+ * 2026-07-25). Next's not-found boundary is prop-less, so one literal covers
+ * both not-found reasons (unknown charge, unknown judge). It replaces the
+ * per-reason in-page rendering of CHARGE_NOT_FOUND_MESSAGE /
+ * JUDGE_NOT_FOUND_MESSAGE on that route; those two remain the API
+ * error-envelope messages and are unchanged.
+ */
+export const JUDGE_RESULT_NOT_FOUND_MESSAGE =
+  'No result page matches the requested charge and judge combination.';
+
+/**
  * The ONLY judge-filter help line (task DP-5, sanctioned). Rendered
  * byte-identically wherever a judge-filter control explains itself — the
  * homepage disclosure and the charge-page filter entry — never re-typed and

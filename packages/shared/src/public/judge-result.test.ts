@@ -8,6 +8,7 @@ import {
 import { scanPublicCopy } from './copy-safety.js';
 import {
   JUDGE_FILTER_HELP_MESSAGE,
+  JUDGE_RESULT_NOT_FOUND_MESSAGE,
   JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE,
   judgeSpecificResultResponseSchema,
   judgeSpecificResultSuccessSchema,
@@ -22,6 +23,19 @@ describe('JUDGE_FILTER_HELP_MESSAGE', () => {
 
   it('contains no em dash (R4: the rule binds new copy)', () => {
     expect(JUDGE_FILTER_HELP_MESSAGE).not.toContain('—');
+  });
+});
+
+describe('JUDGE_RESULT_NOT_FOUND_MESSAGE (fix R7b)', () => {
+  it('is the pinned combination literal and scans clean', () => {
+    expect(JUDGE_RESULT_NOT_FOUND_MESSAGE).toBe(
+      'No result page matches the requested charge and judge combination.',
+    );
+    expect(scanPublicCopy(JUDGE_RESULT_NOT_FOUND_MESSAGE)).toEqual([]);
+  });
+
+  it('contains no em dash (R4: the rule binds new copy)', () => {
+    expect(JUDGE_RESULT_NOT_FOUND_MESSAGE).not.toContain('—');
   });
 });
 

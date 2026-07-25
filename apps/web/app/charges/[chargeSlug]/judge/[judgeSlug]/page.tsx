@@ -1,26 +1,28 @@
 import { cache } from 'react';
 import type { Metadata } from 'next';
-import { CHARGE_NOT_FOUND_MESSAGE, JUDGE_NOT_FOUND_MESSAGE } from '@pca/shared';
+import { notFound } from 'next/navigation';
 import { getJudgeSpecificResult } from '../../../../lib/public-api-client';
 import { JudgeSpecificResultView } from '../../../../components/JudgeSpecificResultView';
 import { JudgeUnavailableView } from '../../../../components/JudgeUnavailableView';
 import { JudgeChargeUnavailableView } from '../../../../components/JudgeChargeUnavailableView';
-import { ResultNotFoundView } from '../../../../components/ResultNotFoundView';
 import { resolveJudgeResultState } from './judge-result-state';
 
 /**
  * Judge-specific result route (task 13.3). A thin async server component: it
  * fetches via the 11.2 client (server-side, absolute base URL — no rewrite) and
  * branches through the pure `resolveJudgeResultState` helper into the
- * presentational success view, the in-page unavailable view, the in-page
- * not-found view, or the error boundary. All render logic lives in the
- * presentational components; this file only dispatches (mirrors 13.2).
+ * presentational success view, the in-page unavailable view, `notFound()`, or
+ * the error boundary. All render logic lives in the presentational components;
+ * this file only dispatches (mirrors 13.2).
  *
- * Not-found is rendered IN PAGE (a soft 404, HTTP 200) rather than via
- * `notFound()`, so the two distinct pinned messages (missing charge vs missing
- * judge) can each be shown. This diverges from 13.2's real-404 behavior for a
- * missing charge; it is acceptable because result pages are noindex, and is
- * flagged for the Sprint 9 launch-readiness indexing review (see worklog).
+ * Not-found is a REAL 404 via `notFound()` (fix R7b, 2026-07-25), replacing
+ * the original in-page soft-404. The boundary is prop-less, so the two
+ * distinct pinned messages were traded for the single
+ * `JUDGE_RESULT_NOT_FOUND_MESSAGE` in `not-found.tsx`; the per-reason
+ * literals remain on the API error envelopes. This route and its parent no
+ * longer define `loading.tsx` — a route-level Suspense boundary would flush a
+ * 200 shell before `notFound()` runs, which was the R7a/R7b defect. Do not
+ * reintroduce one on this segment or any ancestor of a `notFound()` caller.
  *
  * `loadJudgeResult` is request-memoized with React `cache` so the one fetch is
  * shared between `generateMetadata` and the page body (a single API round-trip
@@ -50,6 +52,12 @@ export default async function JudgeResultPage({ params }: JudgeResultPageProps) 
   const { chargeSlug, judgeSlug } = await params;
   const state = resolveJudgeResultState(await loadJudgeResult(chargeSlug, judgeSlug));
 
+  if (state.kind === 'not-found') {
+    // Real 404 semantics (fix R7b): not-found.tsx renders the boundary copy.
+    // `state.reason` is not consumed here anymore; the resolver keeps it so
+    // the distinction stays unit-tested and available to any future consumer.
+    notFound();
+  }
   if (state.kind === 'error') {
     // Generic, detail-free throw — error.tsx renders its own safe copy and
     // never surfaces this message or any request detail.
@@ -57,15 +65,6 @@ export default async function JudgeResultPage({ params }: JudgeResultPageProps) 
   }
   // DP-3: the success view manages its own two-column layout inside the
   // 1200px shell; every non-success state stays a single 760px article.
-  if (state.kind === 'not-found') {
-    return (
-      <div className="mx-auto w-full max-w-article">
-        <ResultNotFoundView
-          message={state.reason === 'judge' ? JUDGE_NOT_FOUND_MESSAGE : CHARGE_NOT_FOUND_MESSAGE}
-        />
-      </div>
-    );
-  }
   if (state.kind === 'charge-unavailable') {
     // Designed friendly state for a charge with no publishable aggregate,
     // handled before the generic throw above catches truly unexpected responses.

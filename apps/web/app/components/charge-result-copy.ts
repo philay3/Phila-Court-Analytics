@@ -45,9 +45,9 @@ export const CHARGE_RESULT_COPY = {
   judgeFilterHeading: 'View this charge for a specific judge',
   judgeFilterLabel: 'Judge',
 
-  // Route-level loading placeholder (pinned decision 2). Neutral: it
-  // describes the fetch in progress, nothing about any outcome.
-  loadingMessage: 'Loading historical results…',
+  // loadingMessage was removed at fix R7a/R7b (2026-07-25): the result routes
+  // no longer define loading.tsx boundaries, because a route-level Suspense
+  // boundary flushes a 200 shell before `notFound()` can set real 404 status.
 
   // not-found.tsx chrome. The message itself is the imported
   // CHARGE_NOT_FOUND_MESSAGE; this is the page heading (task 15.1 a11y pass —
