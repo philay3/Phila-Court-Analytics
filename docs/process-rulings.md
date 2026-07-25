@@ -113,3 +113,36 @@ option and is not the fallback.
 **Consequence for specs.** A spec whose items require the database names Claude
 Code as executor. A Cowork session handed such a spec reports the block, runs
 everything that does not need the DB, and returns the remainder as a query set.
+
+---
+
+## PR-6 — Review-queue closure predicates are canonical code; closure is permanent (standing)
+
+**Ruled:** planning chat, review-queue closure package adjudication, 2026-07-25.
+
+**Ruling, part 1 — the predicate.** Any tool that closes review-queue items
+computes its selection with the canonical pipeline code, by import — the
+charge matcher, the outcome mapper (including its held-form arm), and the
+22.1 dedup-key builder — never with a SQL text-match approximation. A SQL
+sizing (e.g. a census's exact-match split) estimates scale; it is never a
+closure keyset. The 2026-07-25 execution proved why: the census's SQL
+exact-match sizing (3,081) undercounted the canonical predicate's sweep
+(3,646) by an alias tier, a text-folding tier (em-dash vs hyphen), and a
+same-document-reparse class SQL could not see — and the pinned acceptance
+band built on that sizing had to be amended while the predicate stood.
+
+**Ruling, part 2 — why false positives are the design-against failure mode.**
+`review.queue_items.dedup_key` is DB-UNIQUE and every insert is
+`ON CONFLICT (dedup_key) DO NOTHING`, so a closed row occupies its key
+permanently — a wrongly-closed item NEVER resurfaces (only document
+supersession mints new keys). Closure tools therefore: select `open` items
+only (`in_review` is human-touched and never bulk-closed); close to
+`superseded` (mechanical), never `dismissed` (human); never close an item
+whose key the current build still regenerates (a live condition); dry-run by
+default with `--confirm` gated on operator go-ahead; and prove the negative
+criteria (live forms select zero) before any confirm.
+
+**Consequence.** Contaminated / mangled strings are never laundered into a
+vocabulary to make their items closable (the `RD - County` /
+`ARD - County Open` refusals are the precedent); the parser batch fixes the
+capture, and the closure tool sweeps the residue afterward.

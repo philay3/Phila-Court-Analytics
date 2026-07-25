@@ -262,7 +262,14 @@ named-with-trigger rather than scheduled.
 - **"Proceed to Court" disposition mapping** — deferred from 32.3; stays
   unmapped under the designed fail-safe (non-public `unknown` + review item).
 - **Contaminated-string census** — banked at 32.3: leading-char-loss 11 rows,
-  offense-text ~28, scheduling bleed 4, status-suffix 1.
+  offense-text ~28, scheduling bleed 4, status-suffix 1. The 2026-07-25
+  closure pass added two refused-key suspects to the same batch:
+  `RD - County` (3, char-loss of `ARD - County`) and `ARD - County Open`
+  (1, status-suffix).
+- **Roster punctuation-convention normalization** — flagged 2026-07-25 for
+  the post-#76 matcher re-census: roster display names carry punctuation
+  the corpus doesn't (Stalking em-dash vs corpus hyphen; text folding
+  matches it, SQL exact doesn't). Not blocking.
 - **Intake-dir residue policy** — queued to the Sprint 9 ops track.
 - **Site-wide label reconciliation** (result pages, methodology definition,
   sentencing-unit noun) — named Sprint 9 copy item.
@@ -361,56 +368,57 @@ planning-chat's; not on disk.
 
 ### 4.3 Review queue
 
-Full open-queue census run 2026-07-25
-(`~/court-data/reports/review-queue-census-20260725T151115Z.md`, from the
-review-queue-pack). Read-only; totals unchanged from the 2026-07-22 snapshot
-(61,751 total / 59,733 open / 2,018 superseded). The 39% blind spot is closed —
-ALL open items now have a by-type breakdown on disk:
+Full census run 2026-07-25 morning
+(`~/court-data/reports/review-queue-census-20260725T151115Z.md`), then the
+adjudicated closure package EXECUTED same day (Parts 6–7 of that report).
+Post-closure state, close-out census 2026-07-25 16:14 UTC — 61,751 total /
+**55,368 open / 6,383 superseded** (session closed 4,365: 4,346 main sweep +
+19 follow-up):
 
 | item_type (open) | Count |
 |---|---|
 | `missing_disposition_date` | 50,542 |
-| `unmapped_charge` | 6,236 |
+| `unmapped_charge` | 2,590 |
 | `duration_unparseable` | 1,116 |
-| `unmapped_disposition` | 768 |
 | `unmapped_judge` | 636 |
 | `sentinel_collision` | 169 |
 | `additive_sentencing_category` | 125 |
 | `ambiguous_sentencing_component` | 61 |
+| `unmapped_disposition` | 49 |
 | `ambiguous_charge` | 33 |
 | `money_unparseable` | 24 |
 | `unresolvable_cross_court_reference` | 23 |
 
-Blocking lens: 50,565 (84.7%) inert · 7,206 block public outcome facts ·
-1,326 sentence detail only · 636 judge arm only. Zero vocabulary drift.
-`missing_disposition_date` at 50,542 is the standing expected-open floor —
-it regenerates by design and is not backlog.
+Blocking lens (recomputed post-closure): 50,565 (91.3%) inert · 2,841 block
+public outcome facts (was 7,206) · 1,326 sentence detail only · 636 judge arm
+only. `missing_disposition_date` at 50,542 is the standing expected-open
+floor — it regenerates by design and is not backlog. Every remaining open
+`unmapped_disposition` item (49) is accounted for: 42 char-loss contamination
+(parser batch), 3 `Proceed to Court` (32.3 deferral), 4 refused
+contamination-suspects (`RD - County` 3, `ARD - County Open` 1 — parser
+batch, never map keys).
 
-Census findings, 2026-07-25:
+Census findings, 2026-07-25 morning — status after the same-day closure
+execution:
 
-- **29.3 closure tool is moot**: dry run (`pipeline close-held-review-items`)
-  selects **0** items (83,596 candidate keys, 0 open matches) — the held-form
-  population was already fully closed. Its `--confirm` was not run.
-- **Post-#76 stale `unmapped_charge`**: 3,081 of 6,236 open items (29 distinct
-  texts) now exact-match the expanded roster — condition fixed, items linger.
-  No closure tool covers this class; needs an adjudicated key-scoped pass.
-  Live tail: 3,155 items / 508 texts (roster-expansion fuel).
-  `Stalking - Repeatedly Commit Acts To Cause Fear` (226 items) did NOT match
-  the roster — verify whether #76 missed it or the text varies.
-- **`unmapped_disposition` (768) is mostly stale, not real mapper work**
-  (corrected same-day by fact-level probe): the head forms (`Dismissed - LOP`
-  501, Dismissed-*/IC-suffixed family, ~670 items) are ALREADY MAPPED in the
-  ddb0fbd9 facts — every charge carrying them has an outcome fact with a real
-  category (`dismissed`/`guilty_plea`/`withdrawn`), zero `disposition_not_mapped`.
-  A mapper expansion after the items' 07-13..07-17 insertion fixed the
-  condition; items linger (nothing auto-closes) — same stale class as the
-  post-#76 charges, candidate for the same adjudicated key-scoped pass.
-  The 34.x guard-class contamination is ~90 items (`eld for Court` 31 +
-  fused/bleed/fragment rows), all matching 32.3 census classes; the
-  leading-char-loss forms are still live in `parsed.charges` verbatim
-  (`eld for Court` 31/31), so closing without fixing extraction would
-  regenerate them — needs the adjudicated extension. The charge-fused strings
-  show 0 corpus matches (extinct; clean closure candidates).
+- **29.3 closure tool moot** (dry run selected 0; already fully closed) —
+  superseded by the generic tool below.
+- **Post-#76 stale `unmapped_charge`** — RESOLVED: swept by
+  `close-stale-review-items` (3,646 closed, more than the census's 3,081
+  SQL-exact sizing — the canonical predicate also catches alias-tier and
+  text-folding matches). `Stalking - Repeatedly Commit Acts To Cause Fear`
+  question RESOLVED: it matches the roster EXACT under `canonicalize_text`
+  (roster display carries an em-dash, corpus a hyphen — SQL exact missed
+  it); its 226 items closed. Live tail now 2,590 open items
+  (roster-expansion fuel; run the post-#76 matcher re-census when picked up).
+- **Stale `unmapped_disposition`** — RESOLVED: 700 closed in the main sweep
+  (677 now-mapped head forms + 23 on charges a same-document re-parse left
+  undisposed), 19 more in the follow-up sweep after R1/R3 landed. The
+  char-loss forms stay OPEN deliberately: they are live conditions, and
+  under key permanence a closed item never resurfaces — closing them would
+  permanently blind the queue to a condition the parser batch has yet to
+  fix (rationale amended from the earlier "closing would just regenerate
+  them" reading, which key permanence makes impossible).
 - `unmapped_judge` open is **636**, not the 272 (that figure was
   newly-inserted-by-ddb0fbd9 only).
 
@@ -422,28 +430,37 @@ key permanently: a wrongly-closed item never resurfaces, so false-positive
 closure is THE failure mode closure tooling designs against. (worklog 34.5
 intake-cycle verification ledger; closure-package adjudication 2026-07-25)
 
-Closure-package execution, 2026-07-25 (spec adjudicated in planning chat;
-full record appended as Part 6 of the census report):
+Closure-package execution, 2026-07-25 — COMPLETE (spec adjudicated in
+planning chat; full verbatim record in Parts 6–7 of the census report;
+PR-6 records the standing rules):
 
-- **R1 (held-variant adjudication) — STOPPED at its gate probe.**
-  `Held for Court - Pre-TCY` (6) and `Held for Court - In Absentia` (4) are
-  MC and byte-exact but carry disposition dates 10/10 on Closed dockets —
-  the six adjudicated held forms are 0/41,798 dated. Not at-rest bind-overs;
-  no code landed; the 10 items stay live. Back to planning chat.
-- **R2 (`pipeline close-stale-review-items`) — tool landed (`1d7443f`),
-  dry run STOPPED on its acceptance band.** Would close 4,346
-  (`unmapped_charge` 3,646 + `unmapped_disposition` 700) vs the pinned
-  3,400–4,100 band — high by 246. Every negative criterion passes (char-loss
-  forms, `Proceed to Court`, R1 variants all select zero). Overage is
-  explained: the census sized staleness by SQL exact match while the
-  predicate is the real matcher (alias tier + text folding, incl. Stalking
-  226 — em-dash vs hyphen; census question resolved: it matches), plus 46
-  items on charges a same-document re-parse left undisposed, minus the 10
-  R1 items. `--confirm` withheld pending operator adjudication of the band.
-- **Post-sweep live `unmapped_disposition` tail is fully characterized**
-  (68 items / 14 forms): char-loss 42, `Proceed to Court` 3 (32.3 deferral),
-  R1-stopped 10, genuine mapper tail 13 items / 6 forms — R3 proposal table
-  delivered to planning chat.
+- **R2 (`pipeline close-stale-review-items`) — landed (`1d7443f`) and run
+  to completion.** Dry run 4,346 was outside the pinned 3,400–4,100 band;
+  operator amended the BAND, not the predicate (the band derived from the
+  census's SQL exact-match sizing; the decomposition — 2,477 exact + 1,146
+  alias + 23 undisposed-anchor `unmapped_charge`, 677 now-mapped + 23
+  undisposed-anchor `unmapped_disposition` — stands as the acceptance
+  evidence). Confirm closed **4,346**, matched the dry run exactly,
+  idempotent re-run 0. All negative criteria held (char-loss, `Proceed to
+  Court`, held variants: zero selected).
+- **R1 (held variants) — first gate STOPPED (forms are dated 10/10 vs
+  0/41,798 for the prior six), then re-gated by the operator on
+  continuation evidence and PASSED**: 0 sentence components + all MC +
+  every cross-court link resolved to an in-corpus CP target. Landed
+  (`903307f`): held set is now EIGHT forms, and the held family is **no
+  longer strictly dateless** (string-keyed skip; no machinery change).
+  Barred: mapping any `Held for Court - *` string to a terminal category
+  by inference.
+- **R3 (mapper tail) — approved and landed (`6602bb3`)**: `Dismissed - LOP
+  IC` / `Dismissed - LOE IC` → dismissed, `Guilty Plea - Mentally Ill` →
+  guilty_plea, `Transferred to Juvenile Division` → other (non-public);
+  `RD - County` + `ARD - County Open` REFUSED as keys (contamination →
+  parser batch; refusal test-pinned).
+- **Follow-up sweep** (pre-authorized): closed the **19** items R1+R3 made
+  stale (10 + 9), idempotent re-run 0. Served effect of R1/R3 lands at the
+  NEXT fact build (~19 charges leave the unknown sink: 10 to the held
+  partition, 9 to real categories); reconciliation identity at that build
+  is the guard. Published run `9b870800` untouched throughout.
 
 ### 4.4 Parser warning census
 
