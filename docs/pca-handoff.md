@@ -14,6 +14,7 @@ The heavy process (formal specs, adjudication gates, relay files, plan-approval 
 - **`docs/board.md`** = the state file. Any session opens by reading it; update it when things change. This is the one habit that matters.
 
 The rules that still bind (these are real, everything else is optional):
+
 1. Nothing derived from real dockets ever enters the repo tree.
 2. Don't break the live site — eyeball diffs before anything that re-parses the corpus or republishes.
 3. Copy stays honest — no predictions, no rankings, no judge/attorney comparisons without a deliberate ruling.

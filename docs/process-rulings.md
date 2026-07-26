@@ -81,7 +81,7 @@ information; this follows the 32.3 disposition-string precedent directly.
 — a fragment, parse artifact, or glued column reports **counts plus a structural
 signature** (length, character-class composition, tripped predicate) with the
 **raw form withheld or hash-prefixed**, unless individually cleared. Rationale:
-that class is by definition where the capture is *not* clean statutory phrasing,
+that class is by definition where the capture is _not_ clean statutory phrasing,
 and the 34.3 column-concatenation evidence shows adjacent docket columns do get
 glued into captured text. It is the one place defendant-adjacent text could ride
 into a report otherwise cleared to print charge text.

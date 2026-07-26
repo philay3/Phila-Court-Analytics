@@ -36,11 +36,11 @@ the operator verified). What landed, all tests green:
   untouched.
 - **Served surface** (operator display ruling: deduplicated totals ONLY on
   pages; breakdown lives in methodology): success arm gains a `volume` block
-  + one pinned summary line; new third union arm `charge_only_volume`
-  replaces the dead-end unavailable state for seen-but-unresolved charges
-  (the R6 case; `open-lewdness` is its seed fixture); methodology gains the
-  `chargeCounting` section; the bare unavailable arm survives for
-  truly-nothing (harassment fixture unchanged).
+  - one pinned summary line; new third union arm `charge_only_volume`
+    replaces the dead-end unavailable state for seen-but-unresolved charges
+    (the R6 case; `open-lewdness` is its seed fixture); methodology gains the
+    `chargeCounting` section; the bare unavailable arm survives for
+    truly-nothing (harassment fixture unchanged).
 - **Ops dashboard** (`/admin`, live): every number — corpus, dedupe/linkage
   coverage incl. the collector fetch-list count, source docs + 14-day import
   rate, fact builds, aggregate runs + per-table rows, outcome mix +
@@ -55,9 +55,27 @@ the operator verified). What landed, all tests green:
   `docs/runbook-v3-reload-backfill.md` is the operator's execution sequence
   (migrate → envelope reload under (8,3) → backfill → cycle at cadence).
 
-**Awaiting the operator (nothing served has changed yet):** run the v3
-runbook. Published run `9b870800` untouched; outcome facts and percentages
-unchanged by construction — the fix adds the deduplicated volume layer.
+**LANDED 2026-07-26 (the full cycle ran same-session; verbatim record:
+`~/court-data/reports/phase36-cycle-20260725T223728Z.md`):** v3 reload
+(37,369 replaced at (8,3); two attributed delta classes — v3-capture +
+the R1 held-family 2 dockets/10 charges, gate-B ruled), supersession
+backfill ×2 (14,030 → 14,251 pointers after the refresh intake; gate-C
+ruled: A2.3 figures were upper bounds — kill-bucket decomposition banked:
+87.2% of statute refusals are subsection-level; no_case_match = 11,363,
+100% absent parents = collector fuel), refresh intake from a frozen
+10,265-file snapshot (9,144 new arrivals loaded; charges 136,389→136,418;
+undisposed −1,189), build 58a55b76 (identity exact; supersession block now
+printed — fddadc5), aggregates validated (ten populations, 0 violations)
+and **published: run `fc13bedb` live LOCALLY AND ON PROD** (12 prod
+migrations, 15-table restore, all count-pairs identical, live volume line
+2,123/971 on retail-theft, harassment serving the charge_only_volume arm,
+e2e 29/29). Served movement: public facts 32,942→37,304; slugs with
+outcomes 78→109 of the 110 roster; data_range end →2026-07-24. Runbook
+amendments: prune-before-reload, delta-class attribution rule, gate-C
+sanity reframe. Next-cycle: post-freeze refresh tail; the 11,363
+absent-parent fetch list; statute-relaxation evidence (adjudicate
+never-or-later); run-report emission defect third instance
+(`run-20260725-221502` empty).
 
 **Env notes from this session's gates:** full pipeline suite 1,184 passed;
 vitest shared 214 / db 72 / api 214 / web 284; typecheck + ruff + eslint +
@@ -79,6 +97,7 @@ FAIL 127.0.0.1:5433        -> ConnectionRefusedError
 FAIL host.docker.internal  -> name resolution failure
 FAIL 192.168.65.2:5433     -> Network is unreachable
 ```
+
 _(python socket probe, run 2026-07-25; `psql`, `pg_isready` and `docker` are all
 absent from the bridge environment — `which` returned nothing for each.)_
 
@@ -106,69 +125,69 @@ _As of 2026-07-25._
 
 **Deployment**
 
-| Fact | Value | Source |
-|---|---|---|
-| Live URL | https://philacourtoutcomes.org | `README.md:8` |
-| Launch posture | controlled launch; site-wide `noindex`, no promotion | `README.md` "Data coverage & honesty"; `recon-36.0` R8 (`apps/web/app/layout.tsx:35-37` robots block) |
-| Hosting | Render (private API service + web service), Cloudflare proxy, UptimeRobot monitors | `README.md` tech stack; worklog "Sprint 7 close-out (a)" |
-| Edge rate rule | 50 requests / 10 s per IP, action Block | worklog "Sprint 7 close-out (a)" |
-| In-app rate limit | 120 / 60 000 ms defaults | worklog Task 31.3 |
+| Fact              | Value                                                                              | Source                                                                                                |
+| ----------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Live URL          | https://philacourtoutcomes.org                                                     | `README.md:8`                                                                                         |
+| Launch posture    | controlled launch; site-wide `noindex`, no promotion                               | `README.md` "Data coverage & honesty"; `recon-36.0` R8 (`apps/web/app/layout.tsx:35-37` robots block) |
+| Hosting           | Render (private API service + web service), Cloudflare proxy, UptimeRobot monitors | `README.md` tech stack; worklog "Sprint 7 close-out (a)"                                              |
+| Edge rate rule    | 50 requests / 10 s per IP, action Block                                            | worklog "Sprint 7 close-out (a)"                                                                      |
+| In-app rate limit | 120 / 60 000 ms defaults                                                           | worklog Task 31.3                                                                                     |
 
 **Repository**
 
-| Fact | Value | Source |
-|---|---|---|
-| HEAD | `ebc1ae9a3196dee5805b3b6fc73bc49e19d692f5` | `git log -1`, run 2026-07-25 |
-| HEAD date / subject | 2026-07-23 19:45:28 −0400 — "Merge pull request #75 from philay3/readme-1-product-readme" | same |
-| Branch | `main` | `git rev-parse --abbrev-ref HEAD`, run 2026-07-25 |
-| Working tree | clean (`git status --short` produced no output) | run 2026-07-25 |
-| Last 5 merges | #75 README-1, #74 video-v3 B2, #73 prerecord-2, #72 data-cycle close, #71 republish runbook FK amendment | `git log --oneline -40`, run 2026-07-25 |
-| Stale local branches | `col-4` (2026-07-13), `phase-26` (2026-07-13), `phase-29` (2026-07-14), `phase-31` (2026-07-15), `video-v3-capture-relayout` (2026-07-22) | `git branch`, run 2026-07-25 |
-| Migrations on disk | 10 | `ls db/migrations/`, run 2026-07-25 |
+| Fact                 | Value                                                                                                                                     | Source                                            |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| HEAD                 | `ebc1ae9a3196dee5805b3b6fc73bc49e19d692f5`                                                                                                | `git log -1`, run 2026-07-25                      |
+| HEAD date / subject  | 2026-07-23 19:45:28 −0400 — "Merge pull request #75 from philay3/readme-1-product-readme"                                                 | same                                              |
+| Branch               | `main`                                                                                                                                    | `git rev-parse --abbrev-ref HEAD`, run 2026-07-25 |
+| Working tree         | clean (`git status --short` produced no output)                                                                                           | run 2026-07-25                                    |
+| Last 5 merges        | #75 README-1, #74 video-v3 B2, #73 prerecord-2, #72 data-cycle close, #71 republish runbook FK amendment                                  | `git log --oneline -40`, run 2026-07-25           |
+| Stale local branches | `col-4` (2026-07-13), `phase-26` (2026-07-13), `phase-29` (2026-07-14), `phase-31` (2026-07-15), `video-v3-capture-relayout` (2026-07-22) | `git branch`, run 2026-07-25                      |
+| Migrations on disk   | 10                                                                                                                                        | `ls db/migrations/`, run 2026-07-25               |
 
 **Published data**
 
-| Fact | Value | Source |
-|---|---|---|
-| Published aggregate run | `9b870800-7ee1-42af-920d-b6ce63b56ab4` | `recon-36.0` R4; `operator-numbers-report` header |
-| Its fact build run | `ddb0fbd9-364d-444f-a342-ac6e6978c309` (the single completed fact build) | `recon-36.0` R4 |
-| Build completed | 2026-07-22 22:47:34 UTC | `operator-numbers-report` §10 |
-| Aggregate data_range | 2025-01-01 .. 2026-07-21 | worklog "Phase-2 Data Cycle 1", Stage D |
-| Prior run | `82b6cc99` invalidated (superseded) at that publish | worklog Stage D |
-| Prod sync | per-table counts identical local vs prod across all 14 tables at last republish | worklog Stage D STOP 2 |
+| Fact                    | Value                                                                           | Source                                            |
+| ----------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Published aggregate run | `9b870800-7ee1-42af-920d-b6ce63b56ab4`                                          | `recon-36.0` R4; `operator-numbers-report` header |
+| Its fact build run      | `ddb0fbd9-364d-444f-a342-ac6e6978c309` (the single completed fact build)        | `recon-36.0` R4                                   |
+| Build completed         | 2026-07-22 22:47:34 UTC                                                         | `operator-numbers-report` §10                     |
+| Aggregate data_range    | 2025-01-01 .. 2026-07-21                                                        | worklog "Phase-2 Data Cycle 1", Stage D           |
+| Prior run               | `82b6cc99` invalidated (superseded) at that publish                             | worklog Stage D                                   |
+| Prod sync               | per-table counts identical local vs prod across all 14 tables at last republish | worklog Stage D STOP 2                            |
 
 **Corpus** _(all from `operator-numbers-report`, snapshot 2026-07-22; corpus
 census re-confirmed identical in `recon-36.0`, snapshot 2026-07-24)_
 
-| Metric | Count |
-|---|---|
-| Dockets | 37,369 (CP 12,617 / MC 24,752) |
-| Charges | 136,389 |
-| Version pair | single pair (record 2, envelope 8) across all 37,369 |
-| Duplicate docket numbers | 0 |
-| Quarantined source documents | 0 |
-| Source documents | `imported` 37,369 + `parse_superseded` 1,121 |
-| Dockets flagged `review_needed` | 12,803 |
+| Metric                          | Count                                                |
+| ------------------------------- | ---------------------------------------------------- |
+| Dockets                         | 37,369 (CP 12,617 / MC 24,752)                       |
+| Charges                         | 136,389                                              |
+| Version pair                    | single pair (record 2, envelope 8) across all 37,369 |
+| Duplicate docket numbers        | 0                                                    |
+| Quarantined source documents    | 0                                                    |
+| Source documents                | `imported` 37,369 + `parse_superseded` 1,121         |
+| Dockets flagged `review_needed` | 12,803                                               |
 
 **Charge partition (the reconciliation identity, `identity_holds = t`)**
 
-| Bucket | Count |
-|---|---|
-| Outcome-fact-producing | 42,983 |
-| Undisposed (null disposition) | 51,608 |
-| Held for court (six bind-over forms) | 41,798 |
-| **Total** | **136,389** |
+| Bucket                               | Count       |
+| ------------------------------------ | ----------- |
+| Outcome-fact-producing               | 42,983      |
+| Undisposed (null disposition)        | 51,608      |
+| Held for court (six bind-over forms) | 41,798      |
+| **Total**                            | **136,389** |
 
 **Fact and served volumes**
 
-| Metric | Count | Source |
-|---|---|---|
-| Outcome facts | 42,983 | worklog Stage D D5; `operator-numbers-report` §2 |
-| Public-eligible outcome facts | 32,942 | worklog D5; `recon-36.0` R2 |
-| Sentence facts | 17,765 | worklog D5; `operator-numbers-report` §10 |
-| Public-eligible sentence facts | 10,649 | worklog D5; `operator-numbers-report` §10 |
-| Roster slugs with matched charges | 78 | `recon-36.0` R3 |
-| …of those with zero public-eligible outcomes (dead-end arm today) | 1 | `recon-36.0` R3 |
+| Metric                                                            | Count  | Source                                           |
+| ----------------------------------------------------------------- | ------ | ------------------------------------------------ |
+| Outcome facts                                                     | 42,983 | worklog Stage D D5; `operator-numbers-report` §2 |
+| Public-eligible outcome facts                                     | 32,942 | worklog D5; `recon-36.0` R2                      |
+| Sentence facts                                                    | 17,765 | worklog D5; `operator-numbers-report` §10        |
+| Public-eligible sentence facts                                    | 10,649 | worklog D5; `operator-numbers-report` §10        |
+| Roster slugs with matched charges                                 | 78     | `recon-36.0` R3                                  |
+| …of those with zero public-eligible outcomes (dead-end arm today) | 1      | `recon-36.0` R3                                  |
 
 Citywide public-eligible outcome mix (worklog Stage D D5): dismissed 13,932
 (42.3%), withdrawn 7,952 (24.1%), guilty_plea 7,779 (23.6%), guilty_verdict
@@ -214,14 +233,14 @@ and active at a time; figures change only by publishing a new run. (`README.md`,
 **Stack.** Two records, and they are not identical — the locked list is narrower
 than what actually ships.
 
-*Locked by `CLAUDE.md` §"Stack (locked — do not substitute)":* pnpm workspaces
+_Locked by `CLAUDE.md` §"Stack (locked — do not substitute)":_ pnpm workspaces
 monorepo (no Turborepo yet); Fastify + TypeScript strict + TypeBox; PostgreSQL
 with Kysely + Kysely Migrator (no version pinned); Next.js App Router + React +
 TypeScript (**Tailwind is not named**); Python 3.12 + pytest with extractor
-*candidates* PyMuPDF / pdfplumber / pypdf (pdfplumber is not locked there, and
+_candidates_ PyMuPDF / pdfplumber / pypdf (pdfplumber is not locked there, and
 psycopg3 and uv are not named); Node 22 LTS; GitHub Actions.
 
-*As described in `README.md` §"Tech stack":* the same plus Tailwind CSS v4,
+_As described in `README.md` §"Tech stack":_ the same plus Tailwind CSS v4,
 PostgreSQL 17, pdfplumber + psycopg3 + uv as the chosen pipeline tools, Vitest,
 Playwright + axe-core, ruff, and the Render / Cloudflare / UptimeRobot infra
 line.
@@ -248,15 +267,15 @@ frontend derives no figures.
 
 **Version and vocabulary state**
 
-| Axis | Value | Source |
-|---|---|---|
-| Envelope parser version | 8 | `operator-numbers-report` §1 version-pair census |
-| Record parser version | 2 | same |
-| Warning vocabulary | 14 codes, `LOW_TEXT_EXTRACTION` … `ORPHANED_SENTENCE_SUPPRESSED` | `services/pipeline/src/pipeline/warning_codes.py`, read 2026-07-25 |
-| Taxonomy version | 1.0.0 | `operator-numbers-report` §10 build-run row |
-| Charge roster active entries | 78 | `recon-36.0` R1 census header |
-| Thin-data threshold | pipeline default 10 (the taxonomy artifact's provisional 30 was deleted at 35.3) | worklog Task 35.3 |
-| Filed-date floor / MVP window start | 2025-01-01 (deliberately unconsolidated constants) | `recon-36.0` R1/R2 |
+| Axis                                | Value                                                                            | Source                                                             |
+| ----------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Envelope parser version             | 8                                                                                | `operator-numbers-report` §1 version-pair census                   |
+| Record parser version               | 2                                                                                | same                                                               |
+| Warning vocabulary                  | 14 codes, `LOW_TEXT_EXTRACTION` … `ORPHANED_SENTENCE_SUPPRESSED`                 | `services/pipeline/src/pipeline/warning_codes.py`, read 2026-07-25 |
+| Taxonomy version                    | 1.0.0                                                                            | `operator-numbers-report` §10 build-run row                        |
+| Charge roster active entries        | 78                                                                               | `recon-36.0` R1 census header                                      |
+| Thin-data threshold                 | pipeline default 10 (the taxonomy artifact's provisional 30 was deleted at 35.3) | worklog Task 35.3                                                  |
+| Filed-date floor / MVP window start | 2025-01-01 (deliberately unconsolidated constants)                               | `recon-36.0` R1/R2                                                 |
 
 **Aggregate layer.** `analytics.aggregate_runs.status` takes exactly three
 values under its CHECK — `in_progress`, `completed`, `failed`. Validation over a
@@ -275,8 +294,9 @@ table enumeration (4 `ref` + 10 `analytics`, the latter including
 sentencing-index tables", "validation extended over all nine tables"); and the
 Stage D publish record ("all nine populations violations=0"). **Flag for the
 operator:** `recon-36.0` R5 states "ten aggregate tables … four Sprint-6 tables
-+ six Task-35.1 index tables" but then names only five 35.1 tables — an internal
-inconsistency in that report, not a disagreement between sources.
+
+- six Task-35.1 index tables" but then names only five 35.1 tables — an internal
+  inconsistency in that report, not a disagreement between sources.
 
 **Standing rules that constrain any change** (`CLAUDE.md`, read 2026-07-25):
 plan-then-implement with explicit approval; strict scope discipline; six
@@ -299,10 +319,10 @@ named-with-trigger rather than scheduled.
   2026-07-25 (see §0): dedupe at the root (record v3 + supersession join +
   backfill), `analytics.charge_volume_aggregates` with the closure CHECK,
   validation extended (publish-blocking), deduplicated totals on charge pages
-  + the `charge_only_volume` arm + the methodology `chargeCounting` section,
-  and the `/admin` ops dashboard. Remaining in phase: the operator's reload +
-  backfill + cycle (runbook-v3-reload-backfill.md), and the noindex verdict —
-  still a planning-chat gate with the worst-case page on screen.
+  - the `charge_only_volume` arm + the methodology `chargeCounting` section,
+    and the `/admin` ops dashboard. Remaining in phase: the operator's reload +
+    backfill + cycle (runbook-v3-reload-backfill.md), and the noindex verdict —
+    still a planning-chat gate with the worst-case page on screen.
 - **R7a / R7b — FIXED 2026-07-25** (see §4.5). One mechanism amendment worth
   keeping: on Next 16 the proposed loading.tsx deletions were necessary but not
   sufficient — ANY ancestor segment's `loading.tsx` (here `charges/loading.tsx`)
@@ -360,8 +380,8 @@ named-with-trigger rather than scheduled.
   publish serving, staleness re-walk); had not run as of the last worklog entry
   touching it.
 
-Anything not listed above and not evidenced on disk: *unknown — confirm with
-operator.*
+Anything not listed above and not evidenced on disk: _unknown — confirm with
+operator._
 
 ---
 
@@ -372,25 +392,25 @@ resolved, the resolution is stated.
 
 ### 4.1 Open defects in served behavior
 
-| ID | Defect | Count / scope | Status | Source |
-|---|---|---|---|---|
-| R7a | Charge not-found serves HTTP 200 instead of 404 | all unknown charge slugs | **FIXED 2026-07-25** — see §4.5 and the roadmap mechanism amendment | fix session 2026-07-25 |
-| R7b | Judge-route soft-404 (unknown judge, and unknown charge on the judge route) | both routes | **FIXED 2026-07-25** — real 404 + single pinned combination literal | fix session 2026-07-25 |
-| — | Charge with nonzero volume but zero recorded outcomes returns the dead-end unavailable arm | **1** of 78 matched roster slugs today; every newly rostered charge starts there | **FIXED in code 2026-07-25** — the `charge_only_volume` arm serves the seen count; live after the operator's v3 cycle | `recon-36.0` R6; §0 |
-| — | MC→CP double count in any volume-style figure | upper bound 29,806 of 41,798 held rows (36.0-A A2.3) | **FIXED in code 2026-07-25** — data-layer supersession (record v3 + deterministic join); pointers land at the operator's backfill; every count filters `superseded_by_charge_id IS NULL` | §0; runbook-v3-reload-backfill.md |
+| ID  | Defect                                                                                     | Count / scope                                                                    | Status                                                                                                                                                                                   | Source                            |
+| --- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| R7a | Charge not-found serves HTTP 200 instead of 404                                            | all unknown charge slugs                                                         | **FIXED 2026-07-25** — see §4.5 and the roadmap mechanism amendment                                                                                                                      | fix session 2026-07-25            |
+| R7b | Judge-route soft-404 (unknown judge, and unknown charge on the judge route)                | both routes                                                                      | **FIXED 2026-07-25** — real 404 + single pinned combination literal                                                                                                                      | fix session 2026-07-25            |
+| —   | Charge with nonzero volume but zero recorded outcomes returns the dead-end unavailable arm | **1** of 78 matched roster slugs today; every newly rostered charge starts there | **FIXED in code 2026-07-25** — the `charge_only_volume` arm serves the seen count; live after the operator's v3 cycle                                                                    | `recon-36.0` R6; §0               |
+| —   | MC→CP double count in any volume-style figure                                              | upper bound 29,806 of 41,798 held rows (36.0-A A2.3)                             | **FIXED in code 2026-07-25** — data-layer supersession (record v3 + deterministic join); pointers land at the operator's backfill; every count filters `superseded_by_charge_id IS NULL` | §0; runbook-v3-reload-backfill.md |
 
 ### 4.2 Exclusion tail — why 103,447 charges are not in the served percentages
 
 Full-population funnel, computed 2026-07-24 by the real matcher over all 136,389
 parsed charges (`recon-36.0` R2). **Closes exactly, zero residual.**
 
-| Bucket | Count | Share of corpus † |
-|---|---|---|
-| (a) Recorded outcomes (public-eligible) | 32,942 | 24.2% |
-| (b) Held for court | 41,798 | 30.6% |
-| (c) Pending / undisposed | 51,608 | 37.8% |
-| (d) Disposed but not fact-eligible | 10,041 | 7.4% |
-| **Total** | **136,389** | 100% |
+| Bucket                                  | Count       | Share of corpus † |
+| --------------------------------------- | ----------- | ----------------- |
+| (a) Recorded outcomes (public-eligible) | 32,942      | 24.2%             |
+| (b) Held for court                      | 41,798      | 30.6%             |
+| (c) Pending / undisposed                | 51,608      | 37.8%             |
+| (d) Disposed but not fact-eligible      | 10,041      | 7.4%              |
+| **Total**                               | **136,389** | 100%              |
 
 † Share column is arithmetic performed here on the four disk-sourced counts, not
 a figure read from any report. The section heading's 103,447 is likewise derived
@@ -398,15 +418,15 @@ a figure read from any report. The section heading's 103,447 is likewise derived
 
 Bucket (d) by reason code — non-exclusive tally (a charge can carry several):
 
-| Reason code | Count |
-|---|---|
-| `charge_not_normalized` | **6,191** |
-| `filed_date_before_floor` | 3,086 |
-| `disposition_date_before_mvp_window` | 2,745 |
-| `review_needed` | 1,018 |
-| `disposition_not_mapped` | **68** |
-| `blocking_warning` | 33 |
-| `disposition_date_missing` | **0** (mechanism extinct post-envelope-6 rebuild) |
+| Reason code                          | Count                                             |
+| ------------------------------------ | ------------------------------------------------- |
+| `charge_not_normalized`              | **6,191**                                         |
+| `filed_date_before_floor`            | 3,086                                             |
+| `disposition_date_before_mvp_window` | 2,745                                             |
+| `review_needed`                      | 1,018                                             |
+| `disposition_not_mapped`             | **68**                                            |
+| `blocking_warning`                   | 33                                                |
+| `disposition_date_missing`           | **0** (mechanism extinct post-envelope-6 rebuild) |
 
 Exclusive reason-combination tally (sums to 10,041): `charge_not_normalized`
 alone 5,854; `disposition_date_before_mvp_window + filed_date_before_floor`
@@ -427,7 +447,7 @@ parsed charges 136,389 · post-filed-date-floor 132,944, with 3,445 charges on
 pre-floor dockets dropping and **0 charges** on dockets with NULL filed_date
 (fail-closed under the floor; the partition closes: 132,944 + 3,445 + 0 =
 136,389) · disposed inside the MVP event window 40,238. The recon makes no
-statement about how many *dockets* carry a NULL filed_date. Boundary ruling is
+statement about how many _dockets_ carry a NULL filed_date. Boundary ruling is
 planning-chat's; not on disk.
 
 ### 4.3 Review queue
@@ -439,19 +459,19 @@ Post-closure state, close-out census 2026-07-25 16:14 UTC — 61,751 total /
 **55,368 open / 6,383 superseded** (session closed 4,365: 4,346 main sweep +
 19 follow-up):
 
-| item_type (open) | Count |
-|---|---|
-| `missing_disposition_date` | 50,542 |
-| `unmapped_charge` | 2,590 |
-| `duration_unparseable` | 1,116 |
-| `unmapped_judge` | 636 |
-| `sentinel_collision` | 169 |
-| `additive_sentencing_category` | 125 |
-| `ambiguous_sentencing_component` | 61 |
-| `unmapped_disposition` | 49 |
-| `ambiguous_charge` | 33 |
-| `money_unparseable` | 24 |
-| `unresolvable_cross_court_reference` | 23 |
+| item_type (open)                     | Count  |
+| ------------------------------------ | ------ |
+| `missing_disposition_date`           | 50,542 |
+| `unmapped_charge`                    | 2,590  |
+| `duration_unparseable`               | 1,116  |
+| `unmapped_judge`                     | 636    |
+| `sentinel_collision`                 | 169    |
+| `additive_sentencing_category`       | 125    |
+| `ambiguous_sentencing_component`     | 61     |
+| `unmapped_disposition`               | 49     |
+| `ambiguous_charge`                   | 33     |
+| `money_unparseable`                  | 24     |
+| `unresolvable_cross_court_reference` | 23     |
 
 Blocking lens (recomputed post-closure): 50,565 (91.3%) inert · 2,841 block
 public outcome facts (was 7,206) · 1,326 sentence detail only · 636 judge arm
@@ -506,7 +526,7 @@ PR-6 records the standing rules):
   undisposed-anchor `unmapped_disposition` — stands as the acceptance
   evidence). Confirm closed **4,346**, matched the dry run exactly,
   idempotent re-run 0. All negative criteria held (char-loss, `Proceed to
-  Court`, held variants: zero selected).
+Court`, held variants: zero selected).
 - **R1 (held variants) — first gate STOPPED (forms are dated 10/10 vs
   0/41,798 for the prior six), then re-gated by the operator on
   continuation evidence and PASSED**: 0 sentence components + all MC +
@@ -516,7 +536,7 @@ PR-6 records the standing rules):
   Barred: mapping any `Held for Court - *` string to a terminal category
   by inference.
 - **R3 (mapper tail) — approved and landed (`6602bb3`)**: `Dismissed - LOP
-  IC` / `Dismissed - LOE IC` → dismissed, `Guilty Plea - Mentally Ill` →
+IC` / `Dismissed - LOE IC` → dismissed, `Guilty Plea - Mentally Ill` →
   guilty_plea, `Transferred to Juvenile Division` → other (non-public);
   `RD - County` + `ARD - County Open` REFUSED as keys (contamination →
   parser batch; refusal test-pinned).
@@ -531,29 +551,29 @@ PR-6 records the standing rules):
 Snapshot 2026-07-22 (`operator-numbers-report` §10), corpus-wide over
 `parsed.warnings`:
 
-| Code | Count |
-|---|---|
-| `MISSING_DISPOSITION_DATE` | 41,798 |
-| `NON_TERMINAL_CASE` | 13,295 |
-| `UNKNOWN_NOT_FINAL_DISPOSITION` | 2,477 |
-| `UNPARSEABLE_DURATION` | 1,109 |
-| `SENTINEL_COLLISION` | 169 |
-| `SUSPECT_DISPOSITION_TOKEN` | 57 |
-| `BLANK_DOB_CAPTION` | 15 |
-| `ORPHANED_SENTENCE_SUPPRESSED` | 15 |
-| `SUSPECT_JUDGE_LINE` | 10 |
-| `SUSPECTED_AMENDED_CHARGE` | 5 |
+| Code                            | Count  |
+| ------------------------------- | ------ |
+| `MISSING_DISPOSITION_DATE`      | 41,798 |
+| `NON_TERMINAL_CASE`             | 13,295 |
+| `UNKNOWN_NOT_FINAL_DISPOSITION` | 2,477  |
+| `UNPARSEABLE_DURATION`          | 1,109  |
+| `SENTINEL_COLLISION`            | 169    |
+| `SUSPECT_DISPOSITION_TOKEN`     | 57     |
+| `BLANK_DOB_CAPTION`             | 15     |
+| `ORPHANED_SENTENCE_SUPPRESSED`  | 15     |
+| `SUSPECT_JUDGE_LINE`            | 10     |
+| `SUSPECTED_AMENDED_CHARGE`      | 5      |
 
 ### 4.5 Closed / resolved, kept for the record
 
-| Class | Was | Now | Source |
-|---|---|---|---|
-| Parse quarantine | 9 documents | **0** — the 34.5-banked deferred reflow landed doc-for-doc at Stage A | worklog Phase-2 Cycle 1, Stage A |
-| Sentences on held charges (post-suppression invariant) | 18 rows on 15 charges | **0** | worklog Stage D STOP 1; `operator-numbers-report` §10 |
-| Republish runbook FK refusal | 14-table TRUNCATE refused by 4 FK edges from 2 tables | amended TRUNCATE set + nonzero=STOP empty-precondition (PR #71) | worklog Stage D STOP 2 |
-| Refresh-target ordering | docket-number ordered | `filed_date ASC NULLS LAST` + docket tiebreak (PR #69) | worklog ordering-fix rider |
-| Duplicate docket numbers | — | 0 | `operator-numbers-report` §1 |
-| R7a/R7b result-route soft 404s | HTTP 200 on unknown charge and judge slugs, dev and prod | real 404s on both routes. Mechanism: removed `loading.tsx` on `charges/`, `charges/[chargeSlug]/`, and `.../judge/[judgeSlug]/` (any ancestor boundary flushes a 200 shell on Next 16 before `notFound()`); directory loading moved to in-page `<Suspense>`; judge route now calls `notFound()` with new pinned `JUDGE_RESULT_NOT_FOUND_MESSAGE` (per-reason literals stay on the API envelopes). Tradeoff accepted: result pages block on the API fetch (no skeleton) so status can be correct. Verified 2026-07-25 on a production build: pre-fix 200/200 reproduced, post-fix 404/404 with friendly copy rendered, `/charges` and `/` still 200; vitest shared 211 / web 276 / api 210 / db 72 green; Playwright e2e 29/29 green against seeded `pca_test`. | fix session 2026-07-25 |
+| Class                                                  | Was                                                      | Now                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Source                                                |
+| ------------------------------------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Parse quarantine                                       | 9 documents                                              | **0** — the 34.5-banked deferred reflow landed doc-for-doc at Stage A                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | worklog Phase-2 Cycle 1, Stage A                      |
+| Sentences on held charges (post-suppression invariant) | 18 rows on 15 charges                                    | **0**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | worklog Stage D STOP 1; `operator-numbers-report` §10 |
+| Republish runbook FK refusal                           | 14-table TRUNCATE refused by 4 FK edges from 2 tables    | amended TRUNCATE set + nonzero=STOP empty-precondition (PR #71)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | worklog Stage D STOP 2                                |
+| Refresh-target ordering                                | docket-number ordered                                    | `filed_date ASC NULLS LAST` + docket tiebreak (PR #69)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | worklog ordering-fix rider                            |
+| Duplicate docket numbers                               | —                                                        | 0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `operator-numbers-report` §1                          |
+| R7a/R7b result-route soft 404s                         | HTTP 200 on unknown charge and judge slugs, dev and prod | real 404s on both routes. Mechanism: removed `loading.tsx` on `charges/`, `charges/[chargeSlug]/`, and `.../judge/[judgeSlug]/` (any ancestor boundary flushes a 200 shell on Next 16 before `notFound()`); directory loading moved to in-page `<Suspense>`; judge route now calls `notFound()` with new pinned `JUDGE_RESULT_NOT_FOUND_MESSAGE` (per-reason literals stay on the API envelopes). Tradeoff accepted: result pages block on the API fetch (no skeleton) so status can be correct. Verified 2026-07-25 on a production build: pre-fix 200/200 reproduced, post-fix 404/404 with friendly copy rendered, `/charges` and `/` still 200; vitest shared 211 / web 276 / api 210 / db 72 green; Playwright e2e 29/29 green against seeded `pca_test`. | fix session 2026-07-25                                |
 
 ### 4.6 Structural risks named but not defects
 
@@ -593,7 +613,7 @@ Derivation scale from the last cycle: `refresh_targets_total = 13,331` (CP 5,033
 / MC 8,298), filed 2023-01-03..2026-06-30, ordering monotone oldest-first;
 cycle 1 hauled 1,121 of those 13,331 (worklog Stage B / Stage C1). Whether the
 current pass is against the same target set or a fresh derivation:
-*unknown — confirm with operator.*
+_unknown — confirm with operator._
 
 **Nothing loaded since the publish.** The corpus census in `recon-36.0` opened
 and closed identically on 2026-07-24 (37,369 / 136,389), and
@@ -617,4 +637,4 @@ signals nothing new.
 
 **Not verifiable from here:** whether the last merge has deployed; current
 production health; whether the demo video capture G1–G3 gates have passed; any
-planning-chat decision made after 2026-07-24. *unknown — confirm with operator.*
+planning-chat decision made after 2026-07-24. _unknown — confirm with operator._
