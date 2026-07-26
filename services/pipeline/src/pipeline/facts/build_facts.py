@@ -998,8 +998,21 @@ def _print_summary(run_id: str, counts: dict[str, object]) -> None:
         _print_sentence_summary(counts["sentences"])  # type: ignore[arg-type]
     if "linkage" in counts:
         _print_linkage_summary(counts["linkage"])  # type: ignore[arg-type]
+    if "supersession" in counts:
+        _print_supersession_summary(counts["supersession"])  # type: ignore[arg-type]
     if "review_items" in counts:
         _print_review_summary(counts["review_items"])  # type: ignore[arg-type]
+
+
+def _print_supersession_summary(sc: dict[str, int]) -> None:
+    """Print the MC->CP charge-supersession derivation block — counts only.
+
+    The mapping is re-derived whole every build (charge_supersession.py); the
+    same buckets the standalone backfill prints, so run reports and backfill
+    consoles stay comparable line-for-line."""
+    print("--- charge supersession (re-derived this run) ---")
+    for key in sorted(sc):
+        print(f"  {key}: {sc[key]}")
 
 
 def _print_linkage_summary(lc: dict[str, object]) -> None:
