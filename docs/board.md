@@ -149,11 +149,11 @@ _As of 2026-07-25._
 
 | Fact                    | Value                                                                           | Source                                            |
 | ----------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Published aggregate run | `9b870800-7ee1-42af-920d-b6ce63b56ab4`                                          | `recon-36.0` R4; `operator-numbers-report` header |
-| Its fact build run      | `ddb0fbd9-364d-444f-a342-ac6e6978c309` (the single completed fact build)        | `recon-36.0` R4                                   |
-| Build completed         | 2026-07-22 22:47:34 UTC                                                         | `operator-numbers-report` §10                     |
-| Aggregate data_range    | 2025-01-01 .. 2026-07-21                                                        | worklog "Phase-2 Data Cycle 1", Stage D           |
-| Prior run               | `82b6cc99` invalidated (superseded) at that publish                             | worklog Stage D                                   |
+| Published aggregate run | `fc13bedb-edf7-44b7-b587-fa798d7d6d8d`                                          | `analytics.aggregate_runs` query, run 2026-07-26  |
+| Its fact build run      | `58a55b76-9982-4612-9dc5-1dd660ddd481` (one of two completed fact builds; `9fdbe0f6` completed 01:21 UTC same night, unreferenced) | same query, 2026-07-26 |
+| Build completed         | 2026-07-26 01:24:48 UTC (published 01:34:35 UTC)                                | `fact.fact_build_runs` query, run 2026-07-26      |
+| Aggregate data_range    | 2025-01-01 .. 2026-07-24                                                        | `analytics.aggregate_runs` query, run 2026-07-26  |
+| Prior run               | `9b870800` (fact build `ddb0fbd9`) invalidated (superseded) at the 2026-07-26 publish; `82b6cc99` invalidated at the 2026-07-22 publish | same query, 2026-07-26 |
 | Prod sync               | per-table counts identical local vs prod across all 14 tables at last republish | worklog Stage D STOP 2                            |
 
 **Corpus** _(all from `operator-numbers-report`, snapshot 2026-07-22; corpus
@@ -282,7 +282,7 @@ values under its CHECK — `in_progress`, `completed`, `failed`. Validation over
 generated run flips it to `completed` on a clean pass and to `failed` on any
 violation, which structurally blocks publish via
 `aggregate_runs_published_at_check`. `published_at` and `invalidated_at` are
-timestamp columns, not statuses: the live published run `9b870800` carries
+timestamp columns, not statuses: the live published run `fc13bedb` carries
 `status = completed`. A partial unique index permits at most one active
 published run. (`recon-36.0` R5; `operator-numbers-report` §7)
 
