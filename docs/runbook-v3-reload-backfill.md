@@ -26,6 +26,12 @@ three lines per record (`parser_version` 2→3, `case.originating_docket_no`,
 diff outside those three field paths, STOP — that is a real parser change and
 this runbook is stale.
 
+The three-path expectation holds ONLY net of deltas attributable to code
+landed since the last full re-parse; enumerate and attribute those first
+(gate-B precedent, 2026-07-25 cycle: the R1 held-family class — `903307f`,
+2 dockets / 10 charges — surfaced at the first post-R1 re-parse and was
+ruled in as its own attributed delta class).
+
 ## Order of operations
 
 1. **Migrate.** `pnpm db:migrate:latest` against local canonical `pca`
@@ -33,26 +39,43 @@ this runbook is stale.
    `parsed.charges.superseded_by_charge_id`, and
    `analytics.charge_volume_aggregates`). Non-destructive; instant.
 
-2. **Reload from stored envelopes** — the standing full-corpus reload flow
+2. **Prune fact runs FIRST.** `pipeline prune-fact-runs --all-completed`
+   (dry run, review the selection) then `--confirm`. A reload's
+   delete-and-reinsert refuses on the fail-loud fact FKs for every docket
+   carrying fact rows — the v8reload precedent only sequenced clean because
+   the Stage-B prune had already emptied the fact layer (first-execution
+   finding, 2026-07-25 cycle: 15,718 of 37,369 dockets refused with
+   `ForeignKeyViolation` until the prune ran; the load is idempotent, so
+   prune + re-run recovers cleanly). Published aggregates are standalone
+   and keep serving throughout.
+
+3. **Reload from stored envelopes** — the standing full-corpus reload flow
    (the v8reload precedent): re-parse the stored envelope text with record
    v3 and `pipeline load` the outputs; the version tuple takes the
    newer-version arm per docket. Refresh tier-2 goldens with
    `--update-goldens` AFTER eyeballing that the drift is the three new-field
    paths only.
 
-3. **Backfill.** `pipeline backfill-charge-supersession` (DATABASE_URL from
+4. **Backfill.** `pipeline backfill-charge-supersession` (DATABASE_URL from
    the root `.env`; CI-guarded like every local command). It derives, writes
    the pointers in one transaction, prints the derivation counts, the top
    slugs by folded volume, and the pinned sanity line:
 
        retail-theft sanity line: seen=… outcomes=… held_untraced=… …
 
-   **Sanity target (from the 36.0-A instruments): retail-theft lands near
-   1,989 seen with ~534 folded into CP twins.** Large deviation = STOP and
-   compare the derivation counts (`no_case_match` / `no_seq_match` /
-   `statute_mismatch`) before touching anything else.
+   **Sanity gate (amended at the 2026-07-25 gate-C ruling, superseding the
+   earlier 1,989/534 framing): folded lands AT OR UNDER the A2.3 bound; the
+   gate is claim accounting closing exactly + outcomes matching the fact
+   build exactly.** The A2.3 numbers were case-level UPPER BOUNDS
+   (min(mc_held, cp) per identity), not charge-level join predictions — the
+   deterministic join refusing bound-paired claims (dominantly on statute:
+   87.2% of refusals share title+section and differ only at
+   subsection/suffix, banked kill-bucket decomposition in the 2026-07-25
+   cycle report) is the conservative design working. Large UNEXPLAINED
+   deviation — accounting not closing, outcomes diverging from the build —
+   is still a STOP.
 
-4. **Rebuild + regenerate at your cadence.** `pipeline build-facts` (now also
+5. **Rebuild + regenerate at your cadence.** `pipeline build-facts` (now also
    re-derives supersession every run) → `pipeline generate-aggregates` (now
    also writes the volume population) → `pipeline validate-aggregates` (now
    also asserts volume closure, funnel-vs-percentages, and the fact-side
@@ -60,7 +83,7 @@ this runbook is stale.
    Outcome facts and every served percentage are unchanged by construction —
    only the volume/seen numbers are new.
 
-5. **Republish to prod** per `docs/runbook-rollback-republish.md` — the
+6. **Republish to prod** per `docs/runbook-rollback-republish.md` — the
    restore surface is FIFTEEN tables now (`charge_volume_aggregates` joined
    the public set); both runbooks already carry it.
 

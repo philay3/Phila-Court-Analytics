@@ -8989,3 +8989,58 @@ trespasser 3503 §§ B.11I, accident-involving offenses, arson) is the
 natural roster-2 candidate list. format:check currently fails on three
 untracked operator docs (board.md, pca-handoff.md, process-rulings.md) —
 pre-existing, outside this task's scope.
+
+## Phase 36 Data Cycle — v3 Reload, Supersession Backfill, Refresh Intake, Publish (2026-07-25)
+
+**Golden-writing invocations (19.3 protocol notes).** Tier-2 store archived
+whole BEFORE any write (`goldens-fixture-archive-20260725/`, 36,892
+entries — gate-A amendment condition). One consolidated `--update-goldens`
+pass over four corpus dirs (v7reload / frontier snapshot / refresh-intake /
+guard-class), run as an aborted sequential first run (892 writes, console
+preserved) plus four parallel completions: updated totals 892+12+14,089+
+1,121+19,759 = 35,873 = 37,369 − 1,496 legacy capstone golden_missing;
+new=0 everywhere (no absent golden created); tier1 match=47 all runs;
+failed=0. Blocking archive→store path-set check found the update surface =
+three v3 paths on all 35,873 + one attributed out-of-band class → STOP
+gate B → operator ruled the class in: R1 held-family delta (`903307f`,
+2 dockets / 10 charges: disposition_date nulled, +1 MISSING_DISPOSITION_DATE
+warning each, one review_needed flip) — first post-R1 re-parse, nothing
+unattributed. Full consoles + check output:
+`~/court-data/reports/phase36-consoles-20260725/` and the cycle report
+`~/court-data/reports/phase36-cycle-20260725T223728Z.md`.
+
+**Golden-writing invocation (stage 4 refresh intake):** `run-fixtures
+--init-goldens` over the frozen refresh snapshot (10,265 PDFs):
+`tier2: match=1121 diverged=0 updated=0 new=9144 golden_missing=0 failed=0`
+— the 1,121 C1-loaded dockets' v3 goldens matched (no drift STOP), 9,144
+absent goldens established for the new arrivals; tier1 match=47 untouched.
+
+**Cycle restatement (counts only; full verbatim record:
+`~/court-data/reports/phase36-cycle-20260725T223728Z.md`).** Stage 0 gates
+green (pipeline 1190/1 skipped; vitest all suites; e2e 29) after applying
+the two phase-36 migrations to BOTH test DBs. v3 reload: parse
+16,489+19,759+1,121 = 37,369, failed=0; gate B tripped on the archive-diff
+check and ruled — two attributed delta classes (v3-capture all dockets ×3
+paths; R1 held-family 2 dockets/10 charges), nothing unattributed; load
+refused 15,718 on the fact FKs (runbook gap — prune-first step added),
+prune ddb0fbd9 (42,983/17,765) then rerun single-arm
+replaced_newer_version 37,369 total; censuses: (8,3)=37,369, F3 unchanged,
+orig_seq on all 136,389, CP originating 12,617/12,617 (MC self-pointers
+24,725 inert), MDD warnings 41,808 exactly as ruled. Backfill #1: 14,030
+pointers; retail-theft 2,127 seen/349 folded — gate C ruled accepted
+(A2.3 targets were upper bounds); instrumentation banked (87.2% of
+statute refusals subsection-level; no_case_match = 100% absent parents,
+11,363). Refresh intake from frozen snapshot (10,265): imported 9,144 +
+1,121 dupes, extract/parse clean, goldens init new=9,144/diverged=0, load
+superseded=9,144 single-arm; charges 136,389→136,418, undisposed
+51,608→50,419. Backfill #2: 14,251 (+221, folds UP). Build 58a55b76
+(9fdbe0f6 pair — printer fix fddadc5): identity exact
+43,970+50,419+42,029=136,418; generate: volume closure exact,
+volume_outcomes==public_eligible 37,304; validate: ten populations
+violations=0, verdict=validated. Published fc13bedb local (gate E) and to
+prod (gate F): 12 migrations on prod, 15-line TOC, precondition 0/0,
+seventeen-table TRUNCATE, single-transaction restore exit 0, all 15
+count-pairs identical, live volume line + charge_only_volume arm verified
+on the domain, e2e 29/29. Served movement vs 9b870800: public facts
+32,942→37,304; slugs with outcomes 78→109 (roster 110); sentence facts
+public 10,649→11,623; data_range end 2026-07-21→2026-07-24.
