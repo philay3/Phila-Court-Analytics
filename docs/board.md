@@ -126,11 +126,20 @@ Fix **landed** (commit `67b62fc`): an interrupted window records `truncated`
 future full runs self-heal — but the 12 EXISTING windows are still `complete` in
 the ledger, so they need explicit `--recheck-windows` recovery.
 
-**Pending (needs go-ahead — re-collect + republish):** (2) `--court CP
---recheck-windows` over the 12 dates → fetch the ~521; (3) load (intake has newly
-added dockets too) → build-facts → aggregates → show before/after CP deltas →
-decide publish. Data impact ≈ 4.7% of in-window CP (521 / ~11,063). (4) promote
-the reconciliation scan to a standing per-cycle check.
+**Recovery + load DONE (2026-07-27), HELD before publish.** (2) `--court CP
+--recheck-windows` over the 12 dates closed all 12 windows (0 remaining CP gaps;
+443 CP freshly fetched, 11 fetch-failure residual). (3) Intake cycle
+(`cp-window-gap-recovery-20260727T050250Z`, included 1,717 = CP 761 + MC 956,
+bundling operator frontier additions): load 1717 single-arm, 0 dup dockets, pair
+(3,8) uniform; corpus 37,369→39,086; build `7038a026` reconciles=true, outcomes
+43,970→44,585 (+615), public_eligible 37,304→37,886; aggregate `ce4ec4ef`
+validated (violations=0). **Awaiting go-ahead to publish** (local
+publish-aggregates + prod republish per `runbook-rollback-republish`; ce4ec4ef
+vs published fc13bedb: outcome rows 538→539, judge 4039→4071). Worklog:
+"CP Window-Gap Fix + Recovery Intake (2026-07-27)".
+**Still pending:** (4) promote the ledger-reconciliation scan to a standing
+per-cycle check; the 11 fetch-failure residual is retryable via a later
+`--recheck-windows`.
 
 ## Provenance note — the live-query request could not be honored
 

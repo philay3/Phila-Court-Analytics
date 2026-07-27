@@ -9044,3 +9044,40 @@ count-pairs identical, live volume line + charge_only_volume arm verified
 on the domain, e2e 29/29. Served movement vs 9b870800: public facts
 32,942→37,304; slugs with outcomes 78→109 (roster 110); sentence facts
 public 10,649→11,623; data_range end 2026-07-21→2026-07-24.
+
+## CP Window-Gap Fix + Recovery Intake (2026-07-27)
+
+**Collector fix (commit `67b62fc`).** `search_engine.run` recorded a
+grid-complete window `complete` even when a run-ending stop (time cap /
+`--max-fetches` / fetch-phase streak) broke the fetch loop mid-window;
+monotonic completion then rerun-skipped the stranded rows. Ledger
+reconciliation (`cp_harvested > fetched+already_present+fetch_failures` over the
+CP window ledger) surfaced 12 CP windows / 521 harvested-but-unfetched dockets,
+all run-final (12 distinct runs); MC ledger clean (MC fetched first). Fix: an
+interrupted window records `truncated` (retryable), not `complete`; regression
+test added; 66 collector tests green. Board §0.2.
+
+**Recovery (operator, portal).** `--court CP --recheck-windows` over the 12
+dates → all 12 windows closed, 0 remaining CP gaps; 443 CP sheets freshly
+fetched (+49 already-present), 11 fetch-failure residual.
+
+**Intake load cycle (col-intake-protocol).** Freeze
+`cp-window-gap-recovery-20260727T050250Z`: staged 37,531, mtime_dropped 0,
+excluded_already_loaded 35,814, included 1,717 (CP 761 [207 2025 / 554 2026] +
+MC 956 2026 — recovery CP plus operator frontier additions). import-manual
+1717/0dup/0fail; extract-text success 1717/0fail; parse 1717/0fail (pair 3/8).
+
+**Golden-writing invocation.** `run-fixtures --init-goldens` over the frozen
+snapshot: tier2 `new=1717 diverged=0 match=0 golden_missing=0 failed=0`; tier1
+untouched (exit 0). Report
+`~/court-data/goldens/reports/tier2-report-20260727T051332_986012Z.json`.
+
+**Load + build + aggregates.** load `loaded=1717` single-arm, 0 duplicate docket
+numbers, version pair uniform (3,8); corpus 37,369→39,086 (CP 12,617→13,378, MC
+24,752→25,708); 12 recovery dates CP 0→443. build-facts `7038a026`: identity
+exact 44,585+56,429+42,506 = 143,520, reconciles=true; outcomes 43,970→44,585
+(+615), public_eligible 37,304→37,886 (+582); supersession re-derived
+superseded=14,949. generate `ce4ec4ef`; validate ten populations violations=0
+verdict=validated. Aggregate rows vs published `fc13bedb`: outcome 538→539,
+judge 4039→4071, volume 110→110. **HELD before publish** pending operator
+go-ahead (local publish + prod republish per `runbook-rollback-republish`).
