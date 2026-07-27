@@ -105,6 +105,33 @@ editions: initial → date-theory retracted → probe close-out). Remaining coll
 work is ordinary cadence: Jul-2026 frontier pass; the separate MC-side
 absent-parent fetch list (11,363).
 
+## 0.2 Addendum — CP window-gap collector defect (2026-07-27)
+
+Amends §0.1: the sequence-space ceiling holds, but a **separate** real defect
+surfaced. Ledger reconciliation (`cp_harvested > fetched + already_present +
+fetch_failures` over `window-ledger-philadelphia-CP.jsonl`) finds **12 CP dates,
+521 harvested-but-unfetched dockets**, each stamped `complete`: 2025-05-23,
+06-18, 09-24, 10-03, 10-17, 11-19; 2026-02-03, 04-10, 05-01, 05-13, 05-21,
+06-23. **All 12 are the final window of their run** (12 distinct runs); DB holds
+~0 CP each while MC is normal (MC is fetched first, so the time cap always lands
+on CP). **MC ledger: 0 gaps.**
+
+Root cause: `search_engine.run` recorded the grid-complete window `complete` even
+when a run-ending stop (time cap — incl. one tripping during a batch cooldown —
+`--max-fetches`, or a fetch-phase streak stop) broke the fetch loop mid-window;
+monotonic completion then rerun-skipped the stranded rows forever.
+
+Fix **landed** (commit `67b62fc`): an interrupted window records `truncated`
+(retryable), not `complete`; regression test added. Prevents new gaps and lets
+future full runs self-heal — but the 12 EXISTING windows are still `complete` in
+the ledger, so they need explicit `--recheck-windows` recovery.
+
+**Pending (needs go-ahead — re-collect + republish):** (2) `--court CP
+--recheck-windows` over the 12 dates → fetch the ~521; (3) load (intake has newly
+added dockets too) → build-facts → aggregates → show before/after CP deltas →
+decide publish. Data impact ≈ 4.7% of in-window CP (521 / ~11,063). (4) promote
+the reconciliation scan to a standing per-cycle check.
+
 ## Provenance note — the live-query request could not be honored
 
 The task asked for read-only queries against local canonical `pca`. **They did
