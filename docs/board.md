@@ -127,8 +127,8 @@ future full runs self-heal — but the 12 EXISTING windows are still `complete` 
 the ledger, so they need explicit `--recheck-windows` recovery.
 
 **Recovery + load DONE (2026-07-27), HELD before publish.** (2) `--court CP
---recheck-windows` over the 12 dates closed all 12 windows (0 remaining CP gaps;
-443 CP freshly fetched, 11 fetch-failure residual). (3) Intake cycle
+--recheck-windows` over the 12 dates closed all 12 zero-fetched windows (443 CP
+freshly fetched, 11 fetch-failure residual). (3) Intake cycle
 (`cp-window-gap-recovery-20260727T050250Z`, included 1,717 = CP 761 + MC 956,
 bundling operator frontier additions): load 1717 single-arm, 0 dup dockets, pair
 (3,8) uniform; corpus 37,369→39,086; build `7038a026` reconciles=true, outcomes
@@ -138,9 +138,17 @@ publish-aggregates activated `ce4ec4ef` and retired `fc13bedb`; prod 15-table
 restore exit 0, all 15 count-pairs identical local↔prod, `data-coverage`
 `available:true` `lastRefreshed` 2026-07-27T05:26:51Z (outcome rows 538→539,
 judge 4039→4071). Worklog: "CP Window-Gap Fix + Recovery Intake (2026-07-27)".
-**Still pending:** (4) promote the ledger-reconciliation scan to a standing
-per-cycle check; the 11 fetch-failure residual is retryable via a later
-`--recheck-windows`.
+**Standing check LANDED (d8dc639):** `pipeline audit-window-ledger` (read-only,
+`harvested > fetched+already_present+fetch_failures` per complete window; exits
+nonzero to gate a cycle). **Its first run corrects the record:** the earlier
+`secured==0` scan caught only the 12 fully-zero CP windows; the proper detector
+finds a broader **partial-strand** class — **27 windows / 894 dockets still
+stranded (CP 6/110, MC 21/784)** where a pre-fix run ended mid-window after
+fetching SOME rows and marked it complete. **Pending (operator + republish):**
+re-search those 27 dates with `--recheck-windows` → intake load → rebuild →
+republish (the 11 fetch-failure residual retries in the same pass). CP dates:
+2025-04-01, 07-16, 07-30, 10-29; 2026-02-25, 03-12. MC: 21 dates (run
+`audit-window-ledger` for the list).
 
 ## Provenance note — the live-query request could not be honored
 
