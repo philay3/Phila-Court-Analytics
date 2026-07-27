@@ -85,6 +85,26 @@ ran the gate). One pre-existing env-only failure in this sandbox: the
 charges-search tie-order test differs under the sandbox's PG16 collation;
 not a code defect, expect green on the operator's PG17.
 
+## 0.1 Addendum — CP coverage question CLOSED (2026-07-27)
+
+The AOPC docs' "missing ~37% of CP sequence space" figure was **stale** (measured
+2026-07-16 on the 13,210-docket corpus). Fresh audit on the current loaded envelope
+set (37,369 files): CP-2025 sequence capture **82.9%** (7,202 of 8,691), CP-2026
+**90.7%** (3,862 of 4,256); monthly filed-date counts flat and complete Jan-2025 →
+Jun-2026. Zero-CP weekdays are clerk batch cadence (operator portal-confirmed
+empty; weekly totals conserve), NOT collection misses — same-day MC-vs-CP volume
+comparison is not a valid collection diagnostic. Operator probed the 1,883 missing
+sequence numbers by docket-number search: every probed entry was not-found or
+"Adjudicated" with no retrievable public sheet (juvenile/sealed/expunged class).
+**Verdict: the corpus holds effectively all publicly available CP dockets; the
+capture figures above are the structural ceiling.** The 37% claim and both earlier
+coverage-band attempts (600–800, 540–620) are dead; methodology check-6 takes the
+audited figure, re-measured each cycle, never quoted from prose. Record:
+`~/court-data/reports/cp-collection-gap-audit-20260727.md` (three same-day
+editions: initial → date-theory retracted → probe close-out). Remaining collection
+work is ordinary cadence: Jul-2026 frontier pass; the separate MC-side
+absent-parent fetch list (11,363).
+
 ## Provenance note — the live-query request could not be honored
 
 The task asked for read-only queries against local canonical `pca`. **They did
