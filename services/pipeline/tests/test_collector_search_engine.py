@@ -487,7 +487,7 @@ def test_report_schema_and_coverage_and_attempts(tmp_path):
 # --- max-fetches (smoke) caps fetches but still writes the window entry -----
 
 
-def test_max_fetches_caps_and_stops_but_writes_window_entry(tmp_path):
+def test_max_fetches_caps_and_stops_writing_a_retryable_entry(tmp_path):
     clock = FakeClock()
     params = make_params(tmp_path, court="MC", max_fetches=2)
     harvest = _rows(
@@ -501,11 +501,45 @@ def test_max_fetches_caps_and_stops_but_writes_window_entry(tmp_path):
     assert report["stop_reason"] == "fetch_cap"
     assert len(transport.fetches) == 2  # only 2 live fetches
     assert report["totals"]["fetches"] == 2
-    # The window's ledger entry is still written (single-window run yields one).
+    # The window's ledger entry is still written (single-window run yields one),
+    # but as ``truncated`` — 2 of 4 harvested rows went unfetched, so recording
+    # it ``complete`` would strand them behind the monotonic rerun-skip.
     ledger = _read_ledger(params)
     assert len(ledger) == 1
-    assert ledger[0]["outcome"] == "complete"
+    assert ledger[0]["outcome"] == "truncated"
     assert ledger[0]["fetched"]["MC"] == 2
+
+
+def test_interrupted_window_not_marked_complete_and_retried_on_rerun(tmp_path):
+    """Regression (CP window-gap defect): a fetch loop cut short by a run-ending
+    stop must NOT record ``complete`` — the harvested-but-unfetched rows have to
+    be re-searched on the next run, not skipped forever."""
+    harvest = _rows(
+        ("CP", 1, "/x/CpDocketSheet?h=1"),
+        ("CP", 2, "/x/CpDocketSheet?h=2"),
+    )
+    # First run: cap fetches at 0 so the window is search-complete but 0 rows
+    # are secured — the exact shape of the 12 stranded CP windows.
+    params = make_params(tmp_path, court="CP", max_fetches=0)
+    transport = FakeSearchTransport(lambda d: _complete(), lambda d: harvest)
+    report = run_engine(params, transport, FakeClock())
+    assert report["stop_reason"] == "fetch_cap"
+    ledger = _read_ledger(params, court="CP")
+    assert len(ledger) == 1
+    assert ledger[0]["outcome"] == "truncated"
+    assert ledger[0]["cp_harvested"] == 2
+    assert ledger[0]["fetched"]["CP"] == 0
+
+    # Rerun (no cap, same ledger dir): the window is NOT skipped as complete —
+    # it is re-searched and both rows are fetched this time.
+    rerun_params = make_params(
+        tmp_path, court="CP", intake_dir=tmp_path / "intake2"
+    )
+    rerun_transport = FakeSearchTransport(lambda d: _complete(), lambda d: harvest)
+    rerun_report = run_engine(rerun_params, rerun_transport, FakeClock())
+    assert rerun_transport.searches == [date(2025, 6, 3)]  # re-searched, not skipped
+    assert rerun_report["date_range"]["skipped_complete"] == 0
+    assert len(rerun_transport.fetches) == 2
 
 
 # --- hit writes PDF; jitter after every portal request ---------------------

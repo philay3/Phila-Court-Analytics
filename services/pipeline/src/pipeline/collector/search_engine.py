@@ -553,25 +553,34 @@ def run(
                 interrupted = True
                 break
 
-        # Uniform rule: the window was search-complete, so it records a
-        # ``complete`` ledger entry with whatever fetch counts were achieved
-        # (a mid-fetch interruption from a streak/cap/time stop still writes it,
-        # so "one entry per searched window" holds and a single-window smoke
-        # run always yields its entry).
-        window_outcomes[LEDGER_COMPLETE] += 1
+        # A search-complete grid is NOT the same as a coverage-complete window.
+        # A run-ending stop (time cap — including one that trips during a
+        # mid-window batch cooldown — the --max-fetches cap, or a fetch-phase
+        # streak stop) can break the fetch loop with harvested rows still
+        # unfetched. Recording such a window ``complete`` strands them forever:
+        # completion is monotonic and rerun-skipped, so the harvested-but-
+        # unfetched dockets are never re-attempted (this is the CP window-gap
+        # defect — 12 run-final windows marked complete with 0 fetched). An
+        # interrupted window is therefore recorded ``truncated`` — a retryable
+        # outcome re-searched and re-fetched on the next run — while a window
+        # whose fetch loop ran to completion still records ``complete``. "One
+        # entry per searched window" still holds: an interrupted single-window
+        # smoke run yields its entry, just not a false ``complete``.
+        window_outcome = LEDGER_TRUNCATED if interrupted else LEDGER_COMPLETE
+        window_outcomes[window_outcome] += 1
         _write_ledger(
-            ledger_paths, wkey, run_id, now, LEDGER_COMPLETE, win_counts, win_skipped
+            ledger_paths, wkey, run_id, now, window_outcome, win_counts, win_skipped
         )
         window_summaries.append(
             _window_summary(
-                wkey, LEDGER_COMPLETE, win_counts, win_skipped, fetch_courts
+                wkey, window_outcome, win_counts, win_skipped, fetch_courts
             )
         )
         logger.info(
             "window",
             extra={
                 "window_date": wkey,
-                "outcome": LEDGER_COMPLETE,
+                "outcome": window_outcome,
                 "cp_harvested": win_counts["CP"]["harvested"],
                 "mc_harvested": win_counts["MC"]["harvested"],
                 # AC-7 (COL-3): fetch accounting labeled per fetched court so
