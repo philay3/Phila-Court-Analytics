@@ -9085,3 +9085,43 @@ dump/restore exit 0, precondition fact tables 0/0, all 15 count-pairs identical
 local↔prod (aggregate_runs 16, outcome 4736, judge_outcome 29429, volume 220);
 `data-coverage` `available:true` `lastRefreshed=2026-07-27T05:26:51Z` (matches
 the publish). No migration this cycle (data-only). Dump artifacts removed.
+
+## CP Partial-Strand Recovery (2026-07-27, second cycle)
+
+**audit-window-ledger finding + detector fix.** First live run of the standing
+check found a BROADER class than the recovered 12: 27 partial-strand windows
+(CP 6/110, MC 21/784) — pre-fix runs that fetched SOME rows then marked the
+window complete. Operator rechecked all 27 (`--court both --recheck-windows`);
+26 cleared. Detector grid-shrink false-positive fixed mid-flight (`6ff2fe7`): a
+recovery attempt against a since-shrunk grid (36==36) was out-reached by the
+stale larger entry (42/38) under max-reached → switched to closest-to-coverage
+(min harvested−reached, latest on ties); 43 tests. Remaining: 2026-05-21 MC
+(~30 rows unreached; fetches error-streak on a 631-row megaday — residue
+accepted; audit gates it).
+
+**Garbage-fetch STOP (intake-protocol systematic cluster).** Freeze included
+858; extract-text crawled — page audit vs the known-good first batch (median 3,
+max 11, 0 over 50) showed THIS batch median 4 but **max 1,396, avg 101.6, 35+
+over 50pp**. Root: **117 oversized MC PDFs** (~1,300pp, ~2.5 MB, page counts
+clustering at 1305/1396) — the portal served wrong/bulk documents for these
+fetches on the error-streaking high-volume days; the fetch "succeeded"
+byte-wise. Quarantined all 117 out of intake →
+`~/court-data/quarantine-oversized-fetch-20260727/` (99 from this batch + 18
+stale re-fetches of already-loaded dockets); re-froze the clean **759**.
+
+**Clean cycle.** extract 759 success/0-fail (median 4pp, 0 over 50); parse
+759/0; goldens tier2 new=759/diverged=0; load 759 single-arm, 0 dup, pair (3,8)
+uniform; corpus 39,086→39,845 (CP 13,378→13,489, MC 25,708→26,356). build
+`39ae3d59` identity exact 45,191+57,435+43,906 = 146,532, reconciles=true;
+outcomes 44,585→45,191 (+606), public_eligible 37,886→38,440 (+554). generate
+`33592256`; validate ten populations violations=0. **PUBLISHED local + prod
+(18:38):** activated `33592256` (retired `ce4ec4ef`); prod 15-table restore
+exit 0, precondition 0/0, all 15 count-pairs identical (aggregate_runs 17,
+outcome 5275, judge_outcome 33529, volume 330); `available:true`
+`lastRefreshed=2026-07-27T18:38:58Z`. No migration (data-only).
+
+**Open follow-ons:** (a) the 99 garbage-fetched MC dockets are still
+un-recovered — real sheets missing, ledger counts the junk as `reached`; needs a
+clean re-fetch now that the junk is out of intake; (b) collector oversize-guard
+— reject a >~50pp / >1 MB "docket sheet" fetch as a fetch-failure, not a false
+hit.

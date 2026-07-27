@@ -144,11 +144,20 @@ nonzero to gate a cycle). **Its first run corrects the record:** the earlier
 `secured==0` scan caught only the 12 fully-zero CP windows; the proper detector
 finds a broader **partial-strand** class — **27 windows / 894 dockets still
 stranded (CP 6/110, MC 21/784)** where a pre-fix run ended mid-window after
-fetching SOME rows and marked it complete. **Pending (operator + republish):**
-re-search those 27 dates with `--recheck-windows` → intake load → rebuild →
-republish (the 11 fetch-failure residual retries in the same pass). CP dates:
-2025-04-01, 07-16, 07-30, 10-29; 2026-02-25, 03-12. MC: 21 dates (run
-`audit-window-ledger` for the list).
+fetching SOME rows and marked it complete. **RECOVERED + republished (run
+`33592256`, 2026-07-27 18:38 local+prod, 15/15 identical):** operator rechecked
+the 27 dates (grid-shrink detector false-positive fixed en route, `6ff2fe7`);
+26/27 cleared. Intake carried a **garbage cluster** — 117 oversized MC PDFs
+(~1,300pp, ~2.5 MB; the portal served wrong/bulk docs on the error-streaking
+megadays) → quarantined to `~/court-data/quarantine-oversized-fetch-20260727/`;
+the clean **759** loaded → build `39ae3d59` (reconciles 146,532) → published.
+**Still open:** (a) 2026-05-21 MC — ~30 rows still unreached (fetches
+error-streak on that ~631-row day; audit gates it, residue accepted); (b) the 99
+garbage-fetched MC dockets are NOT truly recovered — real sheets still missing,
+and the ledger counts the junk fetch as `reached`, so `--recheck-windows` won't
+retry them until the junk PDFs are cleared from intake (done) and re-fetched;
+(c) **collector oversize-guard** — reject a >~50pp/>1 MB "docket sheet" fetch as
+a fetch-failure, not a false hit (follow-on; prevents this recurring).
 
 ## Provenance note — the live-query request could not be honored
 
@@ -214,12 +223,12 @@ _As of 2026-07-25._
 
 | Fact                    | Value                                                                           | Source                                            |
 | ----------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Published aggregate run | `ce4ec4ef-c5ff-40d6-a9a8-a01cda9fd707`                                          | `analytics.aggregate_runs` query, run 2026-07-27  |
-| Its fact build run      | `7038a026-c703-424a-ae8e-cf78d08c5ccc` (full-corpus rebuild; identity exact 143,520; reconciles=true) | same query, 2026-07-27 |
-| Build completed         | 2026-07-27 05:17:49 UTC (published 05:26:51 UTC)                                | `fact.fact_build_runs` query, run 2026-07-27      |
+| Published aggregate run | `33592256-b925-4fca-be08-95238e5c23a9`                                          | `analytics.aggregate_runs` query, run 2026-07-27  |
+| Its fact build run      | `39ae3d59-360b-40a5-856a-6ebf43aaae17` (clean 759-docket intake; identity exact 146,532; reconciles=true) | same query, 2026-07-27 |
+| Build completed         | 2026-07-27 18:37:42 UTC (published 18:38:58 UTC)                                | `fact.fact_build_runs` query, run 2026-07-27      |
 | Aggregate data_range    | 2025-01-01 .. 2026-07-24                                                        | `analytics.aggregate_runs` query, run 2026-07-26  |
-| Prior run               | `fc13bedb` (fact build `58a55b76`) invalidated (superseded) at the 2026-07-27 publish; `9b870800` at the 2026-07-26 publish | same query, 2026-07-27 |
-| Prod sync               | per-table counts identical local vs prod across all 15 tables at the 2026-07-27 republish | worklog "CP Window-Gap Fix + Recovery Intake" |
+| Prior run               | `ce4ec4ef` (fact build `7038a026`) invalidated at the 2026-07-27 18:38 publish; `fc13bedb` at the 05:26 publish (two publishes on 07-27) | same query, 2026-07-27 |
+| Prod sync               | per-table counts identical local vs prod across all 15 tables at the 2026-07-27 18:38 republish (2nd of the day) | worklog "CP Partial-Strand Recovery" |
 
 **Corpus** _(all from `operator-numbers-report`, snapshot 2026-07-22; corpus
 census re-confirmed identical in `recon-36.0`, snapshot 2026-07-24)_
