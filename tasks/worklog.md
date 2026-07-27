@@ -9125,3 +9125,40 @@ un-recovered — real sheets missing, ledger counts the junk as `reached`; needs
 clean re-fetch now that the junk is out of intake; (b) collector oversize-guard
 — reject a >~50pp / >1 MB "docket sheet" fetch as a fetch-failure, not a false
 hit.
+
+## Mega-Docket Reload — the "garbage" was real (2026-07-27, run `f1ebd632`)
+
+**Correction to the prior entry.** The 117 oversized MC PDFs quarantined during
+the partial-strand recovery were **NOT garbage.** Operator inspected the actual
+sheets: a large multi-defendant fraud case (news-covered), legitimately
+848–1,396 pages (shared procedural history across ~10 and ~25 co-defendants →
+the clustered 1305/1396 page counts), ~13 charges each. The proposed collector
+**oversize-guard is RETRACTED** — a page/byte reject would exclude real mega-case
+dockets.
+
+**Verification before reload.** Parse-sanity on one: 1,396pp → charge_count 13
+(status success). Then the full 99: extract success 99 / 0-fail (pages
+848–1,396), parse 99 / 0, charge counts min 12 / median 13 / max 13 (sum 1,286,
+0 over 40 — the parser reads the per-defendant charge table, not the shared
+history).
+
+**Reload cycle.** Un-quarantined 117 → intake; re-froze (18 already-loaded
+excluded by `[0b]`) → 99 included; import dup=99 (metadata from the first
+import); load 75 + 24 skipped_same_version (the 2-min foreground kill's partial)
+= 99, 0 dup dockets, pair (3,8) uniform; corpus 39,845→39,944, charges
+146,532→147,818 (+1,286). build `b6aa02a3` identity exact
+45,191+58,721+43,906 = 147,818, reconciles=true; **outcomes unchanged at 45,191,
+public_eligible at 38,440 — all mega-case charges pending (undisposed
+57,435→58,721)**; only volume moved (pending 57,076→58,362). generate
+`f1ebd632`; validate ten populations violations=0. **PUBLISHED local + prod
+(23:40):** activated `f1ebd632` (retired `33592256`); restore exit 0,
+precondition 0/0, 15 count-pairs identical (aggregate_runs 18, outcome 5814,
+judge_outcome 37629, volume 440); `available:true`
+`lastRefreshed=2026-07-27T23:40:53Z`. No migration. goldens-init for the 99 runs
+async (non-corpus). extract/goldens ~60s per mega-docket — an operational cost
+of huge dockets, not a defect.
+
+**Lesson banked:** a systematic size/page cluster is a STOP-and-inspect, not a
+STOP-and-discard — I over-called "garbage" on a heuristic; the intake protocol's
+"adjudicated, never self-resolved" is exactly why inspecting the sheet first
+mattered.

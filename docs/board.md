@@ -151,13 +151,21 @@ the 27 dates (grid-shrink detector false-positive fixed en route, `6ff2fe7`);
 (~1,300pp, ~2.5 MB; the portal served wrong/bulk docs on the error-streaking
 megadays) → quarantined to `~/court-data/quarantine-oversized-fetch-20260727/`;
 the clean **759** loaded → build `39ae3d59` (reconciles 146,532) → published.
-**Still open:** (a) 2026-05-21 MC — ~30 rows still unreached (fetches
-error-streak on that ~631-row day; audit gates it, residue accepted); (b) the 99
-garbage-fetched MC dockets are NOT truly recovered — real sheets still missing,
-and the ledger counts the junk fetch as `reached`, so `--recheck-windows` won't
-retry them until the junk PDFs are cleared from intake (done) and re-fetched;
-(c) **collector oversize-guard** — reject a >~50pp/>1 MB "docket sheet" fetch as
-a fetch-failure, not a false hit (follow-on; prevents this recurring).
+**Still open:** 2026-05-21 MC — ~30 rows still unreached (fetches error-streak on
+that ~631-row day; audit gates it, residue accepted).
+
+**CORRECTION (2026-07-27, run `f1ebd632`):** the "99 garbage-fetched MC dockets"
+were **NOT garbage.** Operator inspected the sheets: they are **real mega-case
+dockets** — a large multi-defendant fraud case (in the news), legitimately
+848–1,396 pages (shared procedural history), ~13 charges each. The page/size
+heuristic false-flagged them, and the **oversize-guard idea is RETRACTED** (it
+would reject real data). Un-quarantined and loaded the 99: parser extracts
+exactly ~13 charges/docket (sum 1,286, 0 over 40), corpus 39,845→39,944, charges
+146,532→147,818; charges all pending (ongoing case) so outcome facts unchanged
+at 45,191 — only volume/pending moved (+1,286). Published `f1ebd632` local+prod
+(15/15 identical, 23:40). The 18 already-loaded duplicates stayed excluded by
+`[0b]`. **Lesson:** a huge docket is not proof of a bad fetch — inspect the
+sheet before quarantining a systematic cluster.
 
 ## Provenance note — the live-query request could not be honored
 
@@ -223,12 +231,12 @@ _As of 2026-07-25._
 
 | Fact                    | Value                                                                           | Source                                            |
 | ----------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Published aggregate run | `33592256-b925-4fca-be08-95238e5c23a9`                                          | `analytics.aggregate_runs` query, run 2026-07-27  |
-| Its fact build run      | `39ae3d59-360b-40a5-856a-6ebf43aaae17` (clean 759-docket intake; identity exact 146,532; reconciles=true) | same query, 2026-07-27 |
-| Build completed         | 2026-07-27 18:37:42 UTC (published 18:38:58 UTC)                                | `fact.fact_build_runs` query, run 2026-07-27      |
+| Published aggregate run | `f1ebd632-a60f-4a6a-81f8-7a2fa5005ae1`                                          | `analytics.aggregate_runs` query, run 2026-07-27  |
+| Its fact build run      | `b6aa02a3-6dc1-4877-98be-08857e186dec` (99 mega-case dockets; identity exact 147,818; reconciles=true) | same query, 2026-07-27 |
+| Build completed         | 2026-07-27 23:39:54 UTC (published 23:40:53 UTC)                                | `fact.fact_build_runs` query, run 2026-07-27      |
 | Aggregate data_range    | 2025-01-01 .. 2026-07-24                                                        | `analytics.aggregate_runs` query, run 2026-07-26  |
-| Prior run               | `ce4ec4ef` (fact build `7038a026`) invalidated at the 2026-07-27 18:38 publish; `fc13bedb` at the 05:26 publish (two publishes on 07-27) | same query, 2026-07-27 |
-| Prod sync               | per-table counts identical local vs prod across all 15 tables at the 2026-07-27 18:38 republish (2nd of the day) | worklog "CP Partial-Strand Recovery" |
+| Prior run               | `33592256` (fact build `39ae3d59`) invalidated at the 23:40 publish; then `ce4ec4ef` (18:38) and `fc13bedb` (05:26) — four publishes on 07-27 | same query, 2026-07-27 |
+| Prod sync               | per-table counts identical local vs prod across all 15 tables at the 2026-07-27 23:40 republish (4th of the day) | worklog "Mega-Docket Reload" |
 
 **Corpus** _(all from `operator-numbers-report`, snapshot 2026-07-22; corpus
 census re-confirmed identical in `recon-36.0`, snapshot 2026-07-24)_
