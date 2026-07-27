@@ -10,6 +10,7 @@ from datetime import date
 
 import pytest
 
+from pipeline import cli
 from pipeline.collector import window
 
 
@@ -180,6 +181,224 @@ def test_append_window_entry_is_append_only(tmp_path):
     window.append_window_entry(path, _entry("2025-06-02", "complete"))
     lines = [json.loads(x) for x in path.read_text().splitlines()]
     assert [e["date"] for e in lines] == ["2025-06-01", "2025-06-02"]
+
+
+# --- stranded-window reconciliation audit (find_stranded_windows) ------------
+
+
+def _recon(
+    day,
+    outcome,
+    *,
+    court="CP",
+    harvested=0,
+    fetched=0,
+    already=0,
+    failures=0,
+    searched_at="2026-07-12T00:00:00+00:00",
+):
+    """A full PD-5 window entry with per-court harvested/reached bookkeeping.
+
+    ``reached`` for the court is ``fetched + already + failures``; the other
+    court's counts are all zero (this entry belongs to ``court``).
+    """
+    other = "MC" if court == "CP" else "CP"
+    return {
+        "date": day,
+        "court": court,
+        "run_id": "run-x",
+        "searched_at": searched_at,
+        "outcome": outcome,
+        "cp_harvested": harvested if court == "CP" else 0,
+        "mc_harvested": harvested if court == "MC" else 0,
+        "fetched": {court: fetched, other: 0},
+        "already_present": {court: already, other: 0},
+        "fetch_failures": {court: failures, other: 0},
+        "skipped_rows": 0,
+    }
+
+
+def test_find_stranded_flags_complete_window_with_unreached_rows(tmp_path):
+    # (a) a complete entry with harvested > reached is stranded; unreached is
+    # harvested - (fetched + already_present + fetch_failures).
+    path = window.window_ledger_path(tmp_path, "CP")
+    _write(
+        path,
+        [
+            _recon(
+                "2025-03-01",
+                "complete",
+                harvested=50,
+                fetched=10,
+                already=5,
+                failures=2,
+            )
+        ],
+    )
+    assert window.find_stranded_windows(path, "CP") == [
+        {"date": "2025-03-01", "harvested": 50, "reached": 17, "unreached": 33}
+    ]
+
+
+def test_find_stranded_recovery_reconciled_by_later_complete_entry(tmp_path):
+    # (b) an early stranded complete AND a later complete that fully
+    # reconciles (harvested == reached) — the best (max-reached) attempt wins,
+    # so the date is NOT flagged. This is the post-recovery expectation.
+    path = window.window_ledger_path(tmp_path, "CP")
+    _write(
+        path,
+        [
+            _recon(
+                "2025-03-02",
+                "complete",
+                harvested=40,
+                fetched=10,
+                searched_at="2026-07-12T00:00:00+00:00",
+            ),
+            _recon(
+                "2025-03-02",
+                "complete",
+                harvested=40,
+                fetched=38,
+                already=2,
+                searched_at="2026-07-20T00:00:00+00:00",
+            ),
+        ],
+    )
+    assert window.find_stranded_windows(path, "CP") == []
+
+
+def test_find_stranded_ignores_truncated_only_window(tmp_path):
+    # (c) a truncated-only date (never completed) is retryable, not stranded —
+    # even with harvested rows and zero reached.
+    path = window.window_ledger_path(tmp_path, "CP")
+    _write(path, [_recon("2025-03-03", "truncated", harvested=25, fetched=0)])
+    assert window.find_stranded_windows(path, "CP") == []
+
+
+def test_find_stranded_ignores_clean_complete_window(tmp_path):
+    # (d) a clean complete date (harvested == reached) is not stranded.
+    path = window.window_ledger_path(tmp_path, "CP")
+    _write(path, [_recon("2025-03-04", "complete", harvested=12, fetched=12)])
+    assert window.find_stranded_windows(path, "CP") == []
+
+
+def test_find_stranded_missing_file_is_empty(tmp_path):
+    # (e) a missing ledger file yields no stranded windows.
+    path = window.window_ledger_path(tmp_path, "CP")
+    assert window.find_stranded_windows(path, "CP") == []
+
+
+def test_find_stranded_empty_outcome_never_stranded(tmp_path):
+    # An empty (harvested-0) window is complete but has nothing to strand.
+    path = window.window_ledger_path(tmp_path, "MC")
+    _write(path, [_recon("2025-03-05", "empty", court="MC", harvested=0)])
+    assert window.find_stranded_windows(path, "MC") == []
+
+
+def test_find_stranded_sorted_by_date_across_multiple_windows(tmp_path):
+    # Multiple stranded dates come back sorted; a clean complete is excluded.
+    path = window.window_ledger_path(tmp_path, "CP")
+    _write(
+        path,
+        [
+            _recon("2025-04-03", "complete", harvested=9, fetched=1),  # stranded
+            _recon("2025-04-01", "complete", harvested=4, fetched=4),  # clean
+            _recon("2025-04-02", "complete", harvested=7, fetched=2, already=1),
+        ],
+    )
+    assert window.find_stranded_windows(path, "CP") == [
+        {"date": "2025-04-02", "harvested": 7, "reached": 3, "unreached": 4},
+        {"date": "2025-04-03", "harvested": 9, "reached": 1, "unreached": 8},
+    ]
+
+
+def test_find_stranded_skips_malformed_line_loudly(tmp_path, caplog):
+    # Mirrors the loader: a malformed line is skipped and counted with a
+    # single WARNING; the good stranded window is still reported.
+    path = window.window_ledger_path(tmp_path, "CP")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    good = json.dumps(_recon("2025-05-01", "complete", harvested=8, fetched=3))
+    path.write_text(good + "\n" + "{not valid json\n")
+    with caplog.at_level(logging.WARNING, logger="pipeline.collector"):
+        stranded = window.find_stranded_windows(path, "CP")
+    assert stranded == [
+        {"date": "2025-05-01", "harvested": 8, "reached": 3, "unreached": 5}
+    ]
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert warnings[0].skipped == 1
+
+
+def test_find_stranded_skips_misdirected_court_entries(tmp_path):
+    # A CP entry in (or renamed to) the MC ledger never counts toward MC — the
+    # audit inherits the misdirected-ledger guard.
+    path = window.window_ledger_path(tmp_path, "MC")
+    _write(
+        path,
+        [
+            # clean MC window
+            _recon("2025-06-01", "complete", court="MC", harvested=6, fetched=6),
+            # a CP strand misdirected into the MC ledger: must be ignored
+            _recon("2025-06-02", "complete", court="CP", harvested=6, fetched=1),
+        ],
+    )
+    assert window.find_stranded_windows(path, "MC") == []
+
+
+def test_find_stranded_rejects_unknown_court(tmp_path):
+    with pytest.raises(ValueError, match="court"):
+        window.find_stranded_windows(tmp_path / "x.jsonl", "both")
+
+
+def test_cli_audit_returns_nonzero_when_stranded(tmp_path, monkeypatch, capsys):
+    # CLI gate: a stranded CP ledger makes the command exit nonzero and print
+    # the stranded date. Hygiene: counts and dates only — no DATABASE_URL.
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    ledger_dir = tmp_path / "coverage"
+    _write(
+        window.window_ledger_path(ledger_dir, "CP"),
+        [_recon("2025-03-01", "complete", harvested=50, fetched=17)],
+    )
+    rc = cli.main(["audit-window-ledger", "--ledger-dir", str(ledger_dir)])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "STRANDED" in out
+    assert "2025-03-01" in out
+    assert "DATABASE_URL" not in out
+
+
+def test_cli_audit_returns_zero_when_clean(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    ledger_dir = tmp_path / "coverage"
+    _write(
+        window.window_ledger_path(ledger_dir, "CP"),
+        [_recon("2025-03-04", "complete", harvested=12, fetched=12)],
+    )
+    rc = cli.main(["audit-window-ledger", "--ledger-dir", str(ledger_dir)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "OK" in out
+    for court in ("CP", "MC"):
+        assert f"audit-window-ledger[{court}]: 0 stranded windows" in out
+
+
+def test_cli_audit_refuses_in_ci(monkeypatch, capsys):
+    monkeypatch.setenv("CI", "true")
+    rc = cli.main(["audit-window-ledger"])
+    assert rc == 2
+    entry = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert entry["command"] == "audit-window-ledger"
+    assert "CI" in entry["message"]
+
+
+def test_cli_audit_defaults_point_at_coverage(monkeypatch):
+    parser = cli.build_parser()
+    args = parser.parse_args(["audit-window-ledger"])
+    assert args.ledger_dir.name == "coverage"
+    assert args.ledger_dir.parent.name == "court-data"
 
 
 # --- COL-3: one-time shared-ledger migration ---------------------------------

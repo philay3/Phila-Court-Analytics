@@ -143,6 +143,123 @@ def load_complete_windows(path: Path, court: str) -> set[str]:
     return complete
 
 
+def _entry_int(value: object) -> int:
+    """A ledger count coerced to a non-negative-safe int (0 for anything else).
+
+    Booleans are ints in Python but never valid counts, so they read as 0.
+    """
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    return 0
+
+
+def find_stranded_windows(path: Path, court: str) -> list[dict]:
+    """Report dates whose window is COMPLETE yet left harvested rows unreached.
+
+    This is the STANDING per-cycle detector for the strand bug: a run-ending
+    stop (time cap, ``--max-fetches``, streak) once let the search collector
+    record a window ``complete`` mid-window, so harvested-but-unfetched dockets
+    were pinned behind monotonic rerun-skip forever, never retried. Interrupted
+    windows now record ``truncated`` (retryable), but a regression must be
+    caught by tooling, not eyeball — hence this reconciliation audit.
+
+    For THIS court, each entry contributes
+    ``harvested = entry[f"{court.lower()}_harvested"]`` and
+    ``reached = fetched[court] + already_present[court] + fetch_failures[court]``
+    (every count defaulting to 0 if missing). Entries are grouped by ``date``.
+    A date is STRANDED iff both hold:
+
+    * ``is_complete`` — some entry for the date has an outcome in
+      :data:`COMPLETE_OUTCOMES` (completion is MONOTONIC: once complete, the
+      date is rerun-skipped forever); and
+    * the ``best`` attempt — the entry with the MAXIMUM ``reached`` (the
+      most-secured attempt; ties broken by the latest ``searched_at``) — still
+      has ``harvested > reached``.
+
+    A ``truncated``/``blocked``-only date never completed, so it is retryable
+    and NOT stranded; an ``empty``/harvested-0 date is never stranded; a later
+    fully-reconciling ``complete`` entry (``harvested == reached``) clears an
+    earlier stranded one (the recovery case).
+
+    Robustness mirrors :func:`load_complete_windows`: a missing file returns
+    ``[]``; a line that does not parse, lacks a string
+    ``date``/``outcome``/``court``, or whose ``court`` is not THIS ledger's
+    court is skipped and counted, and a nonzero skip count logs a WARNING.
+
+    Returns, per stranded date, ``{"date", "harvested", "reached",
+    "unreached"}`` (``unreached = harvested - reached``), sorted by date.
+    """
+    _require_court(court)
+    if not path.exists():
+        return []
+    harvested_key = f"{court.lower()}_harvested"
+    complete_dates: set[str] = set()
+    by_date: dict[str, list[dict]] = {}
+    skipped = 0
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+            day = entry["date"]
+            outcome = entry["outcome"]
+            entry_court = entry["court"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            skipped += 1
+            continue
+        if (
+            not isinstance(day, str)
+            or not isinstance(outcome, str)
+            or not isinstance(entry_court, str)
+        ):
+            skipped += 1
+            continue
+        if entry_court != court:
+            skipped += 1
+            continue
+        if outcome in COMPLETE_OUTCOMES:
+            complete_dates.add(day)
+        by_date.setdefault(day, []).append(entry)
+    if skipped:
+        logger.warning(
+            "window ledger audit: skipped unreadable or out-of-scope entries",
+            extra={"skipped": skipped, "court": court, "ledger_path": str(path)},
+        )
+
+    def _reached(entry: dict) -> int:
+        total = 0
+        for section in ("fetched", "already_present", "fetch_failures"):
+            block = entry.get(section)
+            if isinstance(block, dict):
+                total += _entry_int(block.get(court))
+        return total
+
+    def _searched_at(entry: dict) -> str:
+        at = entry.get("searched_at")
+        return at if isinstance(at, str) else ""
+
+    stranded: list[dict] = []
+    for day in sorted(complete_dates):
+        entries = by_date.get(day, [])
+        if not entries:
+            continue  # unreachable (complete implies a recorded entry), belt-and-braces
+        best = max(entries, key=lambda e: (_reached(e), _searched_at(e)))
+        harvested = _entry_int(best.get(harvested_key))
+        reached = _reached(best)
+        if harvested > reached:
+            stranded.append(
+                {
+                    "date": day,
+                    "harvested": harvested,
+                    "reached": reached,
+                    "unreached": harvested - reached,
+                }
+            )
+    return stranded
+
+
 def append_window_entry(path: Path, entry: dict) -> None:
     """Append one searched-window entry (append-only; creates parent)."""
     path.parent.mkdir(parents=True, exist_ok=True)

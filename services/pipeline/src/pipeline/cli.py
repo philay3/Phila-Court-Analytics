@@ -32,6 +32,11 @@ from pipeline.collector.engine import (
     BATCH_COOLDOWN_DEFAULT_SECONDS,
     BATCH_SIZE_DEFAULT,
 )
+from pipeline.collector.window import (
+    WINDOW_LEDGER_COURTS,
+    find_stranded_windows,
+    window_ledger_path,
+)
 from pipeline.envelope import run_parse
 from pipeline.equivalence_check import SALT_ENV_VAR, run_equivalence_check
 from pipeline.evaluation.extractors import EXTRACTORS
@@ -108,6 +113,13 @@ SUBCOMMANDS = (
         "One-time COL-3 migration: split the shared search-mode window ledger "
         "into court-scoped ledgers and archive the shared file.",
     ),
+    (
+        "audit-window-ledger",
+        "Scan the court-scoped search-mode window ledgers and report STRANDED "
+        "windows: dates marked complete (rerun-skipped forever) whose best "
+        "attempt left harvested rows unreached. Read-only; exits nonzero if any "
+        "strand is found so it can gate a cycle.",
+    ),
     ("evaluate-extractors", "Compare candidate PDF text extractors."),
     (
         "run-fixtures",
@@ -135,6 +147,7 @@ IMPLEMENTED_COMMANDS = frozenset(
         "publish-aggregates",
         "collect",
         "migrate-window-ledger",
+        "audit-window-ledger",
         "run-fixtures",
     }
 )
@@ -672,6 +685,21 @@ def build_parser() -> argparse.ArgumentParser:
                     "~/court-data/collection-runs/."
                 ),
             )
+        if name == "audit-window-ledger":
+            # Read-only detector: one directory, no pacing or collection
+            # parameters — it never touches the portal or the DB.
+            subparser.add_argument(
+                "--ledger-dir",
+                type=Path,
+                # Resolved here, at the CLI/run boundary — never at import.
+                default=Path.home() / "court-data" / "coverage",
+                help=(
+                    "Directory holding the court-scoped window ledgers to scan "
+                    "(window-ledger-philadelphia-<court>.jsonl); read-only, "
+                    "nothing is written. Must be outside any git working tree. "
+                    "Default: ~/court-data/coverage/."
+                ),
+            )
         if name == "evaluate-extractors":
             subparser.add_argument(
                 "--fixtures-dir",
@@ -946,6 +974,41 @@ def main(argv: list[str] | None = None) -> int:
             ledger_dir=args.ledger_dir,
             runs_dir=args.runs_dir,
         )
+    if args.command == "audit-window-ledger":
+        if running_in_ci():
+            logger.error(
+                "audit-window-ledger scans local court-data ledgers and must "
+                "never run in a CI environment; refusing",
+                extra={"command": args.command},
+            )
+            return 2
+        # Pure read of the local ledger files: no portal access, no DB, no
+        # salt. Console output is dates and counts only (hygiene) — never a
+        # docket number, never DATABASE_URL.
+        total_stranded = 0
+        for court in WINDOW_LEDGER_COURTS:
+            path = window_ledger_path(args.ledger_dir, court)
+            stranded = find_stranded_windows(path, court)
+            total_stranded += len(stranded)
+            if stranded:
+                unreached = sum(w["unreached"] for w in stranded)
+                dates = ", ".join(w["date"] for w in stranded)
+                print(
+                    f"audit-window-ledger[{court}]: STRANDED "
+                    f"{len(stranded)} window(s), {unreached} unreached row(s); "
+                    f"dates: {dates}"
+                )
+            else:
+                print(f"audit-window-ledger[{court}]: 0 stranded windows")
+        if total_stranded:
+            print(
+                f"audit-window-ledger: FAIL — {total_stranded} stranded "
+                "window(s) across CP+MC (harvested rows pinned behind "
+                "rerun-skip); investigate before the cycle proceeds"
+            )
+            return 1
+        print("audit-window-ledger: OK — no stranded windows in CP or MC")
+        return 0
     if args.command == "extract-text":
         return run_extraction(
             args.path,
