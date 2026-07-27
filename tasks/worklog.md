@@ -9079,5 +9079,9 @@ exact 44,585+56,429+42,506 = 143,520, reconciles=true; outcomes 43,970→44,585
 (+615), public_eligible 37,304→37,886 (+582); supersession re-derived
 superseded=14,949. generate `ce4ec4ef`; validate ten populations violations=0
 verdict=validated. Aggregate rows vs published `fc13bedb`: outcome 538→539,
-judge 4039→4071, volume 110→110. **HELD before publish** pending operator
-go-ahead (local publish + prod republish per `runbook-rollback-republish`).
+judge 4039→4071, volume 110→110. **PUBLISHED local + prod (2026-07-27).**
+publish-aggregates activated `ce4ec4ef`, retired `fc13bedb`; prod 15-table
+dump/restore exit 0, precondition fact tables 0/0, all 15 count-pairs identical
+local↔prod (aggregate_runs 16, outcome 4736, judge_outcome 29429, volume 220);
+`data-coverage` `available:true` `lastRefreshed=2026-07-27T05:26:51Z` (matches
+the publish). No migration this cycle (data-only). Dump artifacts removed.

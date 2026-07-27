@@ -133,10 +133,11 @@ the ledger, so they need explicit `--recheck-windows` recovery.
 bundling operator frontier additions): load 1717 single-arm, 0 dup dockets, pair
 (3,8) uniform; corpus 37,369→39,086; build `7038a026` reconciles=true, outcomes
 43,970→44,585 (+615), public_eligible 37,304→37,886; aggregate `ce4ec4ef`
-validated (violations=0). **Awaiting go-ahead to publish** (local
-publish-aggregates + prod republish per `runbook-rollback-republish`; ce4ec4ef
-vs published fc13bedb: outcome rows 538→539, judge 4039→4071). Worklog:
-"CP Window-Gap Fix + Recovery Intake (2026-07-27)".
+validated (violations=0), then **PUBLISHED local + prod (2026-07-27)**:
+publish-aggregates activated `ce4ec4ef` and retired `fc13bedb`; prod 15-table
+restore exit 0, all 15 count-pairs identical local↔prod, `data-coverage`
+`available:true` `lastRefreshed` 2026-07-27T05:26:51Z (outcome rows 538→539,
+judge 4039→4071). Worklog: "CP Window-Gap Fix + Recovery Intake (2026-07-27)".
 **Still pending:** (4) promote the ledger-reconciliation scan to a standing
 per-cycle check; the 11 fetch-failure residual is retryable via a later
 `--recheck-windows`.
@@ -205,12 +206,12 @@ _As of 2026-07-25._
 
 | Fact                    | Value                                                                           | Source                                            |
 | ----------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Published aggregate run | `fc13bedb-edf7-44b7-b587-fa798d7d6d8d`                                          | `analytics.aggregate_runs` query, run 2026-07-26  |
-| Its fact build run      | `58a55b76-9982-4612-9dc5-1dd660ddd481` (one of two completed fact builds; `9fdbe0f6` completed 01:21 UTC same night, unreferenced) | same query, 2026-07-26 |
-| Build completed         | 2026-07-26 01:24:48 UTC (published 01:34:35 UTC)                                | `fact.fact_build_runs` query, run 2026-07-26      |
+| Published aggregate run | `ce4ec4ef-c5ff-40d6-a9a8-a01cda9fd707`                                          | `analytics.aggregate_runs` query, run 2026-07-27  |
+| Its fact build run      | `7038a026-c703-424a-ae8e-cf78d08c5ccc` (full-corpus rebuild; identity exact 143,520; reconciles=true) | same query, 2026-07-27 |
+| Build completed         | 2026-07-27 05:17:49 UTC (published 05:26:51 UTC)                                | `fact.fact_build_runs` query, run 2026-07-27      |
 | Aggregate data_range    | 2025-01-01 .. 2026-07-24                                                        | `analytics.aggregate_runs` query, run 2026-07-26  |
-| Prior run               | `9b870800` (fact build `ddb0fbd9`) invalidated (superseded) at the 2026-07-26 publish; `82b6cc99` invalidated at the 2026-07-22 publish | same query, 2026-07-26 |
-| Prod sync               | per-table counts identical local vs prod across all 14 tables at last republish | worklog Stage D STOP 2                            |
+| Prior run               | `fc13bedb` (fact build `58a55b76`) invalidated (superseded) at the 2026-07-27 publish; `9b870800` at the 2026-07-26 publish | same query, 2026-07-27 |
+| Prod sync               | per-table counts identical local vs prod across all 15 tables at the 2026-07-27 republish | worklog "CP Window-Gap Fix + Recovery Intake" |
 
 **Corpus** _(all from `operator-numbers-report`, snapshot 2026-07-22; corpus
 census re-confirmed identical in `recon-36.0`, snapshot 2026-07-24)_
@@ -338,7 +339,7 @@ values under its CHECK — `in_progress`, `completed`, `failed`. Validation over
 generated run flips it to `completed` on a clean pass and to `failed` on any
 violation, which structurally blocks publish via
 `aggregate_runs_published_at_check`. `published_at` and `invalidated_at` are
-timestamp columns, not statuses: the live published run `fc13bedb` carries
+timestamp columns, not statuses: the live published run `ce4ec4ef` carries
 `status = completed`. A partial unique index permits at most one active
 published run. (`recon-36.0` R5; `operator-numbers-report` §7)
 
