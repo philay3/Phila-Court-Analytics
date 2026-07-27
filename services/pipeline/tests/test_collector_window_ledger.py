@@ -242,8 +242,8 @@ def test_find_stranded_flags_complete_window_with_unreached_rows(tmp_path):
 
 def test_find_stranded_recovery_reconciled_by_later_complete_entry(tmp_path):
     # (b) an early stranded complete AND a later complete that fully
-    # reconciles (harvested == reached) — the best (max-reached) attempt wins,
-    # so the date is NOT flagged. This is the post-recovery expectation.
+    # reconciles (harvested == reached) — the closest-to-coverage attempt
+    # wins, so the date is NOT flagged. This is the post-recovery expectation.
     path = window.window_ledger_path(tmp_path, "CP")
     _write(
         path,
@@ -266,6 +266,73 @@ def test_find_stranded_recovery_reconciled_by_later_complete_entry(tmp_path):
         ],
     )
     assert window.find_stranded_windows(path, "CP") == []
+
+
+def test_find_stranded_grid_shrank_recovery_not_flagged(tmp_path):
+    # Grid-shrink recovery (real finding 2026-07-27): the first attempt left
+    # rows unreached against a LARGER grid (42, reached 38); a later recheck
+    # fully secured the SHRUNK current grid (36 == 36). max-reached would pick
+    # the stale 42/38 entry and mis-flag the recovered date; closest-to-
+    # coverage picks the fully-reconciling 36/36 entry and clears it.
+    path = window.window_ledger_path(tmp_path, "MC")
+    _write(
+        path,
+        [
+            _recon(
+                "2025-12-21",
+                "complete",
+                court="MC",
+                harvested=42,
+                fetched=38,
+                searched_at="2026-07-18T02:32:52+00:00",
+            ),
+            _recon(
+                "2025-12-21",
+                "complete",
+                court="MC",
+                harvested=36,
+                fetched=4,
+                already=32,
+                searched_at="2026-07-27T16:55:33+00:00",
+            ),
+        ],
+    )
+    assert window.find_stranded_windows(path, "MC") == []
+
+
+def test_find_stranded_truncated_recheck_still_short_is_flagged(tmp_path):
+    # A recheck that IMPROVED coverage but was interrupted (truncated) before
+    # finishing is still flagged, reporting the best (closest) attempt's
+    # residual (208 - 165 = 43) rather than the stale first attempt's gap.
+    path = window.window_ledger_path(tmp_path, "MC")
+    _write(
+        path,
+        [
+            _recon(
+                "2026-05-21",
+                "complete",
+                court="MC",
+                harvested=215,
+                fetched=65,
+                already=8,
+                failures=1,
+                searched_at="2026-07-21T02:26:54+00:00",
+            ),
+            _recon(
+                "2026-05-21",
+                "truncated",
+                court="MC",
+                harvested=208,
+                fetched=81,
+                already=66,
+                failures=18,
+                searched_at="2026-07-27T09:56:41+00:00",
+            ),
+        ],
+    )
+    assert window.find_stranded_windows(path, "MC") == [
+        {"date": "2026-05-21", "harvested": 208, "reached": 165, "unreached": 43}
+    ]
 
 
 def test_find_stranded_ignores_truncated_only_window(tmp_path):

@@ -174,14 +174,16 @@ def find_stranded_windows(path: Path, court: str) -> list[dict]:
     * ``is_complete`` — some entry for the date has an outcome in
       :data:`COMPLETE_OUTCOMES` (completion is MONOTONIC: once complete, the
       date is rerun-skipped forever); and
-    * the ``best`` attempt — the entry with the MAXIMUM ``reached`` (the
-      most-secured attempt; ties broken by the latest ``searched_at``) — still
-      has ``harvested > reached``.
+    * the ``best`` attempt — the entry that came CLOSEST to full coverage,
+      i.e. the smallest ``harvested - reached`` (latest ``searched_at`` on
+      ties), among entries that harvested anything — still has
+      ``harvested > reached``.
 
     A ``truncated``/``blocked``-only date never completed, so it is retryable
-    and NOT stranded; an ``empty``/harvested-0 date is never stranded; a later
-    fully-reconciling ``complete`` entry (``harvested == reached``) clears an
-    earlier stranded one (the recovery case).
+    and NOT stranded; an ``empty``/harvested-0 date is never stranded; ANY
+    single attempt that fully secured its grid (``reached >= harvested``)
+    clears the date (the recovery case) — even if an earlier attempt against a
+    larger, since-shrunk grid shows a higher raw ``reached``.
 
     Robustness mirrors :func:`load_complete_windows`: a missing file returns
     ``[]``; a line that does not parse, lacks a string
@@ -242,10 +244,26 @@ def find_stranded_windows(path: Path, court: str) -> list[dict]:
 
     stranded: list[dict] = []
     for day in sorted(complete_dates):
-        entries = by_date.get(day, [])
-        if not entries:
-            continue  # unreachable (complete implies a recorded entry), belt-and-braces
-        best = max(entries, key=lambda e: (_reached(e), _searched_at(e)))
+        # Only attempts that actually harvested rows can strand OR recover a
+        # date; a blocked/empty search harvested nothing and speaks to neither.
+        harvesting = [
+            e for e in by_date.get(day, []) if _entry_int(e.get(harvested_key)) > 0
+        ]
+        if not harvesting:
+            continue
+        # The representative attempt is the one that came CLOSEST to full
+        # coverage — the smallest (harvested - reached), latest on ties. A
+        # single attempt that fully secured its grid (reached >= harvested)
+        # recovers the date even when an EARLIER attempt against a larger grid
+        # shows a higher raw reached count: grids shrink as sheets are
+        # re-rendered or sealed, so a recovery attempt's smaller, fully-fetched
+        # grid is the current truth, not the stale larger one (max-reached
+        # would mis-flag the recovered date — real finding, 2026-07-27).
+        harvesting.sort(key=_searched_at, reverse=True)  # latest first (tiebreak)
+        best = min(
+            harvesting,
+            key=lambda e: _entry_int(e.get(harvested_key)) - _reached(e),
+        )
         harvested = _entry_int(best.get(harvested_key))
         reached = _reached(best)
         if harvested > reached:
