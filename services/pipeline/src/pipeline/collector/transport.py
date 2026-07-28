@@ -37,6 +37,12 @@ logger = logging.getLogger("pipeline.collector")
 
 PORTAL = "https://ujsportal.pacourts.us/CaseSearch"
 
+# PDF-download timeout. Playwright's request.get default is 30s, which is too
+# short for legitimate mega-case sheets (800–1,400 pages, multi-MB) served by a
+# bogged-down portal — they time out mid-fetch and strand the day. 120s lets
+# the giants finish while still bounding a genuinely hung request.
+FETCH_PDF_TIMEOUT_MS = 120_000
+
 # Presence-only selectors for a bot-check / captcha interstitial. Count-based;
 # no text is read out of these elements.
 _BOT_CHECK_SELECTOR = (
@@ -165,7 +171,7 @@ class PlaywrightTransport:
         url = (
             href if href.startswith("http") else f"https://ujsportal.pacourts.us{href}"
         )
-        resp = page.context.request.get(url)
+        resp = page.context.request.get(url, timeout=FETCH_PDF_TIMEOUT_MS)
         if not resp.ok:
             return None
         body = resp.body()

@@ -42,6 +42,9 @@ logger = logging.getLogger("pipeline.collector")
 
 PORTAL = "https://ujsportal.pacourts.us/CaseSearch"
 BROWSER_RESTART_EVERY = 150  # fetches per browser session, guards memory (ported)
+# Source: transport.py ``FETCH_PDF_TIMEOUT_MS`` — 120s so mega-case sheets
+# (800–1,400 pages) finish downloading instead of timing out on the 30s default.
+FETCH_PDF_TIMEOUT_MS = 120_000
 
 # --- Pinned selectors (COL-2 Step 0 recon, F5 sign-off) --------------------
 # Truncation banner: presence-check for this substring (count > 0); the matched
@@ -171,7 +174,7 @@ class PlaywrightSearchTransport:
         url = (
             href if href.startswith("http") else f"https://ujsportal.pacourts.us{href}"
         )
-        resp = self._page.context.request.get(url)
+        resp = self._page.context.request.get(url, timeout=FETCH_PDF_TIMEOUT_MS)
         if not resp.ok:
             return None
         body = resp.body()

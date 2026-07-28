@@ -10,6 +10,7 @@ from pipeline.collector.classification import (
     classify,
 )
 from pipeline.collector.transport import (
+    FETCH_PDF_TIMEOUT_MS,
     _SEARCH_UI_SELECTOR,
     PlaywrightTransport,
 )
@@ -68,8 +69,10 @@ class FakeResponse:
 class FakeRequest:
     def __init__(self, body: bytes) -> None:
         self._body = body
+        self.last_timeout: int | None = None
 
-    def get(self, url: str) -> FakeResponse:
+    def get(self, url: str, timeout: int | None = None) -> FakeResponse:
+        self.last_timeout = timeout
         return FakeResponse(self._body)
 
 
@@ -149,6 +152,15 @@ def test_hit_returns_pdf_bytes():
     assert signal.pdf_ok is True
     assert signal.pdf_bytes == b"%PDF-1.7 x"
     assert classify(signal) == OUTCOME_HIT
+
+
+def test_pdf_fetch_uses_extended_timeout():
+    # Mega-case sheets (800–1,400 pages) exceed Playwright's 30s default; the
+    # fetch must pass the extended timeout so they finish instead of stranding.
+    page = FakePage(href="/Report/CpDocketSheet?id=abc", pdf_bytes=b"%PDF-1.7 x")
+    _transport_with(page).fetch("MC-51-CR-0000001-2025")
+    assert page.context.request.last_timeout == FETCH_PDF_TIMEOUT_MS
+    assert FETCH_PDF_TIMEOUT_MS >= 120_000
 
 
 def test_detect_block_reads_only_presence():
