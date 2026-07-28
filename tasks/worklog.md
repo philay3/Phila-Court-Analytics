@@ -9162,3 +9162,43 @@ of huge dockets, not a defect.
 STOP-and-discard — I over-called "garbage" on a heuristic; the intake protocol's
 "adjudicated, never self-resolved" is exactly why inspecting the sheet first
 mattered.
+
+## CP Window-Gap Timeout Fix + 5/21 Recovery (2026-07-28, run `78f90de7`)
+
+**Root cause closed.** The 2026-05-21 MC residue (~30 error-streaking rows,
+gated by the audit since the partial-strand cycle) was never a portal fault: the
+same mega-case fraud sheets (800–1,400pp, ~2.5 MB) time out on the collector's
+PDF download, which used Playwright's **30s default** at both `_pdf_from_href`
+sites. Five timeouts trip the error-streak stop → day strands. Fix is the
+opposite of the retracted oversize-guard — be *more* patient: added
+`FETCH_PDF_TIMEOUT_MS = 120_000` in `transport.py` (canonical) and mirrored in
+`search_transport.py`, passed to both `context.request.get(url, timeout=…)`
+calls, plus a regression test asserting the timeout is threaded through
+(`test_pdf_fetch_uses_extended_timeout`). 62 collector transport/search tests
+green. Commit `1b4d3f9`.
+
+**Recovery intake.** Re-searched 5/21 with `--recheck-windows` (patched
+collector): window `complete`, MC harvested 210 = fetched 41 + already_present
+169 + **fetch_failures 0** (was 32× TimeoutError). Freeze: staged 38,430 →
+excluded_already_loaded 38,389 → **included 41** (all new). import 41 (0 dup);
+extract 41 success (0 OCR, last sheet 1,305pp / 63s); parse 41 (0 failed);
+load 8 + 33 skipped_same_version = 41 (2-min foreground kill's partial resumed),
+**0 dup dockets**, pair (3,8) uniform. Corpus 39,944→**39,985**, charges
+147,818→**148,230** (+412, ~10/docket).
+
+**Facts + publish.** build `ee9a5e93` identity exact
+45,204 + 59,091 + 43,935 = 148,230, reconciles=true; sentence facts
+==components_on_disposed 18,282. **Outcome facts 45,191→45,204 (+13 disposed);
+public_eligible 38,440→38,450 (+10)** — the recovered fraud charges are recent
+(filed 5/21) so all but 13 are undisposed/held. Review dedup held: 48,953
+generated, only **32 newly-inserted** (29 missing_disposition_date + 3
+unmapped_charge), all attributable to the 41. sentinel_collision 173, 0 new.
+generate `78f90de7`; validate ten populations violations=0. **PUBLISHED local +
+prod (03:12):** activated `78f90de7` (retired `f1ebd632`); restore exit 0,
+precondition 0/0, count `diff` → MATCH across 15 tables (aggregate_runs 19,
+charge_outcome 6353, judge_outcome 41729, volume 550); `available:true`
+`lastRefreshed=2026-07-28T03:12:36Z`, aggregateRunId `78f90de7`. No migration.
+goldens-init for the 41 ran async: tier2 **new=41, diverged=0, failed=0** — the
+parser walks 1,400pp fraud sheets end-to-end without a single failure.
+
+**Operator Numbers** artifact refreshed to v6 (same URL) on run `78f90de7`.
