@@ -174,6 +174,57 @@ at 45,191 — only volume/pending moved (+1,286). Published `f1ebd632` local+pro
 `[0b]`. **Lesson:** a huge docket is not proof of a bad fetch — inspect the
 sheet before quarantining a systematic cluster.
 
+## 0.3 Addendum — Tableau extract kit landed (2026-07-31)
+
+New repo tool `scripts/export_tableau.py` builds a de-identified star schema for
+BI work from the **live published run**, writing outside the repo tree to
+`~/court-data/tableau/<stamp>-<run8>/` (the script refuses to write into a git
+working tree). Read-only: no re-parse, no rebuild, no republish. Run it with
+`cd services/pipeline && uv run python ../../scripts/export_tableau.py`.
+
+**Authorities reused, never re-implemented.** The journey pass runs the real
+`ChargeMatcher`, `OutcomeMapper` and `evaluate_outcome_eligibility` — the same
+three the Phase 36 volume generator uses — so its funnel reproduces
+`analytics.charge_volume_aggregates` exactly. That reconciliation is a
+**pre-write gate**: a mismatch aborts the export (`--skip-reconcile` to
+override). First run against `78f90de7` / build `ee9a5e93`: **exact, 0
+mismatches**, 129,366 journeys from 144,785 in-universe charge rows, 15,419
+superseded MC legs folded.
+
+Output is split by disclosure posture: `publish-safe/` (17 aggregate tables,
+percentile cells below n=10 dropped, thin cells flagged) and `internal-only/`
+(2 row-grain tables — charge journeys, case durations). Neither carries docket
+numbers, defendant hashes, or raw docket text; row keys are truncated random
+DB UUIDs and are **not stable across reloads**. A generated `README.md` and
+`manifest.json` ship with every extract.
+
+**Findings worth keeping, surfaced by building it:**
+
+- **1,698 of 2,202 judge×charge cells are thin (n<10).** Wilson 95% bounds are
+  now carried per cell, plus `dismissed_interval_excludes_baseline` — a cell is
+  only called different from the charge-wide rate when its own interval says
+  so. 365 cells clear that bar.
+- **Grade is recorded at disposition.** 95.6% of disposed charges carry a
+  grade; 0.1% of undisposed ones do. Any grade breakdown is implicitly
+  conditioned on disposition — worth stating wherever grade is cut.
+- **The bind-over instant is dateless.** Zero of the 15,419 traced MC legs
+  carry a held-disposition date, so MC→CP elapsed time has to be measured
+  filing-to-filing. Median MC→CP lag **42 days** (p25 18, p75 75, p90 123);
+  Controlled Substances is the slow group at median 70.
+- **Cross-court journeys take ~2× as long.** Charge filing→disposition median
+  **235 days** when the journey crossed MC→CP vs **114 days** when it did not
+  (n=12,056 / 26,394).
+- **Filing-month cohorts are right-censored** — 2026-06 is 9,711 pending vs 201
+  dismissed. The funnel table now carries `cohort_pct_resolved` and
+  `cohort_observation_days`, and a disposition-month companion table
+  (`agg_outcome_by_disposition_month`) exists as the un-censored series.
+
+Two defects found and fixed while validating: the statute→chapter rule put
+three-digit sections (18 § 901/903/911) in a phantom "chapter 90", and the
+first ingest-diagnostic table keyed on import month, which measures the
+operator's collection calendar rather than the court — replaced by
+`dq_coverage_monthly` on docket **filing** month.
+
 ## Provenance note — the live-query request could not be honored
 
 The task asked for read-only queries against local canonical `pca`. **They did
