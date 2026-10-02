@@ -44,8 +44,12 @@ E2E_WEB_PORT=8788 pnpm test:e2e
 ```
 
 That runs `pnpm build:static -- --mode ci` (workspace packages, then the
-export to `apps/web/out` with its data files under `out/data/`), then
-Playwright. Playwright's `webServer` starts
+export to `apps/web/out` with its data files under `out/data/`), then the
+**export gate** (`pnpm gate:static`: every exported file against the build's
+manifest — copy-safety and privacy scanners, pinned run id, no baked failure
+state, noindex, two-way coverage, size limits; any violation fails the run,
+exactly as it stops a publish before the upload), then Playwright. CI runs the
+same three steps in the same order. Playwright's `webServer` starts
 `wrangler pages dev ../apps/web/out` bound to 127.0.0.1 on `E2E_WEB_PORT`
 (default 3000); it honors `_headers`, `_redirects`, and serves the root
 `404.html` with a real 404 status, as production does.

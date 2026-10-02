@@ -9430,3 +9430,71 @@ address. Local proof: 35 passed against `pca_test` on port 8788.
 Pages semantics verified with `wrangler pages dev` and a Playwright request log
 (zero API requests). Full evidence, verbatim gate output, and the red-run list
 are in the report.
+
+## STATIC-2c — Export Gate, First Deploy to pages.dev, Platform Verification (2026-10-02)
+
+**Process.** Straight to `main`, three commits, each pushed; the plan was
+recorded in the report before implementation
+(`~/court-data/reports/static-2c-20261002/report.md`). **STOP recorded at
+the deploy (pin 3.D.12):** on this machine wrangler is not logged in, no Pages
+project is visible, and `PAGES_PROJECT_NAME` is not in the root `.env` — the
+three prerequisites Chops provides. Everything that does not need the account
+landed and is proven; the upload and the platform verification (3.D.13–16)
+wait for the operator. A second item for a ruling is recorded in the report
+(§1.5): pin 3.A.5 forbids every `PUBLIC_ERROR_MESSAGES` value in page text,
+but two of them are also designed-state copy that successful charge-only pages
+render (the sentencing-unavailable arm: 2 pages of the current export; the
+charge-only unavailable arm: 0 today) — the gate ships with those two excluded
+and every other value enforced.
+
+**Commit 1 (`de9f845`) — manifest, gate, stamp.** The build script writes
+`apps/web/.static-build/manifest.json` (ignored scratch): the routes it
+enumerated (the six pinned static routes plus `/charges/<slug>` per
+search-index charge), the data files it wrote, the pinned run, the mode, and
+the allowed asset set (`_next/**` and the `public/` copies as `next build`
+left them). The gate (`apps/api/src/static-build/gate.ts`, CLI
+`gate-cli.ts`, `pnpm run gate:static`) walks every file: `.html` → visible
+text (script/style/template dropped, tags stripped, entities decoded) through
+`scanPublicCopy`, raw file through `scanForForbidden`, provenance line must
+name the pinned run, robots meta must say `noindex`, none of the pinned
+failure strings in the visible text (`404.html` and `_not-found.html` exempt);
+`.txt`/`.rsc` payloads → `scanForForbidden` raw, `scanPublicCopy` over every
+JSON string literal and every RSC `T` row (byte-length body); `data/*.json`
+→ parsed-document `scanForForbidden`, `scanPublicCopy` over every string
+value, `aggregateRunId` pinned; every other file must be in the manifest's
+asset set; coverage both ways by the route pattern (`<base>.html`,
+`<base>.txt`, `<base>/__next.<name>.txt`; root files at the top level;
+`_not-found` likewise plus `404.html`); `_headers` `X-Robots-Tag: noindex`
+under `/*` and the legacy judge rule in `_redirects`; ≤ 15,000 files, ≤ 20
+MiB per file. Forbidden VALUES are never printed. On success a stamp
+(`gate-stamp.json`: SHA-256 over sorted `path\0sha256(bytes)` lines, file
+count, mode, run) is written to the scratch directory. The seven web-only
+failure strings moved to `@pca/shared` (`web-failure-copy.ts`) so the gate
+can import them; the web copy modules import them back (nothing rendered
+changed). 26 fixture tests on invented content prove every failure class and
+a clean pass. Real publish export (run `78f90de7`): html 118, payload 928,
+data 109, asset 44, 1,199 files, PASS.
+
+**Commit 2 (`23875b5`) — CI.** `Gate static export` runs right after the
+ci-mode build in the E2E job; a violation fails the job before Playwright.
+Root `test:e2e` mirrors it.
+
+**Commit 3 (this commit) — upload step.** `deploy.ts` / `deploy-cli.ts`
+(`pnpm run deploy:static`; `pnpm run publish:static` = build → gate →
+upload): refuses, before wrangler is ever invoked, without a stamp, when the
+export's hash or file count differs from the stamp, when the stamped mode is
+not `publish`, or when `PAGES_PROJECT_NAME` is unset; then
+`pnpm exec wrangler pages deploy <export> --project-name $PAGES_PROJECT_NAME`
+from `e2e/`. The project name comes only from the environment; nothing in the
+repo names it, and the CLI masks it. `--dry-run` runs every check and prints
+the masked command. 7 tests; proofs in the report (refused without stamp,
+refused without the variable, refused after a one-byte tamper, dry run
+accepted).
+
+**Monitoring string (pin 3.C):** `Current coverage` — the `<h2>` that only
+the available arm of `/data-coverage` renders.
+
+**For Chops, to clear the STOP:** `pnpm exec wrangler login` from `e2e/`; a
+direct-upload Pages project (production branch `main`); `PAGES_PROJECT_NAME`
+in the root `.env`; then `pnpm run publish:static` and the 3.D.15 checks
+(script in the report).

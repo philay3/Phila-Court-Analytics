@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.build.json",
     "build:static": "tsx --conditions pca-source --env-file-if-exists=../../.env src/static-build/cli.ts",
     "gate:static": "tsx --conditions pca-source --env-file-if-exists=../../.env src/static-build/gate-cli.ts",
+    "deploy:static": "tsx --conditions pca-source --env-file-if-exists=../../.env src/static-build/deploy-cli.ts",
     "start": "node --env-file-if-exists=../../.env dist/server.js",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
