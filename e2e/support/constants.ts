@@ -1,17 +1,16 @@
 /**
- * Shared E2E constants (task 15.2): ports, base URLs, and the seed slugs each
- * flow exercises. Slugs are read off db/seeds/reference-data.ts and
- * db/seeds/aggregate-data.ts — the deterministic seed set — never invented
- * here. Any pinned user-facing COPY is imported from @pca/shared (or the web
- * copy modules) in the spec files, never re-typed alongside these slugs.
+ * Shared E2E constants (task 15.2; static since task STATIC-2b): the served
+ * export's port and the seed slugs each flow exercises. Slugs are read off
+ * db/seeds/reference-data.ts and db/seeds/aggregate-data.ts — the deterministic
+ * seed set — never invented here. Any pinned user-facing COPY is imported from
+ * @pca/shared (or the web copy modules) in the spec files, never re-typed.
  */
 
-// Local-dev / CI ports (matches the 15.1 walkthrough note: web 3000, api 3001).
-export const WEB_PORT = 3000;
-export const API_PORT = 3001;
-
+// The suite runs against the static export served with Cloudflare Pages
+// semantics by `wrangler pages dev` (STATIC-2b pin 14). The port is
+// configurable so a held 3000 is never a blocker: E2E_WEB_PORT=8788 pnpm test:e2e.
+export const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 3000);
 export const WEB_BASE_URL = `http://127.0.0.1:${WEB_PORT}`;
-export const API_HEALTH_URL = `http://127.0.0.1:${API_PORT}/health`;
 
 /**
  * Seed-slug fixtures, each mapped to the scenario it exercises. Sourced from
@@ -27,12 +26,14 @@ export const API_HEALTH_URL = `http://127.0.0.1:${API_PORT}/health`;
  *     deliberately ABSENT from the sentencing index — the 35.3 absent-arm
  *     stability lock (today's post-Phase-33 page).
  *   - harassment: a real charge with a published run but ZERO aggregate rows —
- *     CHARGE_RESULT_UNAVAILABLE (200 arm on the charge route, 404 envelope on
- *     the judge route: the W1 case).
+ *     the charge-only unavailable arm; no judge has results for it, so its
+ *     page bakes an empty judge list and any `?judge=` renders the in-page
+ *     unavailable notice.
  *   - judge-testina-placeholder: data-bearing judge for retail-theft
  *     (outcomes n=140, sentencing n=85; index cell present since 35.2).
- *   - judge-fakename-example: canonical judge-specific-unavailable fixture —
- *     both ref rows exist, zero aggregate rows (200 unavailable arm).
+ *   - judge-fakename-example: canonical no-results fixture — both ref rows
+ *     exist, zero aggregate rows; never offered by a judge filter (STATIC-2b
+ *     pin 4), and `?judge=` naming it renders the in-page unavailable notice.
  *   - dui-general-impairment × judge-samuel-seeddata: success payload with
  *     outcome/sentencing rows but an ABSENT index cell (35.3 absent judge
  *     arm).

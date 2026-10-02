@@ -12,6 +12,8 @@ import {
 } from '@pca/shared';
 import { assertPageClean } from '../support/checks';
 import { DISPLAY_NAMES, SLUGS } from '../support/constants';
+import { CHARGE_RESULT_COPY } from '../../apps/web/app/components/charge-result-copy';
+import { JUDGE_RESULT_COPY } from '../../apps/web/app/components/judge-result-copy';
 import { RESULT_DISPLAY_COPY } from '../../apps/web/app/components/result-display-copy';
 import {
   formatGradeMixLine,
@@ -24,8 +26,9 @@ import {
  * Charge-only result page across its seeded scenarios (task 15.2 scope 2;
  * 35.3 index arms; pre-recording canonical order): the present arm (outcome
  * mix first, detail block below it, index rates block last), a thin-data
- * charge, the zero-sentenced fallback arm, and the absent arm. Each state
- * passes the page gate (axe + both copy scanners). All numbers asserted here
+ * charge, the zero-sentenced fallback arm, the absent arm, and (task
+ * STATIC-2b) the in-page judge filter. Each state passes the page gate (axe +
+ * both copy scanners). All numbers asserted here
  * are the fabricated seeded-matrix values — never corpus figures. Group
  * headings are asserted by PRESENCE given whatever the seeded categories
  * yield — no pinned counts or percentages ride into this spec (SD-14).
@@ -205,4 +208,34 @@ test('absent arm: canonical outcome-first order, no index section, reconciled la
   ).toBeVisible();
 
   await assertPageClean(page, 'charge-only result (absent arm lock)');
+});
+
+test('judge filter on the charge page: selecting a judge updates the address in place and renders the judge-specific result', async ({
+  page,
+}) => {
+  await page.goto(`/charges/${SLUGS.chargeDataBearing}`);
+  await expect(page.getByTestId('section-summary')).toBeVisible();
+
+  // The filter offers only judges with results for this charge (pin 4);
+  // drive it by keyboard like the homepage combobox.
+  await page.getByRole('button', { name: CHARGE_RESULT_COPY.judgeDisclosureTriggerText }).click();
+  const input = page.locator('#judge-filter-input');
+  await input.fill('testina');
+  await expect(page.getByRole('option', { name: DISPLAY_NAMES.judgeDataBearing })).toBeVisible();
+  await input.press('ArrowDown');
+  await input.press('Enter');
+
+  // In place (pin 3): the address gains `?judge=` with NO navigation — the
+  // document keeps its single navigation entry — and the judge-specific
+  // result replaces the charge-only view in the same document.
+  await expect(page).toHaveURL(
+    new RegExp(`/charges/${SLUGS.chargeDataBearing}\\?judge=${SLUGS.judgeDataBearing}$`),
+  );
+  await expect(
+    page.getByRole('heading', { name: JUDGE_RESULT_COPY.sectionJudgeSpecificHeading }),
+  ).toBeVisible();
+  await expect(page.getByTestId('section-judge-outcome').getByRole('table')).toBeVisible();
+  expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(1);
+
+  await assertPageClean(page, 'judge-specific result (selected in place)');
 });

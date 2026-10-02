@@ -1,16 +1,17 @@
 /**
  * Charge-result page user-facing copy (task 13.2). Every incidental string the
- * charge-only result page, its state files (loading / not-found / error), and
- * the judge-filter entry point render lives here as an exported constant, so
+ * charge-only result page, its error state, and the judge-filter entry point
+ * render lives here as an exported constant, so
  * the app/-walking copy guard covers it automatically and
  * `charge-result-copy.test.ts` can scan each value with `scanPublicCopy` from
  * @pca/shared directly (same pattern as result-display-copy / home-copy).
  *
- * The pinned MESSAGE literals are NOT defined here: the charge-unavailable,
- * sentencing-unavailable, and charge-not-found messages are imported from
- * @pca/shared and rendered verbatim, so each stays typed in exactly one place.
- * Only page chrome — labels, link text, and the generic state copy — lives in
- * this module.
+ * The pinned MESSAGE literals are NOT defined here: the charge-unavailable and
+ * sentencing-unavailable messages are imported from @pca/shared and rendered
+ * verbatim, so each stays typed in exactly one place; the root 404 copy lives
+ * in @pca/shared too (task STATIC-2b — the static site has one not-found
+ * page). Only page chrome — labels, link text, and the generic error copy —
+ * lives in this module.
  *
  * Copy-safety: values are neutral, non-comparative framing. The judge-filter
  * help is the shared JUDGE_FILTER_HELP_MESSAGE (DP-5), rendered verbatim from
@@ -44,24 +45,6 @@ export const CHARGE_RESULT_COPY = {
   // rendered — the disclosure trigger is the opt-in signal).
   judgeFilterHeading: 'View this charge for a specific judge',
   judgeFilterLabel: 'Judge',
-
-  // loadingMessage was removed at fix R7a/R7b (2026-07-25): the result routes
-  // no longer define loading.tsx boundaries, because a route-level Suspense
-  // boundary flushes a 200 shell before `notFound()` can set real 404 status.
-
-  // not-found.tsx chrome. The message itself is the imported
-  // CHARGE_NOT_FOUND_MESSAGE; this is the page heading (task 15.1 a11y pass —
-  // every terminal state carries an h1 for heading navigation) and the link
-  // back to search.
-  notFoundHeading: 'Result not found',
-  notFoundHomeLinkText: 'Return to search',
-
-  // Heading for the charge-result-unavailable state on the JUDGE route (task
-  // 15.1 walkthrough Finding 1). The judge endpoint returns this case as a 404
-  // error envelope carrying only the pinned CHARGE_RESULT_UNAVAILABLE_MESSAGE —
-  // no charge identity — so this generic heading stands in for the charge name
-  // the charge-only route's unavailable view shows as its h1.
-  chargeUnavailableHeading: 'Results not available',
 
   // error.tsx generic, internal-detail-free copy (pinned decision 2).
   errorHeading: 'Something went wrong',

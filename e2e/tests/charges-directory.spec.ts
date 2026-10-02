@@ -23,9 +23,7 @@ test('directory loads: rows, reconciling count line, nav active state', async ({
   await page.goto('/charges');
 
   await expect(page.getByRole('heading', { level: 1, name: CHARGES_COPY.heading })).toBeVisible();
-  // Loading resolved to the content arm — neither the loading message nor the
-  // error heading remains.
-  await expect(page.getByText(CHARGES_COPY.loadingMessage)).toHaveCount(0);
+  // The prerendered content arm — not the error heading.
   await expect(page.getByText(CHARGE_RESULT_COPY.errorHeading)).toHaveCount(0);
 
   // The count line renders the sanctioned form for exactly the row count.

@@ -114,12 +114,16 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    # The whole E2E path is env-driven; no DB port is hardcoded anywhere. CI
-    # Postgres is 5432 (local Docker is 5433). API_BASE_URL is set explicitly
-    # rather than relying on the 15.1 localhost default.
+    # The suite runs against the STATIC EXPORT (task STATIC-2b). The build
+    # script reads the seeded database through the API in-process and writes
+    # apps/web/out; Playwright then serves that directory with `wrangler pages
+    # dev` (Cloudflare Pages semantics: `_headers`, `_redirects`, 404 status).
+    # No API server and no `next start` run during the suite, so the database
+    # is the only environment the job needs. The whole path is env-driven; CI
+    # Postgres is 5432 (local Docker is 5433), and the build's `--mode ci`
+    # guard accepts only a test-shaped database name (pca_ci is allow-listed).
     env:
       DATABASE_URL: postgresql://ci:ci@localhost:5432/pca_ci
-      API_BASE_URL: http://127.0.0.1:3001
     steps:
       - uses: actions/checkout@v4
 
@@ -136,26 +140,22 @@ jobs:
       - name: Generate taxonomy artifacts
         run: pnpm generate
 
-      # Build workspace packages + the API so the webServer boots the API from
-      # built dist under plain node (not tsx) — the production start path.
-      - name: Build workspace packages
-        run: pnpm run build:packages
-
-      - name: Build API
-        run: pnpm --filter @pca/api run build
-
-      # Real migrate + seed (NOT the vitest globalSetup path): the suite runs
-      # against deterministic db:seed data.
+      # Real migrate + seed (NOT the vitest globalSetup path): the export is
+      # built from deterministic db:seed data.
       - name: Apply migrations
         run: pnpm db:migrate:latest
 
       - name: Seed database
         run: pnpm db:seed
 
-      # Production web build. Fails loudly if a build-time prerender fetch is
-      # ever introduced against the (not-yet-running) API — see task 15.2 F4.
-      - name: Build web (production)
-        run: pnpm --filter @pca/web run build
+      # Build the export (the root script builds the workspace packages first).
+      # The script materializes every public API response in-process against
+      # the pinned published run, serves them to `next build` from a throwaway
+      # local server, and fails closed on any request it could not answer — so
+      # a prerender fetch against a path the API does not serve fails HERE,
+      # loudly, never as a silently empty page.
+      - name: Build static export (ci mode)
+        run: pnpm run build:static -- --mode ci
 
       # Cache the chromium browser binary across runs, keyed on the lockfile
       # (which pins the Playwright version). Install OS deps every run; download
@@ -175,6 +175,8 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: pnpm --filter @pca/e2e exec playwright install-deps chromium
 
+      # Playwright's webServer serves apps/web/out with `wrangler pages dev`
+      # (port 3000 by default; E2E_WEB_PORT overrides).
       - name: Run Playwright E2E
         run: pnpm --filter @pca/e2e run test:e2e
 

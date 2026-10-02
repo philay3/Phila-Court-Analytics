@@ -523,9 +523,11 @@ async function segmentJudgeView(page: Page, out: SegmentPaths, judgeName: string
     await page.waitForTimeout(DROPDOWN_HOLD_MS);
     await glideClick(page, option);
 
-    await page.waitForURL(`**/charges/${CHARGE_SLUG}/judge/**`);
-    // The judge autocomplete does not filter by availability for this charge;
-    // if the page renders the no-data notice instead of a judge-specific
+    // Since STATIC-2b the selection updates the address in place (`?judge=`)
+    // and the judge-specific result renders in the same document.
+    await page.waitForURL(new RegExp(`/charges/${CHARGE_SLUG}\\?judge=`));
+    // The filter offers only judges with results for this charge; should the
+    // page still render the no-data notice instead of a judge-specific
     // result, fail with an actionable message rather than a bare timeout.
     const judgeOutcome = page.locator(SELECTORS.judgeOutcomeSection);
     const noDataNotice = page.getByText('No judge-specific aggregate');

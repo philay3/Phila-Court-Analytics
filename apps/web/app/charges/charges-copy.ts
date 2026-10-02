@@ -37,9 +37,6 @@ export const CHARGES_COPY = {
   noMatchBody: 'No available charges match your search.',
   clearAction: 'Clear search',
 
-  // Route-level loading state — describes the in-flight fetch only.
-  loadingMessage: 'Loading charges…',
-
   // Error state body; heading and retry come from CHARGE_RESULT_COPY.
   errorBody: 'Available charges could not load.',
 } as const;

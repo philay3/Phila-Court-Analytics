@@ -14,27 +14,32 @@ import { CHARGE_RESULT_COPY } from '../../apps/web/app/components/charge-result-
 import { RESULT_DISPLAY_COPY } from '../../apps/web/app/components/result-display-copy';
 
 /**
- * Judge filter flows (task 15.2 scope 2; 35.3 pin 6): add a judge to reach
- * the judge-specific result (the cell's index leads the judge scope with NO
- * grade line; the baseline scope is unchanged), remove the filter to return
- * to the charge-only result, the judge-unavailable pair (valid charge +
- * valid judge, no judge aggregate → pinned fallback), and the absent-index
- * judge cell (success payload, no index rows → today's scope order). Pinned
- * copy is asserted via @pca/shared imports.
+ * Judge filter flows (task 15.2 scope 2; 35.3 pin 6; in-page since task
+ * STATIC-2b): add a judge on the homepage to reach the judge-specific result
+ * at `/charges/<charge>?judge=<judge>` (the cell's index leads the judge
+ * scope with NO grade line; the baseline scope is unchanged), remove the
+ * filter to return to the charge-only result, the judge-unavailable pair
+ * (valid charge + a judge with no aggregate for it → the pinned in-page
+ * notice over the charge-only result), and the absent-index judge cell
+ * (success payload, no index rows → today's scope order). Pinned copy is
+ * asserted via @pca/shared imports.
  */
+
+function judgeUrl(charge: string, judge: string): RegExp {
+  return new RegExp(`/charges/${charge}\\?judge=${judge}$`);
+}
 
 test('add judge → judge-specific result, then remove filter → charge-only', async ({ page }) => {
   await page.goto('/');
 
   await selectFromCombobox(page, '#charge-search', 'retail', DISPLAY_NAMES.chargeDataBearing);
-  // DP-3: open the judge disclosure before driving the (unchanged) combobox.
+  // DP-3: open the judge disclosure before driving the combobox — enabled now
+  // that a charge is chosen, and scoped to judges with results for it.
   await page.getByRole('button', { name: CHARGE_RESULT_COPY.judgeDisclosureTriggerText }).click();
   await selectFromCombobox(page, '#judge-search', 'testina', DISPLAY_NAMES.judgeDataBearing);
   await page.locator('form button[type="submit"]').click();
 
-  await expect(page).toHaveURL(
-    new RegExp(`/charges/${SLUGS.chargeDataBearing}/judge/${SLUGS.judgeDataBearing}$`),
-  );
+  await expect(page).toHaveURL(judgeUrl(SLUGS.chargeDataBearing, SLUGS.judgeDataBearing));
 
   // Both scopes render: the judge-specific section AND the Philadelphia-wide
   // baseline, each with its own outcome distribution and sample size.
@@ -81,7 +86,8 @@ test('add judge → judge-specific result, then remove filter → charge-only', 
 
   await assertPageClean(page, 'judge-specific result');
 
-  // Remove the judge filter → back to the charge-only result.
+  // Remove the judge filter → back to the charge-only result: the query
+  // clears and the same document renders the charge-only view again.
   await page.getByRole('link', { name: JUDGE_RESULT_COPY.removeFilterLinkText }).first().click();
   await expect(page).toHaveURL(new RegExp(`/charges/${SLUGS.chargeDataBearing}$`));
   await expect(
@@ -92,28 +98,33 @@ test('add judge → judge-specific result, then remove filter → charge-only', 
   await assertPageClean(page, 'charge-only result (after removing judge filter)');
 });
 
-test('judge-unavailable pair: valid charge + judge, no judge aggregate → pinned fallback', async ({
+test('judge-unavailable pair: valid charge + a judge with no aggregate for it → pinned in-page notice', async ({
   page,
 }) => {
-  await page.goto(`/charges/${SLUGS.chargeDataBearing}/judge/${SLUGS.judgeNoAggregate}`);
+  await page.goto(`/charges/${SLUGS.chargeDataBearing}?judge=${SLUGS.judgeNoAggregate}`);
 
-  // The pinned message is asserted via the imported @pca/shared constant.
-  await expect(page.getByText(JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE)).toBeVisible();
+  // The pinned message renders in the in-page notice (STATIC-2b pin 3) while
+  // the charge-only result stays beneath it — its h1 is still the charge.
+  const notice = page.getByTestId('judge-filter-notice');
+  await expect(notice).toContainText(JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE);
+  await expect(
+    page.getByRole('heading', { level: 1, name: DISPLAY_NAMES.chargeDataBearing }),
+  ).toBeVisible();
 
-  // It is a content branch, not a result: no distribution sections render, and
-  // there is a link back to the charge-only result.
+  // It is a content branch, not a result: no judge distribution sections
+  // render, and the notice links back to the charge-only address.
   await expect(page.getByTestId('section-judge-outcome')).toHaveCount(0);
   await expect(
-    page.getByRole('link', { name: JUDGE_RESULT_COPY.removeFilterLinkText }),
+    notice.getByRole('link', { name: JUDGE_RESULT_COPY.removeFilterLinkText }),
   ).toHaveAttribute('href', `/charges/${SLUGS.chargeDataBearing}`);
 
-  await assertPageClean(page, 'judge-specific unavailable');
+  await assertPageClean(page, 'judge-specific unavailable (in-page notice)');
 });
 
 test("absent-index judge cell: success payload renders today's scope order, no index section", async ({
   page,
 }) => {
-  await page.goto(`/charges/${SLUGS.chargeJudgeIndexAbsent}/judge/${SLUGS.judgeIndexAbsent}`);
+  await page.goto(`/charges/${SLUGS.chargeJudgeIndexAbsent}?judge=${SLUGS.judgeIndexAbsent}`);
 
   // A full judge-specific result (both scopes) with NO index section anywhere
   // (35.3 pin 2 at the judge grain) and today's caption in the judge scope.

@@ -7,12 +7,13 @@ import { DATA_COVERAGE_COPY } from '../../apps/web/app/data-coverage/data-covera
 import { formatDateOnly } from '../../apps/web/app/lib/formatters';
 
 /**
- * API-backed content pages + the static About page (task 15.2 scope 2). Each
- * asserts its page heading (proving the content arm rendered, not the error
- * arm — the error heading is asserted absent) and passes the page gate.
+ * Content pages prerendered from the API at build time + the static About
+ * page (task 15.2 scope 2; static since task STATIC-2b). Each asserts its page
+ * heading (proving the content arm rendered, not the error arm — the error
+ * heading is asserted absent) and passes the page gate.
  */
 
-test('definitions page renders API-backed content', async ({ page }) => {
+test('definitions page renders its prerendered content', async ({ page }) => {
   await page.goto('/definitions');
 
   await expect(
@@ -25,7 +26,7 @@ test('definitions page renders API-backed content', async ({ page }) => {
   await assertPageClean(page, 'definitions');
 });
 
-test('methodology page renders API-backed content', async ({ page }) => {
+test('methodology page renders its prerendered content', async ({ page }) => {
   await page.goto('/methodology');
 
   await expect(
@@ -37,7 +38,7 @@ test('methodology page renders API-backed content', async ({ page }) => {
   await assertPageClean(page, 'methodology');
 });
 
-test('data-coverage page renders API content and shows the 2025-01-01 start date', async ({
+test('data-coverage page renders its prerendered content and shows the 2025-01-01 start date', async ({
   page,
 }) => {
   await page.goto('/data-coverage');
