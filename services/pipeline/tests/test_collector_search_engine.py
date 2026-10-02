@@ -532,9 +532,7 @@ def test_interrupted_window_not_marked_complete_and_retried_on_rerun(tmp_path):
 
     # Rerun (no cap, same ledger dir): the window is NOT skipped as complete —
     # it is re-searched and both rows are fetched this time.
-    rerun_params = make_params(
-        tmp_path, court="CP", intake_dir=tmp_path / "intake2"
-    )
+    rerun_params = make_params(tmp_path, court="CP", intake_dir=tmp_path / "intake2")
     rerun_transport = FakeSearchTransport(lambda d: _complete(), lambda d: harvest)
     rerun_report = run_engine(rerun_params, rerun_transport, FakeClock())
     assert rerun_transport.searches == [date(2025, 6, 3)]  # re-searched, not skipped

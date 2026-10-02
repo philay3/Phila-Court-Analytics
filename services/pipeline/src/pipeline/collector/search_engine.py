@@ -572,9 +572,7 @@ def run(
             ledger_paths, wkey, run_id, now, window_outcome, win_counts, win_skipped
         )
         window_summaries.append(
-            _window_summary(
-                wkey, window_outcome, win_counts, win_skipped, fetch_courts
-            )
+            _window_summary(wkey, window_outcome, win_counts, win_skipped, fetch_courts)
         )
         logger.info(
             "window",
