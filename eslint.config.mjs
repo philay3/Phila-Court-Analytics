@@ -4,11 +4,12 @@ import nextTs from 'eslint-config-next/typescript';
 import prettier from 'eslint-config-prettier/flat';
 import tseslint from 'typescript-eslint';
 
-// Next.js presets scoped to the web workspace only.
+// Next.js presets scoped to the Next workspaces only (the public web app and
+// the local-only ops dashboard).
 const nextScoped = [...nextVitals, ...nextTs].map((config) => ({
   ...config,
-  files: ['apps/web/**/*.{js,jsx,mjs,ts,tsx}'],
-  settings: { ...config.settings, next: { rootDir: 'apps/web/' } },
+  files: ['apps/web/**/*.{js,jsx,mjs,ts,tsx}', 'apps/ops/**/*.{js,jsx,mjs,ts,tsx}'],
+  settings: { ...config.settings, next: { rootDir: ['apps/web/', 'apps/ops/'] } },
 }));
 
 export default tseslint.config(

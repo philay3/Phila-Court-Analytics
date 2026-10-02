@@ -9296,3 +9296,62 @@ typecheck` clean. Report:
 the STATIC-0 spec: branch `static-0-gate-hygiene`, one commit, PR with CI as the
 authority for the green claim; the push also publishes the 14 unpushed main
 commits, so it was held for the planning chat's go-ahead (see the report).
+
+## STATIC-2a — Enumeration Endpoint, Client Matcher, Ops Relocation, Trial Export (2026-10-02)
+
+**Process.** First task under the §0 amendment: commits straight to `main`, one
+per piece, pushed immediately; plan recorded first in the report, then built.
+Report: `~/court-data/reports/static-2a-20261002/report.md`. The cited rulings
+file `STATIC-1-closeout-and-rulings.md` is not on disk (PR-2 finding); the task
+ran on the spec text.
+
+**Trial export (scratch, reverted, nothing committed).** API from dist on 3001
+against canonical `pca`; `output: 'export'` added to `next.config.ts` only for
+the trial. Findings: (1) a `force-dynamic` ROUTE HANDLER fails page-data
+collection first — `export const dynamic = "force-dynamic" on page
+"/admin/numbers" cannot be used with "output: export"`; with it neutralized a
+`force-dynamic` PAGE fails at export — `Page with dynamic = "force-dynamic"
+couldn't be exported` — so every `force-dynamic` must go in 2b. (2) A slug in
+`generateStaticParams` that makes the page call `notFound()` neither fails nor
+skips: Next emits the not-found boundary as a normal page file (status 404 only
+in the build's `.meta`, which a static host never sees). (3) **Files per route
+are not 2.** Beside `<route>.html` + `<route>.txt`, Next 16.2.10 emits a
+`<route>/` directory of per-segment prefetch files (`__next._tree.txt`,
+`_head`, `_index`, `_full`, one per segment): 8 files for a static route, 9 for
+a charge page, 11 for a judge page, plus 5 root-level `__next.*` files; no
+configuration switch for them exists in this Next build. STATIC-1's projection
+(2 files/route) is superseded: Model A re-projects to ≈26,000 files, over the
+20,000 cap — a design question for 2b. (4) `favicon.ico`, `icon.svg`, and
+`public/` are all emitted/copied. (5) Largest files are JS chunks (≈227 KB); the
+largest page ≈116 KB. (6) The client router fetches the segment files with an
+`?_rsc=` query, never `<route>.txt`; and because `<route>.html` now sits beside
+a `<route>/` directory, a plain static server redirected `/methodology` to
+`/methodology/` — host URL semantics must be verified on Pages in 2b.
+
+**Commit 1 (`8815e94`) — `GET /api/v1/public/search-index`.** Schema in
+`@pca/shared` (`search-index.ts`); repository/service/route in the API; probe
+registry entry; route-count pin 8 → 9; new pinned literal scanned by the
+copy-safety suite; `.gitignore` gains `out/`. Set rules: charges = every active
+roster charge (incl. no-aggregate ones), judges = active judges with ≥1 pair in
+the run, pairs = distinct active (charge, judge) with a judge-specific result;
+no ids anywhere. Contract suite proves the rules against the seeded test DB
+with its own queries (set equality by slug; served order checked against SQL
+ORDER BY because the DB collation `en_US.utf8` is not code-point order), plus
+rolled-back fixtures for an inactive judge and for no-published-run.
+
+**Commit 2 (`4c77926`) — client matcher in `@pca/shared`.** `matchCharges` /
+`matchJudges`: pure, synchronous; reproduces the search endpoints' trim +
+1–100 rule, WHERE + `match_rank` (1 equality / 2 prefix / 3 substring across
+name, statute, aliases), `matched_alias` (alphabetically first matching alias
+only when the name did not match), ORDER BY rank/name/slug, limit cap 25. 23
+tests on an invented roster, one per SQL rank case. Collation caveat recorded.
+
+**Commit 3 — ops relocation to `apps/ops` (`@pca/ops`).** `git mv` of
+`apps/web/app/admin/**` (dashboard, test, `/admin/numbers` proxy with the token
+header, types) — byte-identical; new workspace scaffolding (`next dev -p 3002`,
+typecheck, jsdom test, copied `globals.css`, copied `api-base-url.ts` and
+`category-fill.ts`, README: local only, never deployed, `ADMIN_OPS_ENABLED=1`
+on the API). `eslint.config.mjs` extends the Next presets to `apps/ops`;
+lockfile registers the workspace; root scripts untouched (`pnpm -r run
+typecheck` and `pnpm test` pick it up by recursion; `pnpm dev` also starts it
+on 3002). Proof (API log status codes) and the E2E posture are in the report.
