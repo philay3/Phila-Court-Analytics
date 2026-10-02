@@ -48,7 +48,8 @@ describe('public route discovery and probe coverage', () => {
     // stops seeing routes, coverage checks against an EMPTY discovered set
     // would pass vacuously. Update the number when a public route is
     // deliberately added or removed — the diff is the review trail.
-    expect(discoveredRoutes).toHaveLength(8);
+    // 9 since task STATIC-2a added /search-index (the deliberate 8 -> 9 move).
+    expect(discoveredRoutes).toHaveLength(9);
   });
 
   it('has at least one probe for every discovered route (no unprobed routes)', () => {

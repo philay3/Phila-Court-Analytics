@@ -124,4 +124,10 @@ export const PROBE_REGISTRY: Readonly<Record<string, readonly PublicRouteProbe[]
   [`${PUBLIC_ROUTE_PREFIX}/data-coverage`]: [
     { name: 'success', path: `${PUBLIC_ROUTE_PREFIX}/data-coverage`, expectedStatus: 200 },
   ],
+  [`${PUBLIC_ROUTE_PREFIX}/search-index`]: [
+    // The unavailable arm requires invalidating the seeded run, which probes
+    // never do (no-mutation rule above); it is scanned by the STATIC-2a route
+    // suite's rollback-isolated test instead.
+    { name: 'success', path: `${PUBLIC_ROUTE_PREFIX}/search-index`, expectedStatus: 200 },
+  ],
 };

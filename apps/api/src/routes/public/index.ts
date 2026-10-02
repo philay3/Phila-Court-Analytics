@@ -8,6 +8,7 @@ import { definitionRoutes } from './definitions.js';
 import { judgeRoutes } from './judges.js';
 import { methodologyRoutes } from './methodology.js';
 import { resultRoutes } from './results.js';
+import { searchIndexRoutes } from './search-index.js';
 
 export interface PublicRoutesOptions {
   rateLimitMax: number;
@@ -44,4 +45,5 @@ export const publicRoutes: FastifyPluginAsyncTypebox<PublicRoutesOptions> = asyn
   await app.register(judgeRoutes);
   await app.register(methodologyRoutes);
   await app.register(resultRoutes);
+  await app.register(searchIndexRoutes);
 };

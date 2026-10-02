@@ -4,6 +4,8 @@ node_modules/
 # Build output
 dist/
 .next/
+# Next.js static-export output (`output: 'export'`); built from the published run, never committed
+out/
 packages/taxonomy/generated/
 packages/shared/generated/
 __pycache__/
