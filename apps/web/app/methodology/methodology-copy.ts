@@ -17,9 +17,6 @@ export const METHODOLOGY_COPY = {
   // Page heading (h1).
   heading: 'Methodology',
 
-  // Route-level loading state — describes the in-flight fetch only.
-  loadingMessage: 'Loading methodology…',
-
   // Error state heading. The error body is a shared @pca/shared constant chosen
   // by failure arm; no internal detail is ever shown.
   errorHeading: 'Methodology is unavailable',

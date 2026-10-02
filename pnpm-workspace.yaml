@@ -19,3 +19,9 @@ allowBuilds:
   # @pca/e2e capture script shells out to for MP4 conversion; without the
   # build the package is an empty shell.
   ffmpeg-static: true
+  # workerd is the local Workers runtime behind `wrangler pages dev`, which
+  # serves the static export with Cloudflare Pages semantics (task STATIC-2b);
+  # its install step unpacks the platform binary.
+  workerd: true
+minimumReleaseAgeExclude:
+  - wrangler@4.147.0

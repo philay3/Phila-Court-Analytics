@@ -18,6 +18,10 @@ export default tseslint.config(
       '**/node_modules/',
       '**/dist/',
       '**/.next/',
+      // Static-export output and the build script's scratch directory (task
+      // STATIC-2b): generated from the published run, never linted.
+      '**/out/',
+      '**/.static-build/',
       '**/coverage/',
       '**/generated/',
       '**/.venv/',

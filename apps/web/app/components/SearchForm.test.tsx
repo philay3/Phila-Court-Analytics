@@ -171,7 +171,7 @@ describe('SearchForm judge submission matrix', () => {
     );
   });
 
-  it('charge + judge committed routes to /charges/[chargeSlug]/judge/[judgeSlug]', async () => {
+  it('charge + judge committed routes to /charges/[chargeSlug]?judge=[judgeSlug]', async () => {
     vi.stubGlobal('fetch', branchingFetch());
     render(<SearchForm />);
 
@@ -180,7 +180,7 @@ describe('SearchForm judge submission matrix', () => {
     await commitJudge();
     submit();
 
-    expect(push).toHaveBeenCalledWith(`/charges/${ALPHA.slug}/judge/${JUDGE.slug}`);
+    expect(push).toHaveBeenCalledWith(`/charges/${ALPHA.slug}?judge=${JUDGE.slug}`);
   });
 
   it('judge committed with no charge shows the hint, does not navigate, and preserves the judge commit', async () => {
@@ -199,7 +199,7 @@ describe('SearchForm judge submission matrix', () => {
     // submitting now routes to the combined path, not charge-only.
     await commitCharge();
     submit();
-    expect(push).toHaveBeenCalledWith(`/charges/${ALPHA.slug}/judge/${JUDGE.slug}`);
+    expect(push).toHaveBeenCalledWith(`/charges/${ALPHA.slug}?judge=${JUDGE.slug}`);
   });
 
   it('editing the judge after a commit clears it; a later charge-only submit routes charge-only', async () => {
@@ -215,6 +215,6 @@ describe('SearchForm judge submission matrix', () => {
     submit();
 
     expect(push).toHaveBeenCalledWith(`/charges/${ALPHA.slug}`);
-    expect(push).not.toHaveBeenCalledWith(`/charges/${ALPHA.slug}/judge/${JUDGE.slug}`);
+    expect(push).not.toHaveBeenCalledWith(`/charges/${ALPHA.slug}?judge=${JUDGE.slug}`);
   });
 });

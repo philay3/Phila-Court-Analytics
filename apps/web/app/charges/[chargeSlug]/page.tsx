@@ -1,25 +1,52 @@
 import { cache } from 'react';
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
-import { getChargeResult } from '../../lib/public-api-client';
+import { getChargeResult, getSearchIndex } from '../../lib/public-api-client';
 import { ChargeOnlyResultView } from '../../components/ChargeOnlyResultView';
 import { ChargeUnavailableView } from '../../components/ChargeUnavailableView';
 import { ChargeVolumeView } from '../../components/ChargeVolumeView';
 import { resolveChargeResultState } from './charge-result-state';
 
 /**
- * Charge-only result route (task 13.2). A thin async server component: it
- * fetches via the 11.2 client (server-side, absolute base URL — no rewrite)
+ * Charge result route (task 13.2; static since task STATIC-2b). A thin async
+ * server component: it fetches via the 11.2 client (server-side, absolute base
+ * URL — under the static build that is the build script's throwaway server)
  * and branches through the pure `resolveChargeResultState` helper into the
- * presentational success view, the in-page unavailable view, `notFound()`, or
- * the error boundary. All render logic lives in the presentational components;
- * this file only dispatches (pinned decision 1).
+ * presentational success view, the volume view, or the in-page unavailable
+ * view. All render logic lives in the presentational components; this file
+ * only dispatches (pinned decision 1).
  *
- * `loadChargeResult` is request-memoized with React `cache` so the one fetch is
- * shared between `generateMetadata` and the page body (a single API round-trip
- * per request). Site-wide noindex is inherited from the root layout, unchanged.
+ * Enumeration (STATIC-2b pin 2): every active roster charge, from
+ * GET /api/v1/public/search-index, with `dynamicParams = false` so no path
+ * outside that set is ever emitted or served. A slug the result endpoint does
+ * not resolve, or any other failure, THROWS — which fails the export (the
+ * STATIC-2a trial showed `notFound()` would instead bake a not-found page at
+ * that slug). The index is also read for the page's baked judge list.
+ *
+ * `loadChargeResult` is memoized with React `cache` so the one fetch is shared
+ * between `generateMetadata` and the page body. Site-wide noindex is inherited
+ * from the root layout, unchanged.
  */
+export const dynamicParams = false;
+
 const loadChargeResult = cache((chargeSlug: string) => getChargeResult(chargeSlug));
+const loadSearchIndex = cache(() => getSearchIndex());
+
+export async function generateStaticParams(): Promise<{ chargeSlug: string }[]> {
+  const result = await loadSearchIndex();
+  if (!result.ok) {
+    const why =
+      result.error.kind === 'api_error'
+        ? `${result.error.code} (${result.error.statusCode})`
+        : 'fetch_failed';
+    throw new Error(
+      `The search index could not be loaded (${why}), so no charge page can be enumerated.`,
+    );
+  }
+  if (!result.data.available) {
+    throw new Error('The search index is unavailable (no published run); nothing to enumerate.');
+  }
+  return result.data.charges.map((charge) => ({ chargeSlug: charge.slug }));
+}
 
 interface ChargeResultPageProps {
   params: Promise<{ chargeSlug: string }>;
@@ -29,8 +56,7 @@ export async function generateMetadata({ params }: ChargeResultPageProps): Promi
   const { chargeSlug } = await params;
   const state = resolveChargeResultState(await loadChargeResult(chargeSlug));
   // Every 200 arm (success, volume, unavailable) carries charge identity, so
-  // the title is the charge display name in each; not-found/error fall back
-  // to the site default title from the layout template.
+  // the title is the charge display name in each.
   if (state.kind === 'success' || state.kind === 'volume' || state.kind === 'unavailable') {
     return { title: state.data.charge.displayName };
   }
@@ -42,11 +68,14 @@ export default async function ChargeResultPage({ params }: ChargeResultPageProps
   const state = resolveChargeResultState(await loadChargeResult(chargeSlug));
 
   if (state.kind === 'not-found') {
-    notFound();
+    // An enumerated slug the result endpoint does not know: fail the export
+    // rather than emit a page (STATIC-2b pin 2).
+    throw new Error(
+      'An enumerated charge slug did not resolve to a result; refusing to emit a page.',
+    );
   }
   if (state.kind === 'error') {
-    // Generic, detail-free throw — error.tsx renders its own safe copy and
-    // never surfaces this message or any request detail.
+    // Generic, detail-free throw — fails the export; never reaches a page.
     throw new Error('The charge result could not be loaded.');
   }
   // DP-3: the success view manages its own two-column layout inside the

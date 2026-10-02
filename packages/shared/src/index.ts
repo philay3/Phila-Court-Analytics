@@ -10,6 +10,8 @@ export * from './public/search.js';
 export * from './public/charge-directory.js';
 export * from './public/search-index.js';
 export * from './public/search-match.js';
+export * from './public/not-found.js';
+export * from './public/static-data.js';
 export * from './public/sentencing-index.js';
 export * from './public/result-display.js';
 export * from './public/charge-result.js';

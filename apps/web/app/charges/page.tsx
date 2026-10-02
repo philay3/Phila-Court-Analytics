@@ -1,4 +1,3 @@
-import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { getCharges } from '../lib/public-api-client';
 import { ChargesDirectoryView } from './ChargesDirectoryView';
@@ -9,34 +8,21 @@ import { CHARGES_COPY } from './charges-copy';
  * fetches the public charge list via the 11.2 client (server-side, absolute
  * base URL) and dispatches to the presentational view. Both availability arms
  * are data (the view renders the served unavailable message verbatim); only a
- * failed fetch throws, into the error.tsx boundary — the charge-route
- * precedent, which supplies the retry via reset().
- *
- * Rendering: `dynamic = 'force-dynamic'` (task 15.2 CI finding) so the page
- * renders per request and never bakes a build-time snapshot of the published
- * run. Site-wide noindex is inherited from the root layout, unchanged.
- *
- * Loading state (fix R7a, 2026-07-25): the former route-level `loading.tsx`
- * is now an IN-PAGE Suspense fallback around the fetching inner component. A
- * segment-level `loading.tsx` here wraps every CHILD segment too
- * (/charges/[chargeSlug] and its judge route), and that boundary flushes a
- * 200 shell before a child page's `notFound()` can set real 404 status —
- * verified against Next 16.2. An in-page boundary keeps the directory's
- * skeleton without capturing the child routes. Do not reintroduce a
- * `loading.tsx` on this segment or any ancestor of a `notFound()` caller.
+ * failed fetch throws — since task STATIC-2b that is a build-time failure of
+ * the static export, never a request-time state. The former in-page Suspense
+ * fallback (fix R7a) is gone with it: an export streams nothing. Site-wide
+ * noindex is inherited from the root layout, unchanged.
  */
 export const metadata: Metadata = {
   title: CHARGES_COPY.heading,
 };
 
-export const dynamic = 'force-dynamic';
-
-async function ChargesDirectoryContent() {
+export default async function ChargesPage() {
   const result = await getCharges();
 
   if (!result.ok) {
-    // Generic, detail-free throw — error.tsx renders its own safe copy and
-    // never surfaces this message or any request detail.
+    // Generic, detail-free throw — under the static build this fails the
+    // export; the message never reaches a page.
     throw new Error('The charge directory could not be loaded.');
   }
 
@@ -44,19 +30,5 @@ async function ChargesDirectoryContent() {
     <div className="mx-auto w-full max-w-article">
       <ChargesDirectoryView data={result.data} />
     </div>
-  );
-}
-
-export default function ChargesPage() {
-  return (
-    <Suspense
-      fallback={
-        <p role="status" className="text-muted">
-          {CHARGES_COPY.loadingMessage}
-        </p>
-      }
-    >
-      <ChargesDirectoryContent />
-    </Suspense>
   );
 }

@@ -6,6 +6,8 @@ dist/
 .next/
 # Next.js static-export output (`output: 'export'`); built from the published run, never committed
 out/
+# Static-build scratch (materialized API responses); regenerated every run, never committed
+.static-build/
 packages/taxonomy/generated/
 packages/shared/generated/
 __pycache__/

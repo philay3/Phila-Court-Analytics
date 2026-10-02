@@ -4,9 +4,9 @@
  * Judge-filter entry point (task 13.2, pinned decision 5). Reuses the 12.3
  * `JudgeSearchInput` combobox in an "add a judge" section on the charge-only
  * result page. Selecting a judge COMMITS it (the combobox never navigates on
- * its own) and this component then routes to the judge-specific result page:
- * `/charges/[chargeSlug]/judge/[judgeSlug]` (that page lands in 13.3 — shipping
- * the route target now is intended).
+ * its own) and this component then routes to the judge-specific result,
+ * which since task STATIC-2b renders in-page on the charge route behind
+ * `/charges/[chargeSlug]?judge=[judgeSlug]`.
  *
  * The section is purely additive: it never blocks or gates the charge-only
  * content, and its help copy is the sanctioned shared JUDGE_FILTER_HELP_MESSAGE
@@ -33,7 +33,7 @@ export function JudgeFilterEntry({ chargeSlug }: JudgeFilterEntryProps) {
     // A selection (non-null commit) routes to the judge-specific result; an
     // edit that clears the commit (null) simply stages nothing and never routes.
     if (judge !== null) {
-      router.push(`/charges/${chargeSlug}/judge/${judge.slug}`);
+      router.push(`/charges/${chargeSlug}?judge=${judge.slug}`);
     }
   }
 

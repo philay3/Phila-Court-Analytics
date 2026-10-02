@@ -6,13 +6,11 @@ import { HOME_COPY } from './components/home-copy';
 import { getCharges } from './lib/public-api-client';
 
 /**
- * Homepage (task DP-5): gains a server-side fetch feeding the featured
- * section, so it renders per request — `force-dynamic` per the standing
- * no-build-time-API-fetch rule (the /charges 15.2 precedent). The featured
- * section is strictly fail-soft (pin 5): any failure arm renders the page
- * without the section; the search surface never depends on the fetch.
+ * Homepage (task DP-5): a server-side fetch feeds the featured section. Since
+ * task STATIC-2b the page is prerendered at build time — the static build
+ * script materializes the API and fails the build if any fetch is not served,
+ * so the fail-soft arms below (pin 5) cannot bake a missing section unnoticed.
  */
-export const dynamic = 'force-dynamic';
 
 /**
  * Top directory rows (up to 4, served order) for the featured section, or an

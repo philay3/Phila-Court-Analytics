@@ -17,21 +17,13 @@ import { DATA_COVERAGE_COPY } from './data-coverage-copy';
  *     view renders directly (served `coverage.message`), still showing the
  *     always-present jurisdiction/scope/start and known-limitations.
  *
- * Rendering: `dynamic = 'force-dynamic'` (task 15.2 CI finding) so the page
- * renders per request and never at build time — see the export note below.
+ * Since task STATIC-2b the page is prerendered at build time by the static
+ * build script, which materializes the API and fails on any unserved fetch.
  * Site-wide noindex is inherited from the root layout, unchanged.
  */
 export const metadata: Metadata = {
   title: DATA_COVERAGE_COPY.heading,
 };
-
-// Render per request, never at build time (task 15.2 CI finding). These pages
-// carry live published-run metadata (lastRefreshed, coverage dates) and the
-// publication model separates deploys from data publication; a static prerender
-// would bake a build-time snapshot — or, if the API is unreachable during
-// `next build`, the error state — into the deploy. force-dynamic makes the
-// server-side fetch run on every request.
-export const dynamic = 'force-dynamic';
 
 export default async function DataCoveragePage() {
   const result = await getDataCoverage();

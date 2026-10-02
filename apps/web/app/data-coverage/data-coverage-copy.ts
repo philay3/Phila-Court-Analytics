@@ -39,9 +39,6 @@ export const DATA_COVERAGE_COPY = {
   // entries themselves are served verbatim.
   knownLimitationsHeading: 'Known limitations',
 
-  // Route-level loading state — describes the in-flight fetch only.
-  loadingMessage: 'Loading data coverage…',
-
   // Error state heading. The error body is a shared @pca/shared constant chosen
   // by failure arm; no internal detail is ever shown.
   errorHeading: 'Data coverage is unavailable',

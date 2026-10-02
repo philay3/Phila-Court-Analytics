@@ -28,10 +28,6 @@ export const DEFINITIONS_COPY = {
   // value is interpolated from the API response after this label.
   taxonomyVersionLabel: 'Taxonomy version',
 
-  // Route-level loading state — describes the in-flight fetch only, never any
-  // outcome or figure.
-  loadingMessage: 'Loading definitions…',
-
   // Error state heading. The error body text is a shared @pca/shared constant
   // selected by failure arm; no internal detail is ever shown.
   errorHeading: 'Definitions are unavailable',

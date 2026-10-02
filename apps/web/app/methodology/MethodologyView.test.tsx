@@ -3,7 +3,6 @@ import { render, screen } from '@testing-library/react';
 import { METHODOLOGY_SECTION_KEYS, type MethodologyResponse } from '@pca/shared';
 import { MethodologyView, MethodologyErrorState } from './MethodologyView.js';
 import { METHODOLOGY_COPY } from './methodology-copy.js';
-import Loading from './loading.js';
 
 // Fixture typed straight from @pca/shared — no local/mock shapes. Each section
 // gets a distinctive heading/body so verbatim rendering is provable per key.
@@ -53,12 +52,5 @@ describe('MethodologyErrorState', () => {
       screen.getByRole('heading', { level: 1, name: METHODOLOGY_COPY.errorHeading }),
     ).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(message);
-  });
-});
-
-describe('methodology loading state', () => {
-  it('renders a neutral in-flight status message', () => {
-    render(<Loading />);
-    expect(screen.getByRole('status')).toHaveTextContent(METHODOLOGY_COPY.loadingMessage);
   });
 });

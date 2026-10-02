@@ -10,6 +10,7 @@ import {
   type JudgeSearchResponse,
   type MethodologyResponse,
   type PublicErrorCode,
+  type SearchIndexResponse,
 } from '@pca/shared';
 
 /**
@@ -190,4 +191,13 @@ export function getMethodology(): Promise<PublicApiResult<MethodologyResponse>> 
 
 export function getDataCoverage(): Promise<PublicApiResult<DataCoverageResponse>> {
   return fetchPublic(`${PUBLIC_API_PREFIX}/data-coverage`);
+}
+
+/**
+ * The enumeration payload (task STATIC-2b): every active charge, the judges
+ * with judge-specific results, and the pairs. Read server-side at build time by
+ * `generateStaticParams` and by the charge page to bake its judge list.
+ */
+export function getSearchIndex(): Promise<PublicApiResult<SearchIndexResponse>> {
+  return fetchPublic(`${PUBLIC_API_PREFIX}/search-index`);
 }

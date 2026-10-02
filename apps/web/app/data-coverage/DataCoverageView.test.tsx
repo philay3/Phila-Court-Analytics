@@ -9,7 +9,6 @@ import {
 } from '@pca/shared';
 import { DataCoverageView, DataCoverageErrorState } from './DataCoverageView.js';
 import { DATA_COVERAGE_COPY } from './data-coverage-copy.js';
-import Loading from './loading.js';
 
 // Distinctive, order-sensitive limitations — the third entry stands in for the
 // seeded-data disclosure. The strings are deliberately unusual so a paraphrase
@@ -136,12 +135,5 @@ describe('DataCoverageErrorState', () => {
       screen.getByRole('heading', { level: 1, name: DATA_COVERAGE_COPY.errorHeading }),
     ).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(message);
-  });
-});
-
-describe('data coverage loading state', () => {
-  it('renders a neutral in-flight status message', () => {
-    render(<Loading />);
-    expect(screen.getByRole('status')).toHaveTextContent(DATA_COVERAGE_COPY.loadingMessage);
   });
 });

@@ -11,7 +11,7 @@
  *   - submit (single handler, pinned decision 3):
  *       · no charge, no judge      → no navigation; charge hint shown
  *       · charge, no judge         → /charges/[chargeSlug]
- *       · charge + judge           → /charges/[chargeSlug]/judge/[judgeSlug]
+ *       · charge + judge           → /charges/[chargeSlug]?judge=[judgeSlug]
  *       · judge, no charge         → no navigation; charge hint shown; the
  *                                    judge commit is preserved (not cleared)
  *     Free-text submission is impossible by construction (no committed charge,
@@ -52,7 +52,7 @@ export function SearchForm() {
     if (committedCharge !== null) {
       setShowHint(false);
       if (committedJudge !== null) {
-        router.push(`/charges/${committedCharge.slug}/judge/${committedJudge.slug}`);
+        router.push(`/charges/${committedCharge.slug}?judge=${committedJudge.slug}`);
         return;
       }
       router.push(`/charges/${committedCharge.slug}`);

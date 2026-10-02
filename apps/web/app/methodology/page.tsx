@@ -16,20 +16,13 @@ import { METHODOLOGY_COPY } from './methodology-copy';
  * something a boundary receiving only a thrown Error cannot do. No internal
  * error detail ever reaches the user.
  *
- * Rendering: `dynamic = 'force-dynamic'` (task 15.2 CI finding) so the page
- * renders per request and never at build time — see the export note below.
+ * Since task STATIC-2b the page is prerendered at build time by the static
+ * build script, which materializes the API and fails on any unserved fetch.
  * Site-wide noindex is inherited from the root layout, unchanged.
  */
 export const metadata: Metadata = {
   title: METHODOLOGY_COPY.heading,
 };
-
-// Render per request, never at build time (task 15.2 CI finding). These pages
-// carry live published-run metadata and the publication model separates deploys
-// from data publication; a static prerender would bake a build-time snapshot —
-// or, if the API is unreachable during `next build`, the error state — into the
-// deploy. force-dynamic makes the server-side fetch run on every request.
-export const dynamic = 'force-dynamic';
 
 export default async function MethodologyPage() {
   const result = await getMethodology();

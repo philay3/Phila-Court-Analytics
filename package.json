@@ -9,6 +9,7 @@
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
     "build:packages": "pnpm --filter @pca/taxonomy --filter @pca/shared --filter @pca/db run build",
+    "build:static": "pnpm run build:packages && pnpm --filter @pca/api run build:static",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

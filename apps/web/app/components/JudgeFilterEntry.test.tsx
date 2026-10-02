@@ -62,6 +62,6 @@ describe('JudgeFilterEntry', () => {
 
     fireEvent.click(screen.getByText(ALPHA.displayName));
 
-    expect(pushMock).toHaveBeenCalledWith(`/charges/theft/judge/${ALPHA.slug}`);
+    expect(pushMock).toHaveBeenCalledWith(`/charges/theft?judge=${ALPHA.slug}`);
   });
 });
