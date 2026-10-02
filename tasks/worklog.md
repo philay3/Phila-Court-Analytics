@@ -9355,3 +9355,78 @@ on the API). `eslint.config.mjs` extends the Next presets to `apps/ops`;
 lockfile registers the workspace; root scripts untouched (`pnpm -r run
 typecheck` and `pnpm test` pick it up by recursion; `pnpm dev` also starts it
 on 3002). Proof (API log status codes) and the E2E posture are in the report.
+
+## STATIC-2b — The Static Conversion (2026-10-02)
+
+**Process.** Straight to `main`, four commits, each pushed; the plan was
+recorded in the report before implementation
+(`~/court-data/reports/static-2b-20261002/report.md`). CI was red on commits 1
+and 2 as the plan expected — the OLD E2E job's `next build` now needs the
+search index at build time and no API was running (`The search index could not
+be loaded (fetch_failed), so no charge page can be enumerated`) — and green from
+commit 3, the first run of the new E2E job. Run ids in the report.
+
+**Commit 1 (`412af29`) — build script, export switch, route set.**
+`apps/api/src/static-build/` (guards, throwaway server, materialize, run, cli):
+`pnpm run build:static -- --mode publish|ci`. The mode guard is name-shaped
+and pre-connection (publish = database exactly `pca` on a local host; ci = the
+29.2 test-db guard), cross-checked with `SELECT current_database()`; the
+published run is pinned (data-coverage must be `available: true`, every
+payload's `aggregateRunId` must match it); `RATE_LIMIT_MAX` is raised
+in-process; `buildApp` + `app.inject` materialize every public response; a
+throwaway local HTTP server on the same event loop (an async `spawn` of `next
+build` — `spawnSync` deadlocked the first trial) serves only materialized paths
+and records every request; any unserved request fails the build and deletes
+`out/`; data files land under `out/data/` (`search-index.json`,
+`charges/<slug>.json` folding each charge's judge pairs). `next.config.ts`:
+`PCA_STATIC_EXPORT=1` → `output: 'export'`. Charge pages: `generateStaticParams`
+from the search index, `dynamicParams = false`, a throw on any unresolvable
+state (the STATIC-2a trial showed `notFound()` would bake a page). Judge route
+tree, `loading.tsx` files, every `force-dynamic`, and the dead views removed;
+root `not-found.tsx` with copy pinned in `@pca/shared`; `public/_headers`
+(`X-Robots-Tag: noindex, nofollow` on `/*`) and `public/_redirects` (legacy
+`/judge/` → `?judge=` 301). `wrangler` 4.147.0 as an `@pca/e2e` dev dependency
+(workerd build allowed in `pnpm-workspace.yaml`); eslint ignores `out/`,
+`.static-build/`, `.wrangler/`.
+
+**Commit 2 (`a7187ab`) — in-page judge panel, client-side search.**
+`ChargeResultShell` ('use client') wraps the server-rendered charge-only view in
+a Suspense whose fallback is the view itself, so the exported HTML is the
+complete charge-only page; it reads `?judge=` with `useSearchParams`: a paired
+judge loads `/data/charges/<slug>.json` once and renders the unchanged
+`JudgeSpecificResultView` in place; an unknown or unpaired judge gets the
+`JUDGE_SPECIFIC_UNAVAILABLE_MESSAGE` notice above the view; a failed load the
+`FETCH_FAILURE_MESSAGE` notice. The comboboxes match with
+`matchCharges`/`matchJudges` over `/data/search-index.json` (loaded once per
+page); the home judge field is disabled until a charge is committed and scoped
+to that charge's paired judges (`judgesWithResultsFor`, new in `@pca/shared`);
+the charge-page filter offers the baked list and selects in place with
+`history.pushState`. `public-api-client` loses the search and judge-result
+fetchers; one dev-only rewrite maps the index file to the API under `next dev`
+(the per-charge files exist only in the export, so the judge panel under `next
+dev` shows the fetch-failure notice — accepted in the plan).
+
+**Commit 3 (`b7e30af`) — CI and E2E on the export.** The E2E job runs migrate
++ seed → `pnpm run build:static -- --mode ci` (database `pca_ci`, allow-listed
+by the guard) → Playwright with ONE web server, `wrangler pages dev
+../apps/web/out` on `E2E_WEB_PORT` (default 3000); no API build, no `next
+start`. Specs: home judge field disabled-until-charge and scoped; home flow and
+charge-page filter land on `?judge=` (pushState, the document keeps one
+navigation entry); the unavailable pair and the W1 regression as in-page
+notices; unknown charge → root 404 copy with a real 404 status; legacy
+`/judge/` → 301 with the query in `Location`; `X-Robots-Tag` + robots meta on
+pages, data files, and the 404; `/methodology` served without a trailing-slash
+redirect; zero `/api/v1/public/` requests during a search. Retired copy keys:
+`notFoundHeading`, `notFoundHomeLinkText`, `chargeUnavailableHeading`,
+`CHARGES_COPY.loadingMessage`. Root `test:e2e` builds the export in ci mode
+first; README rewritten; the demo-capture script now waits for the `?judge=`
+address. Local proof: 35 passed against `pca_test` on port 8788.
+
+**Commit 4 — `pnpm dev` excludes `@pca/ops`** (`--filter '!@pca/ops'`;
+`pnpm --filter @pca/ops dev` still starts it on 3002) and this entry.
+
+**Publish build on the final tree (canonical `pca`, run `78f90de7`):**
+118 html routes, 109 data files, 1,199 files in all, largest file 227,535 bytes (a JS chunk), 2,317 responses materialized, 116 served to `next build`, 0 unserved. Publish mode refuses `pca_test` by name before connecting.
+Pages semantics verified with `wrangler pages dev` and a Playwright request log
+(zero API requests). Full evidence, verbatim gate output, and the red-run list
+are in the report.
