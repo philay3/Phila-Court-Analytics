@@ -9202,3 +9202,97 @@ goldens-init for the 41 ran async: tier2 **new=41, diverged=0, failed=0** — th
 parser walks 1,400pp fraud sheets end-to-end without a single failure.
 
 **Operator Numbers** artifact refreshed to v6 (same URL) on run `78f90de7`.
+
+## STATIC-1 — Static-Site Recon Closeout (2026-10-02, read-only)
+
+**Context.** The Render services (web, API, Postgres) were cancelled on
+2026-10-01 and philacourtoutcomes.org is down; the planning chat decided that
+production becomes a static site on Cloudflare Pages, built at publish time from
+the published run and uploaded by direct upload (no API server, database, or
+rate limiter in production; pipeline, published-run model, local canonical
+`pca`, privacy boundary, copy gates, and test suites unchanged). STATIC-1 was the
+read-only recon feeding that design: no code, no repo writes, report at
+`~/court-data/reports/static-recon-20261001/recon-report.md` (sections R1–R9,
+STOPs and surprises, gate block). Worklog waived at the time per PR-1; this is
+the closeout ride-along the STATIC-0 spec asked for.
+
+**Inventoried.** Every route under `apps/web/app` — 12 routes, 8 server-rendered
+on demand today (six `force-dynamic`, two dynamic result pages with `notFound()`)
+and 4 prerendered; no middleware, no root `not-found.tsx`, no `next/image`, no
+request-time header/cookie/searchParams use; the one `next.config` feature is
+the `/api/v1/public/*` rewrite, which `output: 'export'` ignores. The 8 public
+API routes plus `/health` and the env-gated admin feed, each with its web
+consumers, tagged-union arms, and static-file viability. The judge-result URL
+shape (path segments; slug or UUID accepted by the API, slug the only linked
+form). The nine public error codes and their static equivalents. The six
+test/gate surfaces and what each assumes about a live API. Every doc, config,
+and copy line that assumes Render, the API, or request-time behavior (README,
+ADR 0004 + addendum, the three runbooks, demo script, env examples, CI). Build-
+time data-source options. The noindex mechanism (meta tag only; a response
+header was never set, per the 2026-07-15 live verification).
+
+**Two recon STOPs (recorded, recon continued).** (1) No enumeration path for
+judges: `/judges/search` answers a query string only, so `generateStaticParams`
+for `[judgeSlug]` has no API source; `/charges` enumerates only charges with
+outcome aggregates. (2) Pages depend on request-time input: both autocomplete
+comboboxes call the search endpoints at keystroke time through the rewrite.
+
+**Headline findings** (counts are snapshots of run `78f90de7`, published
+2026-07-28 03:12 UTC): 109 served charges + 1 volume-arm charge (110 active
+roster charges, every one a 200 page today), 76 judges (63 with any pair),
+2,202 charge×judge pairs with judge-specific data. Next 16.2.10 export emits
+2 files per route (`.html` + `.txt`); today's normal build has 42 `_next/static`
+files. Projection: pages only where data exists → 4,682 files (23% of the
+20,000 cap); every pair a visitor can form → 16,998 files (85%), crossing at
+≈90 judges or ≈130 charges. Also: id-addressed result URLs resolve today but are
+never linked; the route-level not-found pages collapse to one root `404.html`
+(currently Next's default page); home and the three content pages render fetch
+failures as 200s, so an export would bake them unless gated; the in-app rate
+limiter (120/min, constant key) throttles any build that fetches thousands of
+pages; `/admin` and the `force-dynamic` `/admin/numbers` handler must be
+dropped for export. R8 recommended in-process `fastify.inject` with API
+responses materialized to files before `next build` (proves
+`current_database()` through the API's own handle, fails closed on every arm,
+and the files double as the static API surface and autocomplete roster). R9:
+keep the meta tag, add a Pages `_headers` `X-Robots-Tag` rule. Gates on
+`a30ff1d` were red before the recon touched anything → STATIC-0 below.
+
+**Rulings.** Design decisions (build mechanism, judge-page handling, gates,
+404/trailing-slash, noindex, monitoring) belong to the planning chat and arrive
+as STATIC-2; per PR-2 they are recorded on disk when made.
+
+## STATIC-0 — Gate Hygiene on main (2026-10-02)
+
+**Why.** Three gates were red on `main` at `a30ff1d` with a clean tree (found by
+STATIC-1): `ruff check` I001 in `tests/test_collector_transport.py` (order of
+two names inside the `transport` import block); `ruff format --check` on
+`collector/search_engine.py` and `tests/test_collector_search_engine.py` (one
+over-wrapped call each); Prettier on `docs/board.md` (column padding of the §1
+"Published data" table). All from the 2026-07-26..31 commits. Standing rule: any
+`format:check` warning is a stop, so nothing else lands until this does.
+
+**What landed.** `uv run ruff check --fix` on the one test file (import order
+only); `uv run ruff format` on the two named files; `pnpm exec prettier --write
+docs/board.md` (16 lines, 8/8, table padding only — the alphanumeric token
+stream is identical before and after; the board's content, known stale about
+hosting, is untouched and is STATIC-3's). Plus this worklog. No behavior change.
+
+**CI-gap finding (for the planning chat).** CI never ran on `a30ff1d`: local
+`main` was 14 commits ahead of `origin/main` — nothing had been pushed since
+`73f5146` (2026-07-26, the last main run, green). The three main pushes before
+that (`a1247f1`, `045db3f`, `fddadc5`, 07-25/26) failed CI at the Node job's
+"Format check" step with no watcher. CI's commands match the local gates exactly
+(`ci.yml` lines 73-74 root `pnpm format:check`; `services/pipeline` working
+directory at 185-187 with `uv run ruff check .` and `uv run ruff format --check
+.` at 220-224): no flag, path, or file-set difference. The gap is that commits
+stopped reaching GitHub, and before that, that red main runs were not acted on
+under the straight-to-main regime.
+
+**Gates** (verbatim in the report): `uv run ruff check .` all checks passed;
+`uv run ruff format --check .` 134 files already formatted; `pytest -q` 1209
+passed, 1 skipped (matches STATIC-1); `pnpm format:check` clean; `pnpm
+typecheck` clean. Report:
+`~/court-data/reports/static-0-gate-hygiene-20261002/report.md`. Delivery per
+the STATIC-0 spec: branch `static-0-gate-hygiene`, one commit, PR with CI as the
+authority for the green claim; the push also publishes the 14 unpushed main
+commits, so it was held for the planning chat's go-ahead (see the report).

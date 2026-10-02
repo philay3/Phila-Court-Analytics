@@ -287,14 +287,14 @@ _As of 2026-07-25._
 
 **Published data**
 
-| Fact                    | Value                                                                           | Source                                            |
-| ----------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Published aggregate run | `78f90de7-d250-4206-a76f-ef7732e97fe2`                                          | `analytics.aggregate_runs` query, run 2026-07-28  |
-| Its fact build run      | `ee9a5e93-cf88-49d3-adaf-5a9680ed1d2c` (+41 recovered 2026-05-21 mega-case dockets; identity exact 148,230; reconciles=true) | same query, 2026-07-28 |
-| Build completed         | 2026-07-28 03:08:19 UTC (published 03:12:36 UTC)                                | `fact.fact_build_runs` query, run 2026-07-28      |
-| Aggregate data_range    | 2025-01-01 .. 2026-07-24                                                        | `analytics.aggregate_runs` query, run 2026-07-28  |
-| Prior run               | `f1ebd632` (fact build `b6aa02a3`) invalidated at the 03:12 publish (the 07-27 mega-docket-reload run) | same query, 2026-07-28 |
-| Prod sync               | per-table counts identical local vs prod across all 15 tables at the 2026-07-28 03:12 republish (diff → MATCH) | worklog "CP Window-Gap Timeout Fix + 5/21 Recovery" |
+| Fact                    | Value                                                                                                                        | Source                                              |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Published aggregate run | `78f90de7-d250-4206-a76f-ef7732e97fe2`                                                                                       | `analytics.aggregate_runs` query, run 2026-07-28    |
+| Its fact build run      | `ee9a5e93-cf88-49d3-adaf-5a9680ed1d2c` (+41 recovered 2026-05-21 mega-case dockets; identity exact 148,230; reconciles=true) | same query, 2026-07-28                              |
+| Build completed         | 2026-07-28 03:08:19 UTC (published 03:12:36 UTC)                                                                             | `fact.fact_build_runs` query, run 2026-07-28        |
+| Aggregate data_range    | 2025-01-01 .. 2026-07-24                                                                                                     | `analytics.aggregate_runs` query, run 2026-07-28    |
+| Prior run               | `f1ebd632` (fact build `b6aa02a3`) invalidated at the 03:12 publish (the 07-27 mega-docket-reload run)                       | same query, 2026-07-28                              |
+| Prod sync               | per-table counts identical local vs prod across all 15 tables at the 2026-07-28 03:12 republish (diff → MATCH)               | worklog "CP Window-Gap Timeout Fix + 5/21 Recovery" |
 
 **Corpus** _(all from `operator-numbers-report`, snapshot 2026-07-22; corpus
 census re-confirmed identical in `recon-36.0`, snapshot 2026-07-24)_

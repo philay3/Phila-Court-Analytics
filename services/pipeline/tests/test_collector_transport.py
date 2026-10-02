@@ -10,8 +10,8 @@ from pipeline.collector.classification import (
     classify,
 )
 from pipeline.collector.transport import (
-    FETCH_PDF_TIMEOUT_MS,
     _SEARCH_UI_SELECTOR,
+    FETCH_PDF_TIMEOUT_MS,
     PlaywrightTransport,
 )
 
