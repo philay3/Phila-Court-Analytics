@@ -157,6 +157,14 @@ jobs:
       - name: Build static export (ci mode)
         run: pnpm run build:static -- --mode ci
 
+      # The export gate (task STATIC-2c): every file of apps/web/out against the
+      # build's manifest — copy-safety and privacy scanners over pages,
+      # payloads, and data files; pinned run id; no baked failure state;
+      # noindex; two-way coverage; limits. Any violation fails the job before
+      # Playwright runs, exactly as it would stop a publish before the upload.
+      - name: Gate static export
+        run: pnpm run gate:static
+
       # Cache the chromium browser binary across runs, keyed on the lockfile
       # (which pins the Playwright version). Install OS deps every run; download
       # the browser only on a cache miss.
