@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SearchIndexCharge, SearchIndexJudge } from './search-index.js';
 import {
   clampSearchLimit,
+  judgesWithResultsFor,
   matchCharges,
   matchJudges,
   normalizeSearchQuery,
@@ -299,5 +300,26 @@ describe('judge rank cases (repositories/judge-search.ts:58-73)', () => {
           : ['displayName', 'matchedAlias', 'slug'],
       );
     }
+  });
+});
+
+describe('judgesWithResultsFor (STATIC-2b pin 4)', () => {
+  const pairs = [
+    { chargeSlug: 'reckless-skipping', judgeSlug: 'judge-mira-stone' },
+    { chargeSlug: 'reckless-skipping', judgeSlug: 'judge-ada-quill' },
+    { chargeSlug: 'kite-string-tampering', judgeSlug: 'judge-ora-flint' },
+  ];
+
+  it('returns the paired judges for a charge in index order, and none for an unpaired charge', () => {
+    expect(slugs(judgesWithResultsFor({ judges: JUDGES, pairs }, 'reckless-skipping'))).toEqual([
+      'judge-ada-quill',
+      'judge-mira-stone',
+    ]);
+    expect(judgesWithResultsFor({ judges: JUDGES, pairs }, 'under-score-statute')).toEqual([]);
+  });
+
+  it('ignores pairs whose judge is not in the judge list', () => {
+    const stray = [{ chargeSlug: 'reckless-skipping', judgeSlug: 'judge-not-listed' }];
+    expect(judgesWithResultsFor({ judges: JUDGES, pairs: stray }, 'reckless-skipping')).toEqual([]);
   });
 });

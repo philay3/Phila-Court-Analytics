@@ -1,4 +1,4 @@
-import type { SearchIndexCharge, SearchIndexJudge } from './search-index.js';
+import type { SearchIndexCharge, SearchIndexJudge, SearchIndexPair } from './search-index.js';
 import {
   SEARCH_LIMIT_DEFAULT,
   SEARCH_LIMIT_MAX,
@@ -182,4 +182,20 @@ export function matchJudges(
     displayName: entry.displayName,
     ...(matchedAlias !== undefined ? { matchedAlias } : {}),
   }));
+}
+
+/**
+ * The judges that have a judge-specific result for one charge, in the index's
+ * served order (task STATIC-2b, pin 4). The charge page bakes this list and
+ * the home form scopes its judge field with it, so a judge can never be
+ * selected into a dead end.
+ */
+export function judgesWithResultsFor(
+  index: { judges: readonly SearchIndexJudge[]; pairs: readonly SearchIndexPair[] },
+  chargeSlug: string,
+): SearchIndexJudge[] {
+  const paired = new Set(
+    index.pairs.filter((pair) => pair.chargeSlug === chargeSlug).map((pair) => pair.judgeSlug),
+  );
+  return index.judges.filter((judge) => paired.has(judge.slug));
 }

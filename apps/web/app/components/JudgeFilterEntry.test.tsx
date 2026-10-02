@@ -1,27 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { JUDGE_FILTER_HELP_MESSAGE } from '@pca/shared';
-import type { JudgeSearchResult } from '@pca/shared';
+import { JUDGE_FILTER_HELP_MESSAGE, type SearchIndexJudge } from '@pca/shared';
 import { JudgeFilterEntry } from './JudgeFilterEntry.js';
 
 const DEBOUNCE_MS = 250;
 
-// Router push is hoisted so the next/navigation mock can capture navigations.
-const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: pushMock }) }));
-
-const ALPHA: JudgeSearchResult = {
-  id: '11111111-1111-1111-1111-111111111111',
-  slug: 'alpha-judge',
-  displayName: 'Judge Alpha',
-};
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
+const JUDGES: SearchIndexJudge[] = [
+  { slug: 'alpha-judge', displayName: 'Judge Alpha', aliases: [] },
+  { slug: 'beta-judge', displayName: 'Judge Beta', aliases: [] },
+];
 
 async function settleDebounce(): Promise<void> {
   await act(async () => {
@@ -31,37 +18,41 @@ async function settleDebounce(): Promise<void> {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => Promise.reject(new Error('JudgeFilterEntry must not fetch'))),
+  );
+  // jsdom has no layout: stub the scroll-to-top the in-place selection requests.
+  vi.stubGlobal('scrollTo', vi.fn());
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  pushMock.mockReset();
 });
 
-describe('JudgeFilterEntry', () => {
+describe('JudgeFilterEntry (in-page, STATIC-2b)', () => {
   it('renders the sanctioned shared help line (DP-5) and nothing more', () => {
-    render(<JudgeFilterEntry chargeSlug="theft" />);
+    render(<JudgeFilterEntry chargeSlug="theft" judges={JUDGES} />);
     expect(screen.getByText(JUDGE_FILTER_HELP_MESSAGE)).toBeInTheDocument();
-    // The collapse is total: the help paragraph carries the shared line alone.
     expect(document.getElementById('judge-filter-help')?.textContent).toBe(
       JUDGE_FILTER_HELP_MESSAGE,
     );
   });
 
-  it('routes to the judge-specific result when a judge is selected', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(jsonResponse({ results: [ALPHA] }))),
-    );
-    render(<JudgeFilterEntry chargeSlug="theft" />);
+  it('offers only the baked judge list and selects in place with history.pushState (no navigation)', async () => {
+    const pushState = vi.spyOn(window.history, 'pushState');
+    render(<JudgeFilterEntry chargeSlug="theft" judges={JUDGES} />);
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'alpha' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'judge' } });
     await settleDebounce();
+    expect(screen.getAllByRole('option')).toHaveLength(2);
 
-    fireEvent.click(screen.getByText(ALPHA.displayName));
+    fireEvent.click(screen.getByText('Judge Alpha'));
 
-    expect(pushMock).toHaveBeenCalledWith(`/charges/theft?judge=${ALPHA.slug}`);
+    expect(pushState).toHaveBeenCalledWith(null, '', '/charges/theft?judge=alpha-judge');
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0 });
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

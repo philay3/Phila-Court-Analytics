@@ -4,6 +4,8 @@ import { getChargeResult, getSearchIndex } from '../../lib/public-api-client';
 import { ChargeOnlyResultView } from '../../components/ChargeOnlyResultView';
 import { ChargeUnavailableView } from '../../components/ChargeUnavailableView';
 import { ChargeVolumeView } from '../../components/ChargeVolumeView';
+import { judgesWithResultsFor } from '@pca/shared';
+import { ChargeResultShell } from './ChargeResultShell';
 import { resolveChargeResultState } from './charge-result-state';
 
 /**
@@ -63,9 +65,19 @@ export async function generateMetadata({ params }: ChargeResultPageProps): Promi
   return {};
 }
 
+/** The judges with results for this charge (pin 4), from the same index read. */
+async function loadJudgesFor(chargeSlug: string) {
+  const index = await loadSearchIndex();
+  if (!index.ok || !index.data.available) {
+    throw new Error('The search index could not be loaded for the charge page judge list.');
+  }
+  return judgesWithResultsFor(index.data, chargeSlug);
+}
+
 export default async function ChargeResultPage({ params }: ChargeResultPageProps) {
   const { chargeSlug } = await params;
   const state = resolveChargeResultState(await loadChargeResult(chargeSlug));
+  const judges = await loadJudgesFor(chargeSlug);
 
   if (state.kind === 'not-found') {
     // An enumerated slug the result endpoint does not know: fail the export
@@ -81,16 +93,26 @@ export default async function ChargeResultPage({ params }: ChargeResultPageProps
   // DP-3: the success view manages its own two-column layout inside the
   // 1200px shell; the volume and unavailable states stay a single 760px
   // article.
+  // The shell (STATIC-2b pin 3) owns `?judge=`: it renders these children
+  // untouched when the param is absent and the in-page judge result or
+  // notice when it is present. Volume/unavailable arms carry no pairs, so
+  // their judge list is empty and any `?judge=` renders the unavailable notice.
   if (state.kind === 'success') {
-    return <ChargeOnlyResultView data={state.data} />;
+    return (
+      <ChargeResultShell chargeSlug={chargeSlug} judges={judges}>
+        <ChargeOnlyResultView data={state.data} judges={judges} />
+      </ChargeResultShell>
+    );
   }
   return (
-    <div className="mx-auto w-full max-w-article">
-      {state.kind === 'volume' ? (
-        <ChargeVolumeView data={state.data} />
-      ) : (
-        <ChargeUnavailableView data={state.data} />
-      )}
-    </div>
+    <ChargeResultShell chargeSlug={chargeSlug} judges={[]}>
+      <div className="mx-auto w-full max-w-article">
+        {state.kind === 'volume' ? (
+          <ChargeVolumeView data={state.data} />
+        ) : (
+          <ChargeUnavailableView data={state.data} />
+        )}
+      </div>
+    </ChargeResultShell>
   );
 }

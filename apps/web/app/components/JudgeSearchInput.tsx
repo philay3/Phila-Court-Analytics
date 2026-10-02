@@ -1,22 +1,23 @@
 'use client';
 
 /*
- * Judge autocomplete input (task 12.3). A WAI-ARIA combobox that debounces
- * queries to GET /api/v1/public/judges/search (via the public API client),
- * renders suggestions in a listbox, and COMMITS a selected judge into the
- * parent form's state without navigating. Navigation happens on form submit
- * (see SearchForm), not here.
+ * Judge autocomplete input (task 12.3; client-side and scoped since task
+ * STATIC-2b). A WAI-ARIA combobox that debounces queries, renders suggestions
+ * in a listbox, and COMMITS a selected judge into the parent form's state
+ * without navigating. Navigation happens on form submit (see SearchForm) or,
+ * on a charge page, as a `?judge=` update (see JudgeFilterEntry).
  *
- * The judge is OPTIONAL (pinned decision 5): the visible label carries the
- * "(optional)" wording (HOME_COPY.judgeLabel), this input never blocks or
- * invalidates submission, and its secondary py-2.5 styling matches the 12.1
- * layout. Mechanics are shared with ChargeSearchInput via useComboboxSearch;
- * this component renders only the judge-specific option (display name + alias,
- * no statute).
+ * The parent supplies the judges this input may offer (pin 4: only judges
+ * with results for the chosen charge — never a dead end); `null` means no
+ * charge is chosen yet and the input is disabled. Matching runs locally with
+ * the shared `matchJudges`, reproducing the retired endpoint's ranking (pin 6).
+ * Mechanics are shared with ChargeSearchInput via useComboboxSearch; this
+ * component renders only the judge-specific option (display name + alias).
  */
 
-import { type JudgeSearchResult } from '@pca/shared';
-import { searchJudges } from '../lib/public-api-client';
+import { useMemo } from 'react';
+import { matchJudges, type JudgeMatch, type SearchIndexJudge } from '@pca/shared';
+import type { PublicApiResult } from '../lib/public-api-client';
 import { useComboboxSearch } from './combobox-search';
 import { HOME_COPY } from './home-copy';
 import { JUDGE_SEARCH_COPY } from './judge-search-copy';
@@ -26,10 +27,12 @@ interface JudgeSearchInputProps {
   id: string;
   /** id of the help paragraph the input is described by. */
   describedById: string;
+  /** The judges this input may offer; null = no charge chosen yet (disabled). */
+  judges: readonly SearchIndexJudge[] | null;
   /** The judge currently committed into form state, or null. */
-  committedJudge: JudgeSearchResult | null;
+  committedJudge: JudgeMatch | null;
   /** Report a commit (judge) or a clear (null) to the parent. */
-  onCommitChange: (judge: JudgeSearchResult | null) => void;
+  onCommitChange: (judge: JudgeMatch | null) => void;
   /**
    * Presentational only (DP-2, pinned decision A3): standalone placements
    * (the judge-filter entry) keep a 1px ink border as the functional
@@ -42,10 +45,19 @@ interface JudgeSearchInputProps {
 export function JudgeSearchInput({
   id,
   describedById,
+  judges,
   committedJudge,
   onCommitChange,
   bordered = false,
 }: JudgeSearchInputProps) {
+  const search = useMemo(
+    () =>
+      async (q: string): Promise<PublicApiResult<{ results: JudgeMatch[] }>> => ({
+        ok: true,
+        data: { results: matchJudges({ judges: judges ?? [] }, q) },
+      }),
+    [judges],
+  );
   const {
     query,
     results,
@@ -63,10 +75,10 @@ export function JudgeSearchInput({
     handleChange,
     handleKeyDown,
     commit,
-  } = useComboboxSearch<JudgeSearchResult>({
+  } = useComboboxSearch<JudgeMatch>({
     committed: committedJudge,
     onCommitChange,
-    search: searchJudges,
+    search,
   });
 
   return (
@@ -83,9 +95,10 @@ export function JudgeSearchInput({
         aria-describedby={`${describedById} ${instructionsId}`}
         placeholder={HOME_COPY.judgePlaceholder}
         value={query}
+        disabled={judges === null}
         onChange={(event) => handleChange(event.target.value)}
         onKeyDown={handleKeyDown}
-        className={`mt-3 min-h-11 w-full bg-card py-2 font-serif text-lg text-ink placeholder:text-muted ${
+        className={`mt-3 min-h-11 w-full bg-card py-2 font-serif text-lg text-ink placeholder:text-muted disabled:text-faint ${
           bordered ? 'border border-ink px-3' : 'px-1'
         }`}
       />
@@ -102,7 +115,7 @@ export function JudgeSearchInput({
         >
           {results.map((judge, index) => (
             <li
-              key={judge.id}
+              key={judge.slug}
               id={optionId(index)}
               role="option"
               aria-selected={index === activeIndex}

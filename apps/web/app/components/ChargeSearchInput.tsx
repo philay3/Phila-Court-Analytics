@@ -1,23 +1,37 @@
 'use client';
 
 /*
- * Charge autocomplete input (task 12.2). A WAI-ARIA combobox that debounces
- * queries to GET /api/v1/public/charges/search (via the public API client),
- * renders suggestions in a listbox, and COMMITS a selected charge into the
- * parent form's state without navigating. Navigation happens on form submit
- * (see SearchForm), not here.
+ * Charge autocomplete input (task 12.2; client-side since task STATIC-2b). A
+ * WAI-ARIA combobox that debounces queries, renders suggestions in a listbox,
+ * and COMMITS a selected charge into the parent form's state without
+ * navigating. Navigation happens on form submit (see SearchForm), not here.
  *
+ * Search no longer calls the API: the index file (`/data/search-index.json`,
+ * written by the static build) is loaded once on first interaction and the
+ * shared `matchCharges` reproduces the endpoint's ranking locally (pin 6).
  * The combobox mechanics — debounce, minimum-length gate, sequence guard,
  * staged commit, keyboard handling, ARIA id wiring — live in the shared
- * useComboboxSearch hook (task 12.3), consumed here and by JudgeSearchInput.
- * This component owns only the charge-specific rendering (statute + alias).
+ * useComboboxSearch hook, consumed here and by JudgeSearchInput. This
+ * component owns only the charge-specific rendering (statute + alias).
  */
 
-import { type ChargeSearchResult } from '@pca/shared';
-import { searchCharges } from '../lib/public-api-client';
+import { matchCharges, type ChargeMatch } from '@pca/shared';
+import type { PublicApiResult } from '../lib/public-api-client';
+import { loadSearchIndex } from '../lib/static-data';
 import { useComboboxSearch } from './combobox-search';
 import { HOME_COPY } from './home-copy';
 import { CHARGE_SEARCH_COPY } from './charge-search-copy';
+
+/** The combobox's search: load the index once, then match locally. */
+async function matchChargesFromIndex(
+  q: string,
+): Promise<PublicApiResult<{ results: ChargeMatch[] }>> {
+  const index = await loadSearchIndex();
+  if (!index.ok) {
+    return index;
+  }
+  return { ok: true, data: { results: matchCharges(index.data, q) } };
+}
 
 interface ChargeSearchInputProps {
   /** Input element id — matches the label's htmlFor in SearchForm. */
@@ -25,9 +39,9 @@ interface ChargeSearchInputProps {
   /** id of the help paragraph the input is described by. */
   describedById: string;
   /** The charge currently committed into form state, or null. */
-  committedCharge: ChargeSearchResult | null;
+  committedCharge: ChargeMatch | null;
   /** Report a commit (charge) or a clear (null) to the parent. */
-  onCommitChange: (charge: ChargeSearchResult | null) => void;
+  onCommitChange: (charge: ChargeMatch | null) => void;
 }
 
 export function ChargeSearchInput({
@@ -53,10 +67,10 @@ export function ChargeSearchInput({
     handleChange,
     handleKeyDown,
     commit,
-  } = useComboboxSearch<ChargeSearchResult>({
+  } = useComboboxSearch<ChargeMatch>({
     committed: committedCharge,
     onCommitChange,
-    search: searchCharges,
+    search: matchChargesFromIndex,
   });
 
   return (
@@ -90,7 +104,7 @@ export function ChargeSearchInput({
         >
           {results.map((charge, index) => (
             <li
-              key={charge.id}
+              key={charge.slug}
               id={optionId(index)}
               role="option"
               aria-selected={index === activeIndex}

@@ -37,7 +37,7 @@
  * 11.4 formatters (pinned decision 7); the page computes no analytics.
  */
 import { SENTENCING_DETAIL_CAPTION } from '@pca/shared';
-import type { ChargeOnlyResultSuccess } from '@pca/shared';
+import type { ChargeOnlyResultSuccess, SearchIndexJudge } from '@pca/shared';
 import {
   formatChargeVolumeLine,
   formatRecordsLabel,
@@ -62,9 +62,15 @@ import { RESULT_DISPLAY_COPY } from './result-display-copy';
 
 interface ChargeOnlyResultViewProps {
   data: ChargeOnlyResultSuccess;
+  /**
+   * Judges with judge-specific results for this charge, baked at build time
+   * from the search index (task STATIC-2b, pin 4). The judge filter renders
+   * only when the list is non-empty — never a dead end.
+   */
+  judges?: readonly SearchIndexJudge[];
 }
 
-export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
+export function ChargeOnlyResultView({ data, judges = [] }: ChargeOnlyResultViewProps) {
   const { charge, outcomes, sentencing, links } = data;
   const indexDisplay = resolveChargeSentencingIndexDisplay(data.sentencingIndex);
   // One page-level thin-data callout slot; each distribution also shows its own
@@ -198,10 +204,13 @@ export function ChargeOnlyResultView({ data }: ChargeOnlyResultViewProps) {
         aggregateRunId={data.aggregateRunId}
         actions={
           // DP-3 disclosure wraps the DP-2 entry from the OUTSIDE — the
-          // entry's ARIA, testid, strings, and routing are byte-identical.
-          <JudgeDisclosure>
-            <JudgeFilterEntry chargeSlug={charge.slug} />
-          </JudgeDisclosure>
+          // entry's ARIA, testid, and strings are byte-identical; since
+          // STATIC-2b it offers only the baked judge list and selects in place.
+          judges.length > 0 ? (
+            <JudgeDisclosure>
+              <JudgeFilterEntry chargeSlug={charge.slug} judges={judges} />
+            </JudgeDisclosure>
+          ) : undefined
         }
       >
         {/* Sample-size pairs per available distribution (bglad §14.4 pair

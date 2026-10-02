@@ -49,6 +49,9 @@ next-env.d.ts
 # TypeScript incremental build state
 *.tsbuildinfo
 
+# wrangler local state (`wrangler pages dev` serving the export, task STATIC-2b)
+.wrangler/
+
 # Playwright E2E artifacts (task 15.2)
 test-results/
 playwright-report/

@@ -2,46 +2,83 @@
 
 /*
  * Homepage search surface. Task 12.1 shipped the layout; 12.2 added the
- * interactive charge path; task 12.3 adds the optional judge path and completes
- * the submission routing:
+ * interactive charge path; task 12.3 added the optional judge path; task
+ * STATIC-2b made both paths client-side over the index file and scoped the
+ * judge field to the chosen charge (pin 4):
  *   - committedCharge / committedJudge: the staged selections (WAI-ARIA
  *     comboboxes in <ChargeSearchInput> / <JudgeSearchInput>). Selecting a
  *     suggestion COMMITS it; it does not navigate. Editing an input clears that
  *     input's commit.
+ *   - the judge field is DISABLED until a charge is committed, then offers only
+ *     the judges that have results for that charge (from the index's pairs);
+ *     a change of charge clears and re-scopes it.
  *   - submit (single handler, pinned decision 3):
- *       · no charge, no judge      → no navigation; charge hint shown
+ *       · no charge                → no navigation; charge hint shown
  *       · charge, no judge         → /charges/[chargeSlug]
  *       · charge + judge           → /charges/[chargeSlug]?judge=[judgeSlug]
- *       · judge, no charge         → no navigation; charge hint shown; the
- *                                    judge commit is preserved (not cleared)
  *     Free-text submission is impossible by construction (no committed charge,
  *     no push). The judge input never blocks or invalidates submission.
  */
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { JUDGE_FILTER_HELP_MESSAGE } from '@pca/shared';
-import type { ChargeSearchResult, JudgeSearchResult } from '@pca/shared';
+import { JUDGE_FILTER_HELP_MESSAGE, judgesWithResultsFor } from '@pca/shared';
+import type { ChargeMatch, JudgeMatch, SearchIndexJudge } from '@pca/shared';
+import { loadSearchIndex } from '../lib/static-data';
 import { HOME_COPY } from './home-copy';
 import { CHARGE_SEARCH_COPY } from './charge-search-copy';
 import { ChargeSearchInput } from './ChargeSearchInput';
 import { JudgeDisclosure } from './JudgeDisclosure';
 import { JudgeSearchInput } from './JudgeSearchInput';
 
+interface PairedJudges {
+  chargeSlug: string;
+  judges: readonly SearchIndexJudge[];
+}
+
 export function SearchForm() {
   const router = useRouter();
-  const [committedCharge, setCommittedCharge] = useState<ChargeSearchResult | null>(null);
-  const [committedJudge, setCommittedJudge] = useState<JudgeSearchResult | null>(null);
+  const [committedCharge, setCommittedCharge] = useState<ChargeMatch | null>(null);
+  const [committedJudge, setCommittedJudge] = useState<JudgeMatch | null>(null);
+  const [paired, setPaired] = useState<PairedJudges | null>(null);
   const [showHint, setShowHint] = useState(false);
 
-  function handleChargeCommitChange(charge: ChargeSearchResult | null) {
+  const chargeSlug = committedCharge?.slug ?? null;
+
+  // Scope the judge field to the committed charge: the index (already loaded
+  // by the charge combobox) supplies the pairs. State is written only from the
+  // resolved promise, never synchronously in the effect body.
+  useEffect(() => {
+    if (chargeSlug === null) {
+      return;
+    }
+    let alive = true;
+    void loadSearchIndex().then((index) => {
+      if (alive) {
+        setPaired({
+          chargeSlug,
+          judges: index.ok ? judgesWithResultsFor(index.data, chargeSlug) : [],
+        });
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [chargeSlug]);
+
+  const pairedJudges =
+    chargeSlug !== null && paired?.chargeSlug === chargeSlug ? paired.judges : null;
+
+  function handleChargeCommitChange(charge: ChargeMatch | null) {
     setCommittedCharge(charge);
+    // A different (or cleared) charge invalidates any staged judge.
+    setCommittedJudge(null);
     if (charge !== null) {
       setShowHint(false);
     }
   }
 
-  function handleJudgeCommitChange(judge: JudgeSearchResult | null) {
+  function handleJudgeCommitChange(judge: JudgeMatch | null) {
     // The judge is optional and never affects the hint or blocks submission;
     // it is simply staged (or cleared on edit) for the submit handler to read.
     setCommittedJudge(judge);
@@ -52,14 +89,15 @@ export function SearchForm() {
     if (committedCharge !== null) {
       setShowHint(false);
       if (committedJudge !== null) {
-        router.push(`/charges/${committedCharge.slug}?judge=${committedJudge.slug}`);
+        router.push(
+          `/charges/${committedCharge.slug}?judge=${encodeURIComponent(committedJudge.slug)}`,
+        );
         return;
       }
       router.push(`/charges/${committedCharge.slug}`);
       return;
     }
     // No committed charge: never navigate; prompt choosing a charge suggestion.
-    // Any committed judge is preserved (committedJudge is left untouched).
     setShowHint(true);
   }
 
@@ -89,8 +127,6 @@ export function SearchForm() {
             <p id="charge-search-help" className="mt-1 text-sm text-muted">
               {HOME_COPY.chargeHelp}
             </p>
-            {/* Task 12.2: the disabled 12.1 placeholder is replaced by the charge
-                combobox. The id and aria-describedby wiring are preserved. */}
             <ChargeSearchInput
               id="charge-search"
               describedById="charge-search-help"
@@ -101,8 +137,10 @@ export function SearchForm() {
 
           {/* Judge region — visually SECONDARY, optional. DP-3: the region
               sits behind the shared JudgeDisclosure. DP-5: the open state is
-              de-stacked to label + the single sanctioned shared help line;
-              combobox wiring and staged-commit behavior are unchanged. */}
+              de-stacked to label + the single sanctioned shared help line.
+              STATIC-2b: disabled until a charge is chosen, then scoped to the
+              judges paired with it; the key remounts the combobox so its text
+              resets with the charge. */}
           <div className="border-b border-rule p-5 desktop:border-r desktop:border-b-0">
             <JudgeDisclosure>
               <label
@@ -114,11 +152,11 @@ export function SearchForm() {
               <p id="judge-search-help" className="mt-1 text-sm text-muted">
                 {JUDGE_FILTER_HELP_MESSAGE}
               </p>
-              {/* Task 12.3: the disabled 12.1 placeholder is replaced by the judge
-                  combobox. The id and aria-describedby wiring are preserved. */}
               <JudgeSearchInput
+                key={chargeSlug ?? 'no-charge'}
                 id="judge-search"
                 describedById="judge-search-help"
+                judges={pairedJudges}
                 committedJudge={committedJudge}
                 onCommitChange={handleJudgeCommitChange}
               />

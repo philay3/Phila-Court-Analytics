@@ -15,8 +15,8 @@
  *   - Query text, the suggestion list, request status, the active option, and
  *     the Escape-closed flag are local to the hook.
  *
- * Stale-response protection: the `search` function takes no AbortSignal (the
- * client lives in the out-of-scope app/lib module), so a monotonic sequence
+ * Stale-response protection: the `search` function takes no AbortSignal, so a
+ * monotonic sequence
  * ref tags each dispatch; a response applies only if its sequence is still the
  * latest. commit/clear and dropping below the minimum also bump the sequence,
  * so a late response can never reopen a closed list.
@@ -42,7 +42,6 @@ type RequestStatus = 'idle' | 'loading' | 'done' | 'error';
  * consumers read the other fields when rendering options.
  */
 export interface ComboboxItem {
-  id: string;
   slug: string;
   displayName: string;
   matchedAlias?: string;
@@ -53,7 +52,7 @@ interface UseComboboxSearchParams<T extends ComboboxItem> {
   committed: T | null;
   /** Report a commit (item) or a clear (null) to the parent. */
   onCommitChange: (item: T | null) => void;
-  /** Typed client call for this combobox (searchCharges / searchJudges). */
+  /** The combobox's search — since STATIC-2b a local match over the index file. */
   search: (q: string) => Promise<PublicApiResult<{ results: T[] }>>;
 }
 

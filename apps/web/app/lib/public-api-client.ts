@@ -3,11 +3,8 @@ import {
   isPublicErrorCode,
   type ChargeDirectoryResponse,
   type ChargeOnlyResultResponse,
-  type ChargeSearchResponse,
   type DataCoverageResponse,
   type DefinitionsResponse,
-  type JudgeSpecificResultResponse,
-  type JudgeSearchResponse,
   type MethodologyResponse,
   type PublicErrorCode,
   type SearchIndexResponse,
@@ -15,11 +12,13 @@ import {
 
 /**
  * Public API client for apps/web (task 11.2). One module serves both
- * rendering contexts: server-side calls hit `${API_BASE_URL}` directly, while
- * browser calls use the relative `/api/v1/public/*` path and reach the API
- * through the Next.js rewrite (same-origin, no CORS). API_BASE_URL is
- * server-only — it has no NEXT_PUBLIC_ prefix, so it never enters a
- * client-delivered bundle.
+ * rendering contexts: server-side calls hit `${API_BASE_URL}` directly (under
+ * the static build, the build script's throwaway server), while browser
+ * calls use a relative path. Since task STATIC-2b the browser never calls the
+ * API: the only browser-side reads are the export's data files
+ * (app/lib/static-data.ts), which reuse this module's fetch-and-classify
+ * through `fetchPublicPath`. API_BASE_URL is server-only — it has no
+ * NEXT_PUBLIC_ prefix, so it never enters a client-delivered bundle.
  *
  * The server-side base is resolved through the shared `resolveApiBaseUrl`
  * helper (task 15.1 walkthrough Finding 2) — the SAME helper the next.config
@@ -137,44 +136,19 @@ async function fetchPublic<T>(path: string): Promise<PublicApiResult<T>> {
   return { ok: true, data: body as T };
 }
 
-function buildQuery(params: Record<string, string | number | undefined>): string {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) {
-      search.set(key, String(value));
-    }
-  }
-  const query = search.toString();
-  return query ? `?${query}` : '';
-}
-
-export function searchCharges(
-  q: string,
-  limit?: number,
-): Promise<PublicApiResult<ChargeSearchResponse>> {
-  return fetchPublic(`${PUBLIC_API_PREFIX}/charges/search${buildQuery({ q, limit })}`);
-}
-
-export function searchJudges(
-  q: string,
-  limit?: number,
-): Promise<PublicApiResult<JudgeSearchResponse>> {
-  return fetchPublic(`${PUBLIC_API_PREFIX}/judges/search${buildQuery({ q, limit })}`);
+/**
+ * Fetch-and-classify for a path outside the API prefix (the static export's
+ * data files). `fetchPublic` itself is unchanged; this is the one exported way
+ * to reach it from the browser-side readers in app/lib/static-data.ts.
+ */
+export function fetchPublicPath<T>(path: string): Promise<PublicApiResult<T>> {
+  return fetchPublic<T>(path);
 }
 
 export function getChargeResult(
   chargeIdOrSlug: string,
 ): Promise<PublicApiResult<ChargeOnlyResultResponse>> {
   return fetchPublic(`${PUBLIC_API_PREFIX}/results/charge/${encodeURIComponent(chargeIdOrSlug)}`);
-}
-
-export function getJudgeSpecificResult(
-  chargeIdOrSlug: string,
-  judgeIdOrSlug: string,
-): Promise<PublicApiResult<JudgeSpecificResultResponse>> {
-  return fetchPublic(
-    `${PUBLIC_API_PREFIX}/results/charge/${encodeURIComponent(chargeIdOrSlug)}/judge/${encodeURIComponent(judgeIdOrSlug)}`,
-  );
 }
 
 export function getCharges(): Promise<PublicApiResult<ChargeDirectoryResponse>> {

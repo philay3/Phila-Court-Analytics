@@ -27,4 +27,8 @@ export const JUDGE_RESULT_COPY = {
   // judge-unavailable branch (pinned decision 4) — both route to the
   // charge-only page and share this exact label.
   removeFilterLinkText: 'View Philadelphia-wide result instead',
+
+  // In-page judge panel (task STATIC-2b, pin 3): shown above the charge-only
+  // result while the per-charge data file loads after a `?judge=` selection.
+  panelLoading: 'Loading judge-specific results…',
 } as const;

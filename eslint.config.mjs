@@ -22,6 +22,7 @@ export default tseslint.config(
       // STATIC-2b): generated from the published run, never linted.
       '**/out/',
       '**/.static-build/',
+      '**/.wrangler/',
       '**/coverage/',
       '**/generated/',
       '**/.venv/',

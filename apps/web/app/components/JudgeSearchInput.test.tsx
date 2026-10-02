@@ -1,38 +1,33 @@
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { FETCH_FAILURE_MESSAGE, PUBLIC_ERROR_MESSAGES, type JudgeSearchResult } from '@pca/shared';
+import type { JudgeMatch, SearchIndexJudge } from '@pca/shared';
 import { JudgeSearchInput } from './JudgeSearchInput.js';
 import { JUDGE_SEARCH_COPY } from './judge-search-copy.js';
 
 const DEBOUNCE_MS = 250;
 
-const ALPHA: JudgeSearchResult = {
-  id: '11111111-1111-1111-1111-111111111111',
-  slug: 'alpha-judge',
-  displayName: 'Judge Alpha',
-};
-const BETA: JudgeSearchResult = {
-  id: '22222222-2222-2222-2222-222222222222',
-  slug: 'beta-judge',
-  displayName: 'Judge Beta',
-  matchedAlias: 'b-judge',
-};
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
+// Invented judges. "Beta Judge" matches "b-j" only through its alias.
+const JUDGES: SearchIndexJudge[] = [
+  { slug: 'alpha-judge', displayName: 'Judge Alpha', aliases: [] },
+  { slug: 'beta-judge', displayName: 'Beta Judge', aliases: ['b-judge'] },
+];
+const ALPHA_MATCH: JudgeMatch = { slug: 'alpha-judge', displayName: 'Judge Alpha' };
 
 /** A parent harness mirroring SearchForm's committed-judge ownership. */
-function Harness({ onCommit }: { onCommit?: (judge: JudgeSearchResult | null) => void }) {
-  const [committed, setCommitted] = useState<JudgeSearchResult | null>(null);
+function Harness({
+  judges = JUDGES,
+  onCommit,
+}: {
+  judges?: readonly SearchIndexJudge[] | null;
+  onCommit?: (judge: JudgeMatch | null) => void;
+}) {
+  const [committed, setCommitted] = useState<JudgeMatch | null>(null);
   return (
     <JudgeSearchInput
       id="judge-search"
       describedById="judge-search-help"
+      judges={judges}
       committedJudge={committed}
       onCommitChange={(judge) => {
         onCommit?.(judge);
@@ -54,6 +49,11 @@ function combobox(): HTMLInputElement {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // No network anywhere in this component: a fetch would be a regression.
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => Promise.reject(new Error('JudgeSearchInput must not fetch'))),
+  );
 });
 
 afterEach(() => {
@@ -62,78 +62,45 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('JudgeSearchInput', () => {
-  it('is labeled optional via the visible label wiring', () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(jsonResponse({ results: [] }))),
-    );
+describe('JudgeSearchInput (scoped, client-side)', () => {
+  it('is disabled until the parent supplies a judge list, and enabled once it does', () => {
+    const { unmount } = render(<Harness judges={null} />);
+    expect(combobox()).toBeDisabled();
+    unmount();
     render(<Harness />);
-    // Optionality is signaled by the disclosure trigger and the shared help
-    // line (DP-5; the label is plain HOME_COPY.judgeLabel); this component's
-    // input is a non-disabled combobox that never blocks.
     expect(combobox()).not.toBeDisabled();
   });
 
-  it('fires no request when the trimmed query is below SEARCH_Q_MIN_LENGTH', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ results: [] })));
-    vi.stubGlobal('fetch', fetchMock);
+  it('offers no suggestions below SEARCH_Q_MIN_LENGTH and never calls fetch', async () => {
     render(<Harness />);
-
     fireEvent.change(combobox(), { target: { value: '   ' } });
     await settleDebounce();
-
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('renders the loading state while a request is in flight', async () => {
-    const deferred: Array<(response: Response) => void> = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => new Promise<Response>((resolve) => deferred.push(resolve))),
-    );
-    render(<Harness />);
-
-    fireEvent.change(combobox(), { target: { value: 'jud' } });
-    await settleDebounce();
-
-    expect(screen.getByText(JUDGE_SEARCH_COPY.loading)).toBeInTheDocument();
-
-    await act(async () => {
-      deferred[0]?.(jsonResponse({ results: [ALPHA] }));
-      await vi.advanceTimersByTimeAsync(0);
-    });
-  });
-
-  it('renders display name and matched alias; a mouse click commits and closes', async () => {
+  it('renders display name and matched alias from the supplied list; a mouse click commits and closes', async () => {
     const onCommit = vi.fn();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(jsonResponse({ results: [ALPHA, BETA] }))),
-    );
     render(<Harness onCommit={onCommit} />);
+
+    fireEvent.change(combobox(), { target: { value: 'b-j' } });
+    await settleDebounce();
+    expect(screen.getByText('Beta Judge')).toBeInTheDocument();
+    expect(screen.getByText(`${JUDGE_SEARCH_COPY.matchedAliasPrefix}b-judge`)).toBeInTheDocument();
 
     fireEvent.change(combobox(), { target: { value: 'judge' } });
     await settleDebounce();
+    expect(screen.getAllByRole('option')).toHaveLength(2);
 
-    expect(screen.getByText(ALPHA.displayName)).toBeInTheDocument();
-    expect(
-      screen.getByText(`${JUDGE_SEARCH_COPY.matchedAliasPrefix}${BETA.matchedAlias}`),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText(ALPHA.displayName));
-
-    expect(onCommit).toHaveBeenLastCalledWith(ALPHA);
+    fireEvent.click(screen.getByText('Judge Alpha'));
+    expect(onCommit).toHaveBeenLastCalledWith(ALPHA_MATCH);
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
-    expect(combobox().value).toBe(ALPHA.displayName);
+    expect(combobox().value).toBe('Judge Alpha');
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('supports keyboard selection: ArrowDown then Enter commits the active option', async () => {
     const onCommit = vi.fn();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(jsonResponse({ results: [ALPHA, BETA] }))),
-    );
     render(<Harness onCommit={onCommit} />);
     const input = combobox();
 
@@ -147,15 +114,11 @@ describe('JudgeSearchInput', () => {
     expect(input).toHaveAttribute('aria-controls', screen.getByRole('listbox').id);
 
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(onCommit).toHaveBeenLastCalledWith(ALPHA);
-    expect(combobox().value).toBe(ALPHA.displayName);
+    expect(onCommit).toHaveBeenLastCalledWith(ALPHA_MATCH);
+    expect(combobox().value).toBe('Judge Alpha');
   });
 
   it('closes on Escape, clears on a second Escape', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(jsonResponse({ results: [ALPHA] }))),
-    );
     render(<Harness />);
     const input = combobox();
 
@@ -174,99 +137,29 @@ describe('JudgeSearchInput', () => {
 
   it('clears the committed judge when the input is edited after a commit', async () => {
     const onCommit = vi.fn();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(jsonResponse({ results: [ALPHA] }))),
-    );
     render(<Harness onCommit={onCommit} />);
     const input = combobox();
 
     fireEvent.change(input, { target: { value: 'alpha' } });
     await settleDebounce();
-    fireEvent.click(screen.getByText(ALPHA.displayName));
-    expect(onCommit).toHaveBeenLastCalledWith(ALPHA);
+    fireEvent.click(screen.getByText('Judge Alpha'));
+    expect(onCommit).toHaveBeenLastCalledWith(ALPHA_MATCH);
 
-    fireEvent.change(input, { target: { value: `${ALPHA.displayName} extra` } });
+    fireEvent.change(input, { target: { value: 'Judge Alpha extra' } });
     expect(onCommit).toHaveBeenLastCalledWith(null);
   });
 
-  it('renders the no-result copy for a valid query with zero suggestions', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(jsonResponse({ results: [] }))),
-    );
-    render(<Harness />);
-
+  it('renders the no-result copy for a valid query with zero suggestions, and for an empty list', async () => {
+    const { unmount } = render(<Harness />);
     fireEvent.change(combobox(), { target: { value: 'zzzzz' } });
     await settleDebounce();
-
     expect(screen.getByText(JUDGE_SEARCH_COPY.noResult)).toBeInTheDocument();
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
-  });
+    unmount();
 
-  it('renders the shared error-message copy on an API error', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() =>
-        Promise.resolve(
-          jsonResponse(
-            {
-              statusCode: 429,
-              code: 'RATE_LIMITED',
-              error: 'Too Many Requests',
-              message: 'slow down',
-              requestId: 'req-1',
-            },
-            429,
-          ),
-        ),
-      ),
-    );
-    render(<Harness />);
-
-    fireEvent.change(combobox(), { target: { value: 'jud' } });
+    render(<Harness judges={[]} />);
+    fireEvent.change(combobox(), { target: { value: 'judge' } });
     await settleDebounce();
-
-    expect(screen.getByText(PUBLIC_ERROR_MESSAGES.RATE_LIMITED)).toBeInTheDocument();
-  });
-
-  it('renders the transport-failure copy when the request rejects', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.reject(new Error('network down'))),
-    );
-    render(<Harness />);
-
-    fireEvent.change(combobox(), { target: { value: 'jud' } });
-    await settleDebounce();
-
-    expect(screen.getByText(FETCH_FAILURE_MESSAGE)).toBeInTheDocument();
-  });
-
-  it('never lets a stale response overwrite a newer query', async () => {
-    const deferred: Array<(response: Response) => void> = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => new Promise<Response>((resolve) => deferred.push(resolve))),
-    );
-    render(<Harness />);
-    const input = combobox();
-
-    fireEvent.change(input, { target: { value: 'a' } });
-    await settleDebounce();
-    fireEvent.change(input, { target: { value: 'ab' } });
-    await settleDebounce();
-
-    await act(async () => {
-      deferred[1]?.(jsonResponse({ results: [BETA] }));
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    await act(async () => {
-      deferred[0]?.(jsonResponse({ results: [ALPHA] }));
-      await vi.advanceTimersByTimeAsync(0);
-    });
-
-    expect(screen.getByText(BETA.displayName)).toBeInTheDocument();
-    expect(screen.queryByText(ALPHA.displayName)).not.toBeInTheDocument();
+    expect(screen.getByText(JUDGE_SEARCH_COPY.noResult)).toBeInTheDocument();
   });
 });

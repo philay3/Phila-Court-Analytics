@@ -3,15 +3,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  fetchPublicPath,
   getChargeResult,
   getCharges,
   getDataCoverage,
   getDefinitions,
-  getJudgeSpecificResult,
   getMethodology,
+  getSearchIndex,
   resolvePublicApiUrl,
-  searchCharges,
-  searchJudges,
 } from './public-api-client.js';
 
 // A well-formed API error envelope (the flat five-field public shape).
@@ -78,23 +77,9 @@ describe('resolvePublicApiUrl', () => {
 
 describe('public API client — success', () => {
   it('returns ok:true with the parsed body for a 200 response', async () => {
-    stubFetch(() => jsonResponse({ results: [] }));
-    const result = await searchCharges('theft');
-    expect(result).toEqual({ ok: true, data: { results: [] } });
-  });
-
-  it('returns a 200 unavailable arm as ok:true data (not an error)', async () => {
-    const unavailableArm = {
-      resultType: 'judge_specific_unavailable',
-      code: 'JUDGE_SPECIFIC_RESULT_UNAVAILABLE',
-      message: 'unavailable',
-      charge: {},
-      judge: {},
-      fallback: { chargeOnlyResultPath: '/api/v1/public/results/charge/theft' },
-    };
-    stubFetch(() => jsonResponse(unavailableArm));
-    const result = await getJudgeSpecificResult('theft', 'jane-doe');
-    expect(result.ok).toBe(true);
+    stubFetch(() => jsonResponse({ sections: {} }));
+    const result = await getMethodology();
+    expect(result).toEqual({ ok: true, data: { sections: {} } });
   });
 
   it('returns the charge-only 200 unavailable arm as ok:true data (not an error)', async () => {
@@ -120,15 +105,23 @@ describe('public API client — success', () => {
     expect(result).toEqual({ ok: true, data: { available: false, message: 'unavailable' } });
   });
 
-  it('builds the search query string with q and limit', async () => {
+  it('fetches the search index at its fixed path', async () => {
     const fetchMock = vi.fn<(url: string | URL) => Promise<Response>>(() =>
-      Promise.resolve(jsonResponse({ results: [] })),
+      Promise.resolve(jsonResponse({ available: false, message: 'unavailable' })),
     );
     vi.stubGlobal('fetch', fetchMock);
-    await searchJudges('smith', 5);
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      `${TEST_BASE}/api/v1/public/judges/search?q=smith&limit=5`,
+    await getSearchIndex();
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`${TEST_BASE}/api/v1/public/search-index`);
+  });
+
+  it('fetchPublicPath reaches an arbitrary path with the same classification', async () => {
+    const fetchMock = vi.fn<(url: string | URL) => Promise<Response>>(() =>
+      Promise.resolve(jsonResponse({ hello: 'world' })),
     );
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await fetchPublicPath<{ hello: string }>('/data/search-index.json');
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`${TEST_BASE}/data/search-index.json`);
+    expect(result).toEqual({ ok: true, data: { hello: 'world' } });
   });
 
   it('URL-encodes path parameters', async () => {
