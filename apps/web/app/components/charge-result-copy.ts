@@ -17,6 +17,8 @@
  * help is the shared JUDGE_FILTER_HELP_MESSAGE (DP-5), rendered verbatim from
  * @pca/shared rather than defined here.
  */
+import { ERROR_BOUNDARY_COPY } from '@pca/shared';
+
 export const CHARGE_RESULT_COPY = {
   // Result summary chrome. The result-type label and the formatted timestamp
   // come from the 11.4 formatters; this is only the field label beside them.
@@ -46,8 +48,10 @@ export const CHARGE_RESULT_COPY = {
   judgeFilterHeading: 'View this charge for a specific judge',
   judgeFilterLabel: 'Judge',
 
-  // error.tsx generic, internal-detail-free copy (pinned decision 2).
-  errorHeading: 'Something went wrong',
-  errorBody: 'We could not load this page. Please try again.',
-  errorRetryText: 'Try again',
+  // error.tsx generic, internal-detail-free copy (pinned decision 2). The
+  // literals live in @pca/shared (ERROR_BOUNDARY_COPY, task STATIC-2c) so the
+  // export gate can fail a prerendered page that baked this state.
+  errorHeading: ERROR_BOUNDARY_COPY.heading,
+  errorBody: ERROR_BOUNDARY_COPY.body,
+  errorRetryText: ERROR_BOUNDARY_COPY.retryText,
 } as const;

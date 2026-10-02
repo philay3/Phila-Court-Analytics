@@ -16,6 +16,7 @@ try {
   console.log(`  largest file:    ${summary.largestFile.bytes} bytes  ${summary.largestFile.path}`);
   console.log(`  api injects:     ${summary.injected}; served to next build: ${summary.served}`);
   console.log(`  export dir:      ${OUT_DIR}`);
+  console.log(`  manifest:        ${summary.manifestFile}`);
   process.exit(0);
 } catch (error) {
   console.error(`static-build: FAILED — ${error instanceof Error ? error.message : String(error)}`);

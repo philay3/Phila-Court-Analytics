@@ -12,6 +12,8 @@
  * "charges" in the count line counts charge types, not cases (framing review
  * recorded in the DP-4 task spec).
  */
+import { CHARGES_DIRECTORY_ERROR_BODY } from '@pca/shared';
+
 export const CHARGES_COPY = {
   // Page heading (h1) and lead.
   heading: 'Charges',
@@ -37,8 +39,9 @@ export const CHARGES_COPY = {
   noMatchBody: 'No available charges match your search.',
   clearAction: 'Clear search',
 
-  // Error state body; heading and retry come from CHARGE_RESULT_COPY.
-  errorBody: 'Available charges could not load.',
+  // Error state body; heading and retry come from CHARGE_RESULT_COPY. The
+  // literal lives in @pca/shared (task STATIC-2c) for the export gate.
+  errorBody: CHARGES_DIRECTORY_ERROR_BODY,
 } as const;
 
 /** Renders the sanctioned count-line forms: singular at exactly 1, else plural. */

@@ -6,8 +6,10 @@ import { sql } from 'kysely';
 import { SEARCH_INDEX_DATA_PATH, chargeJudgeDataPath } from '@pca/shared';
 import { buildApp } from '../app.js';
 import { assertDatabaseUrlForMode, shortRunId, type BuildMode } from './guards.js';
+import { NOT_FOUND_PAGES, STATIC_ROUTES, writeManifest } from './manifest.js';
 import { materializePublicApi, pinPublishedRun } from './materialize.js';
 import { startThrowawayApi } from './serve.js';
+import { listFiles } from './stamp.js';
 
 /**
  * The static build (task STATIC-2b, pin 11), in order and fail-closed at
@@ -22,7 +24,10 @@ import { startThrowawayApi } from './serve.js';
  *      `output: 'export'`, stop the server — and fail if the build asked for
  *      anything the server did not have;
  *   6. write the data files under the export's top-level `data/`;
- *   7. print the summary (nothing is pinned in code).
+ *   7. write the manifest (task STATIC-2c, pin 3.A.3) to the scratch directory:
+ *      the routes it enumerated, the data files it wrote, the pinned run, the
+ *      mode, and the allowed set of every other file;
+ *   8. print the summary (nothing is pinned in code).
  */
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -30,6 +35,7 @@ export const REPO_ROOT = path.resolve(HERE, '../../../..');
 export const WEB_DIR = path.join(REPO_ROOT, 'apps/web');
 export const OUT_DIR = path.join(WEB_DIR, 'out');
 export const SCRATCH_DIR = path.join(WEB_DIR, '.static-build');
+export const MANIFEST_FILE = path.join(SCRATCH_DIR, 'manifest.json');
 
 export interface BuildSummary {
   mode: BuildMode;
@@ -41,6 +47,7 @@ export interface BuildSummary {
   largestFile: { path: string; bytes: number };
   injected: number;
   served: number;
+  manifestFile: string;
 }
 
 function walk(dir: string, acc: string[] = []): string[] {
@@ -149,7 +156,44 @@ export async function runStaticBuild(
       dataFiles += 1;
     }
 
-    // 7. Summary, measured — never pinned.
+    // 7. The manifest (pin 3.A.3): from what this build INTENDED — the search
+    // index's charges and the files just written — plus the allowed set of
+    // every other file as `next build` left it. Scratch only, never uploaded.
+    const written = new Set(listFiles(OUT_DIR));
+    const manifestRoutes = [
+      ...STATIC_ROUTES,
+      ...materialized.index.charges.map((charge) => `/charges/${charge.slug}`),
+    ];
+    const dataFilePaths = [
+      SEARCH_INDEX_DATA_PATH.replace(/^\//, ''),
+      ...[...materialized.chargeJudgeFiles.keys()].map((slug) =>
+        chargeJudgeDataPath(slug).replace(/^\//, ''),
+      ),
+    ];
+    // Pages, payloads, and data files are covered by the route patterns and
+    // the lists above; everything else is the allowed set, nothing more.
+    const assets = [...written].filter(
+      (rel) =>
+        !rel.endsWith('.html') &&
+        !rel.endsWith('.txt') &&
+        !rel.endsWith('.rsc') &&
+        !rel.startsWith('data/'),
+    );
+    writeManifest(MANIFEST_FILE, {
+      version: 1,
+      mode,
+      aggregateRunId: pinned.runId,
+      generatedAt: new Date().toISOString(),
+      routes: manifestRoutes,
+      notFound: [...NOT_FOUND_PAGES],
+      dataFiles: dataFilePaths,
+      assets,
+    });
+    log(
+      `manifest written: ${manifestRoutes.length} routes, ${dataFilePaths.length} data files, ${assets.length} assets → ${path.relative(REPO_ROOT, MANIFEST_FILE)}`,
+    );
+
+    // 8. Summary, measured — never pinned.
     const files = walk(OUT_DIR);
     let largest = { path: '', bytes: -1 };
     for (const file of files) {
@@ -167,6 +211,7 @@ export async function runStaticBuild(
       largestFile: largest,
       injected: materialized.counts.injected,
       served: server.served,
+      manifestFile: MANIFEST_FILE,
     };
   } finally {
     await app.close();

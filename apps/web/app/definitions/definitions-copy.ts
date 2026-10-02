@@ -14,6 +14,8 @@
  * All values are neutral, plain-language framing that makes no claims about any
  * individual case (verified by the direct scan test).
  */
+import { CONTENT_PAGE_FAILURE_HEADINGS } from '@pca/shared';
+
 export const DEFINITIONS_COPY = {
   // Page heading + short plain-language intro.
   heading: 'Definitions',
@@ -30,5 +32,5 @@ export const DEFINITIONS_COPY = {
 
   // Error state heading. The error body text is a shared @pca/shared constant
   // selected by failure arm; no internal detail is ever shown.
-  errorHeading: 'Definitions are unavailable',
+  errorHeading: CONTENT_PAGE_FAILURE_HEADINGS.definitions,
 } as const;

@@ -16,6 +16,8 @@
  * All values are neutral, plain-language labels that make no claim about any
  * individual case (verified by the direct scan test).
  */
+import { CONTENT_PAGE_FAILURE_HEADINGS } from '@pca/shared';
+
 export const DATA_COVERAGE_COPY = {
   // Page heading (h1).
   heading: 'Data coverage',
@@ -41,5 +43,5 @@ export const DATA_COVERAGE_COPY = {
 
   // Error state heading. The error body is a shared @pca/shared constant chosen
   // by failure arm; no internal detail is ever shown.
-  errorHeading: 'Data coverage is unavailable',
+  errorHeading: CONTENT_PAGE_FAILURE_HEADINGS.dataCoverage,
 } as const;

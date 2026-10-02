@@ -13,11 +13,13 @@
  * All values are neutral, plain-language framing that makes no claim about any
  * individual case (verified by the direct scan test).
  */
+import { CONTENT_PAGE_FAILURE_HEADINGS } from '@pca/shared';
+
 export const METHODOLOGY_COPY = {
   // Page heading (h1).
   heading: 'Methodology',
 
   // Error state heading. The error body is a shared @pca/shared constant chosen
   // by failure arm; no internal detail is ever shown.
-  errorHeading: 'Methodology is unavailable',
+  errorHeading: CONTENT_PAGE_FAILURE_HEADINGS.methodology,
 } as const;
