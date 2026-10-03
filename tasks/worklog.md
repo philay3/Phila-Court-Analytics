@@ -9498,3 +9498,27 @@ the available arm of `/data-coverage` renders.
 direct-upload Pages project (production branch `main`); `PAGES_PROJECT_NAME`
 in the root `.env`; then `pnpm run publish:static` and the 3.D.15 checks
 (script in the report).
+
+**Deploy addendum (2026-10-03, after the operator cleared the STOP).** The
+operator approved `wrangler login`; the project was created from the CLI.
+wrangler 4.147 first delegated `pages project create` to the Workers-based
+Pages and failed (`Could not detect a directory containing static files`); the
+re-run with `--force` — wrangler's own notice names it as the one-time switch
+to classic Pages — created `philacourtoutcomes` (direct upload, production
+branch `main`); `PAGES_PROJECT_NAME` went into the gitignored root `.env`.
+`pnpm run deploy:static` verified the stamp (1,199 files, publish mode, run
+`78f90de7`) and uploaded 1,197 files plus `_headers` and `_redirects` →
+production deployment `https://46d19107.philacourtoutcomes.pages.dev` (alias
+`https://philacourtoutcomes.pages.dev`, source `aa1b414`). Verified live: `/`,
+`/charges`, a charge page, and `?judge=` (panel rendered from the data file)
+all 200; unknown charge 404 with the root copy; `/methodology` 200 with no
+redirect and `/methodology/` → 308 to `/methodology`; `X-Robots-Tag: noindex,
+nofollow` on an `.html`, a `data/` file, and a `_next/static` file; robots
+meta present; a client-side navigation issued 23 `?_rsc=` segment fetches, all
+200. **Decision point 3.D.16, recorded not taken:** the legacy
+`/charges/<charge>/judge/<judge>` URL answers 301 but Pages does not
+substitute the `:judge` placeholder inside the query —
+`Location: /charges/<charge>?judge=%3Ajudge` (`wrangler pages dev` did
+substitute it) — so legacy judge links land on the charge page with the
+in-page unavailable notice; the fallback waits for a ruling. Full outputs in
+the report (§15).
